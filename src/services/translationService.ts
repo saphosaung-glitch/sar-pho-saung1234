@@ -1,15 +1,37 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+let ai: GoogleGenAI | null = null;
+
+function getAiClient() {
+  if (!ai) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.warn("GEMINI_API_KEY is not set. Translation will be disabled.");
+      return null;
+    }
+    ai = new GoogleGenAI({ apiKey });
+  }
+  return ai;
+}
 
 export async function translateProductName(englishName: string) {
+  const aiClient = getAiClient();
+  if (!aiClient) {
+    return {
+      mmName: englishName,
+      thName: englishName,
+      zhName: englishName,
+      msName: englishName,
+    };
+  }
   try {
-    const response = await ai.models.generateContent({
+    const response = await aiClient.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Translate the following grocery product name into Myanmar, Thai, Chinese (Simplified), and Malay. 
       Return the result as a JSON object with keys: mmName, thName, zhName, msName.
       Product Name: ${englishName}`,
       config: {
+        maxOutputTokens: 500,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,

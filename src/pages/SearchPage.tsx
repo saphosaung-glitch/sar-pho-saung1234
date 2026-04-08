@@ -111,10 +111,22 @@ export default function SearchPage() {
       try {
         const base64Data = await fileToBase64(file);
         
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) {
+          console.warn("GEMINI_API_KEY is not set. Image scanning will be disabled.");
+          setScanStatus(t('error'));
+          setIsScanning(false);
+          setShowScanner(false);
+          return;
+        }
+        
+        const ai = new GoogleGenAI({ apiKey });
         
         const response = await ai.models.generateContent({
           model: "gemini-2.5-flash-image",
+          config: {
+            maxOutputTokens: 100,
+          },
           contents: {
             parts: [
               {
