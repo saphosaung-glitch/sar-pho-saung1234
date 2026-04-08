@@ -24,6 +24,7 @@ import HelpCenterPage from './pages/HelpCenterPage';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
 import AboutUsPage from './pages/AboutUsPage';
 import PointsPage from './pages/PointsPage';
+import SetupAdminPage from './pages/SetupAdminPage';
 import AdminLoginPage from './pages/AdminLoginPage';
 import AdminDashboard from './pages/AdminDashboard';
 import AddressManagementPage from './pages/AddressManagementPage';
@@ -68,6 +69,7 @@ export default function App() {
           <Route path="/security" element={<SecurityPage />} />
           <Route path="/address-management" element={<AddressManagementPage />} />
           <Route path="/add-address" element={<AddAddressPage />} />
+          <Route path="/setup-admin" element={<SetupAdminPage />} />
           <Route path="/admin-login" element={<AdminLoginPage />} />
           <Route path="/admin" element={<AdminDashboard />} />
         </Routes>

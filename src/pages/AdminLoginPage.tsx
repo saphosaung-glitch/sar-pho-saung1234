@@ -1,30 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShieldCheck } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useStore } from '../context/StoreContext';
+import { signInWithEmailAndPassword } from '../lib/firebase';
+import { auth } from '../lib/firebase';
 
 export default function AdminLoginPage() {
   const [error, setError] = useState('');
+  const [formData, setFormData] = useState({ email: '', password: '' });
   const navigate = useNavigate();
-  const { signInWithGoogle, authUid } = useStore();
 
-  // If user signs in with Google and is an admin (checked via rules later), 
-  // we still need to set the local isAdmin flag for UI routing if they used this page.
-  useEffect(() => {
-    if (authUid && localStorage.getItem('isAdmin') === 'pending') {
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await signInWithEmailAndPassword(auth, formData.email, formData.password);
       localStorage.setItem('isAdmin', 'true');
       navigate('/admin');
-    }
-  }, [authUid, navigate]);
-
-  const handleGoogleLogin = async () => {
-    localStorage.setItem('isAdmin', 'pending');
-    try {
-      await signInWithGoogle();
     } catch (err) {
-      setError('Google ဖြင့် ဝင်ရောက်ရာတွင် အမှားအယွင်းဖြစ်ပေါ်ခဲ့ပါသည်။');
-      localStorage.removeItem('isAdmin');
+      console.error('Login error:', err);
+      setError('အီးမေးလ် သို့မဟုတ် စကားဝှက် မှားယွင်းနေပါသည်။');
     }
   };
 
@@ -44,14 +38,13 @@ export default function AdminLoginPage() {
 
         {error && <p className="text-red-500 text-xs font-bold bg-red-50 py-3 rounded-xl border border-red-100 w-full mb-6">{error}</p>}
 
-        <button 
-          type="button"
-          onClick={handleGoogleLogin}
-          className="w-full bg-white border-2 border-gray-100 text-gray-600 py-5 rounded-2xl font-bold text-lg shadow-sm hover:bg-gray-50 transition-all active:scale-95 flex items-center justify-center gap-3"
-        >
-          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-6 h-6" referrerPolicy="no-referrer" />
-          Google ဖြင့် ဝင်ရောက်မည်
-        </button>
+        <form onSubmit={handleLogin} className="w-full space-y-4">
+          <input className="w-full bg-gray-50 p-4 rounded-xl border border-gray-100" type="email" placeholder="Email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} required />
+          <input className="w-full bg-gray-50 p-4 rounded-xl border border-gray-100" type="password" placeholder="Password" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} required />
+          <button type="submit" className="w-full bg-emerald-600 text-white py-5 rounded-2xl font-bold text-lg shadow-sm hover:bg-emerald-700 transition-all active:scale-95">
+            ဝင်ရောက်မည်
+          </button>
+        </form>
 
         <button 
           onClick={() => navigate('/')}

@@ -15,6 +15,7 @@ import {
   getDoc,
   addDoc,
   deleteDoc,
+  limit,
   Unsubscribe
 } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from '../lib/firebase';
@@ -33,6 +34,7 @@ export interface Product {
   image: string;
   unit: string;
   isPremium?: boolean;
+  stock: number;
 }
 
 export interface CartItem extends Product {
@@ -42,6 +44,8 @@ export interface CartItem extends Product {
 export interface Order {
   id: string;
   roomNumber: string;
+  customerName: string;
+  customerPhone: string;
   items: CartItem[];
   total: number;
   pointDiscount: number;
@@ -50,6 +54,7 @@ export interface Order {
   status: 'pending' | 'packing' | 'delivered' | 'cancelled';
   paymentMethod: string;
   timestamp: number;
+  createdAt: number;
   uid?: string;
 }
 
@@ -65,6 +70,45 @@ export interface Bundle {
   image: string;
   items: string[];
   isActive: boolean;
+}
+
+export interface Coupon {
+  id: string;
+  code: string;
+  type: 'percentage' | 'fixed';
+  value: number;
+  minOrderAmount: number;
+  maxDiscount: number;
+  expiryDate: string;
+  usageLimit: number;
+  usageCount: number;
+  isActive: boolean;
+}
+
+export interface AuditLog {
+  id: string;
+  adminId: string;
+  adminName: string;
+  action: string;
+  target: string;
+  details: string;
+  createdAt: any;
+}
+
+export interface BroadcastNotification {
+  id: string;
+  title: string;
+  message: string;
+  image: string;
+  type: 'promotion' | 'system' | 'update';
+  createdAt: any;
+}
+
+export interface AdminUser {
+  uid: string;
+  email: string;
+  role: 'superadmin' | 'staff';
+  name: string;
 }
 
 export interface PromotionBanner {
@@ -206,6 +250,22 @@ interface StoreContextType {
   addBundle: (bundle: Omit<Bundle, 'id'>) => Promise<void>;
   updateBundle: (id: string, bundle: Partial<Bundle>) => Promise<void>;
   deleteBundle: (id: string) => Promise<void>;
+  updateProductStock: (productId: string, newStock: number) => Promise<void>;
+  coupons: Coupon[];
+  addCoupon: (coupon: Omit<Coupon, 'id'>) => Promise<void>;
+  updateCoupon: (id: string, coupon: Partial<Coupon>) => Promise<void>;
+  deleteCoupon: (id: string) => Promise<void>;
+  auditLogs: AuditLog[];
+  logAudit: (action: string, target: string, details: string) => Promise<void>;
+  broadcastNotifications: BroadcastNotification[];
+  sendBroadcast: (notification: Omit<BroadcastNotification, 'id' | 'createdAt'>) => Promise<void>;
+  admins: AdminUser[];
+  addAdmin: (admin: Omit<AdminUser, 'createdAt'>) => Promise<void>;
+  updateAdminRole: (uid: string, role: AdminUser['role']) => Promise<void>;
+  removeAdmin: (uid: string) => Promise<void>;
+  users: any[];
+  updateUserPoints: (uid: string, points: number) => Promise<void>;
+  isAdmin: boolean;
 }
 
 export interface Notification {
@@ -281,6 +341,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [promotionBanners, setPromotionBanners] = useState<PromotionBanner[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [bundles, setBundles] = useState<Bundle[]>([]);
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [broadcastNotifications, setBroadcastNotifications] = useState<BroadcastNotification[]>([]);
+  const [admins, setAdmins] = useState<AdminUser[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem('isAdmin') === 'true');
 
   const setSelectedAddressId = (id: string | null) => {
     setSelectedAddressIdState(id);
@@ -312,7 +378,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       // Auto-seed if empty or outdated version
       const SEED_VERSION = '1.0.1'; // Increment this to force re-seed
       const currentSeed = localStorage.getItem('sp_seed_version');
-      const isAdmin = localStorage.getItem('isAdmin') === 'true';
       
       if ((querySnapshot.empty || currentSeed !== SEED_VERSION) && isAdmin) {
         import('../lib/seed').then(({ seedDatabase }) => {
@@ -327,7 +392,70 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       handleFirestoreError(error, OperationType.LIST, 'products');
     });
     return () => unsubscribe();
+  }, [isAdmin]);
+
+  // Sync Coupons from Firestore
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'coupons'), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Coupon[];
+      setCoupons(data);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'coupons');
+    });
+    return () => unsubscribe();
   }, []);
+
+  // Sync Audit Logs from Firestore
+  useEffect(() => {
+    if (!authUid || !isAdmin) return;
+
+    const q = query(collection(db, 'auditLogs'), orderBy('createdAt', 'desc'), limit(100));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as AuditLog[];
+      setAuditLogs(data);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'auditLogs');
+    });
+    return () => unsubscribe();
+  }, [authUid, isAdmin]);
+
+  // Sync Broadcast Notifications from Firestore
+  useEffect(() => {
+    const q = query(collection(db, 'broadcastNotifications'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any as BroadcastNotification[];
+      setBroadcastNotifications(data);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'broadcastNotifications');
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Sync Admins from Firestore
+  useEffect(() => {
+    if (!authUid || !isAdmin) return;
+
+    const unsubscribe = onSnapshot(collection(db, 'admins'), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() })) as any as AdminUser[];
+      setAdmins(data);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'admins');
+    });
+    return () => unsubscribe();
+  }, [authUid, isAdmin]);
+
+  // Sync All Users from Firestore (Admin only)
+  useEffect(() => {
+    if (!authUid || !isAdmin) return;
+
+    const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setUsers(data);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'users');
+    });
+    return () => unsubscribe();
+  }, [authUid, isAdmin]);
 
   // Sync Promotion Banners from Firestore
   useEffect(() => {
@@ -367,12 +495,48 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         setAuthUid(user.uid);
+        if (user.email) setUserEmail(user.email);
       } else {
         setAuthUid(null);
+        setUserEmail('');
       }
     });
     return () => unsubscribe();
   }, []);
+
+  // Verify Admin Status
+  useEffect(() => {
+    if (!authUid) {
+      setIsAdmin(false);
+      localStorage.setItem('isAdmin', 'false');
+      return;
+    }
+
+    // Hardcoded check for initial setup/dev
+    const hardcodedAdmins = ['saphosaung@gmail.com', 'yelwinaung9981@gmail.com'];
+    if (userEmail && hardcodedAdmins.includes(userEmail)) {
+      setIsAdmin(true);
+      localStorage.setItem('isAdmin', 'true');
+    }
+
+    const unsub = onSnapshot(doc(db, 'admins', authUid), (snap) => {
+      if (snap.exists()) {
+        setIsAdmin(true);
+        localStorage.setItem('isAdmin', 'true');
+      } else if (userEmail && !hardcodedAdmins.includes(userEmail)) {
+        setIsAdmin(false);
+        localStorage.setItem('isAdmin', 'false');
+      }
+    }, () => {
+      // If permission denied, they are likely not an admin
+      if (userEmail && !hardcodedAdmins.includes(userEmail)) {
+        setIsAdmin(false);
+        localStorage.setItem('isAdmin', 'false');
+      }
+    });
+
+    return () => unsub();
+  }, [authUid, userEmail]);
 
   // UID for data is derived from phone number for persistence across devices
   const uid = useMemo(() => {
@@ -456,7 +620,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Sync User Profile with Firestore using Phone Number as ID
   useEffect(() => {
-    if (!uid) return;
+    if (!uid || !authUid) return;
 
     const userDocRef = doc(db, 'users', uid);
     let unsubscribe: Unsubscribe | null = null;
@@ -468,6 +632,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           // Create initial profile if it doesn't exist
           await setDoc(userDocRef, {
             uid: uid, // Use phone-based UID
+            authUid: authUid, // Link to Firebase Auth UID
             name: userName,
             phone: userPhone,
             room: roomNumber,
@@ -479,9 +644,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             lastActive: serverTimestamp()
           }, { merge: true });
         } else {
-          // Update last active
+          // Update last active and ensure authUid is linked
           await updateDoc(userDocRef, {
-            lastActive: serverTimestamp()
+            lastActive: serverTimestamp(),
+            authUid: authUid
           }).catch(() => {});
         }
 
@@ -522,16 +688,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (unsubscribe) unsubscribe();
       unsubscribeAddresses();
     };
-  }, [uid]);
+  }, [uid, authUid]);
 
   // Sync Orders from Firestore
   useEffect(() => {
-    if (!uid) return;
+    if (!uid || !authUid) return;
 
     // If admin, show all orders. If user, show only their orders.
-    // For simplicity in this context, we'll check if the user is an admin via localStorage
-    const isAdmin = localStorage.getItem('isAdmin') === 'true';
-    
     let ordersQuery;
     if (isAdmin) {
       ordersQuery = query(collection(db, 'orders'));
@@ -545,10 +708,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const unsubscribe = onSnapshot(ordersQuery, (snapshot) => {
       const fetchedOrders = snapshot.docs.map(doc => {
         const data = doc.data();
+        let createdAtMillis = Date.now();
+        
+        if (data.createdAt) {
+          if (typeof data.createdAt.toMillis === 'function') {
+            createdAtMillis = data.createdAt.toMillis();
+          } else if (typeof data.createdAt === 'number') {
+            createdAtMillis = data.createdAt;
+          } else if (typeof data.createdAt === 'string') {
+            createdAtMillis = new Date(data.createdAt).getTime();
+          }
+        } else if (data.timestamp) {
+          createdAtMillis = data.timestamp;
+        }
+
         return {
           ...data,
           id: doc.id,
-          timestamp: data.createdAt?.toMillis() || data.timestamp || Date.now()
+          createdAt: createdAtMillis,
+          timestamp: createdAtMillis
         };
       }) as Order[];
       
@@ -560,7 +738,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
 
     return () => unsubscribe();
-  }, [uid]);
+  }, [uid, authUid, isAdmin]);
 
   const [supportNumber, setSupportNumber] = useState(() => {
     return localStorage.getItem('sp_support_number') || '601128096366';
@@ -871,6 +1049,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const orderData = {
       id: orderId,
       uid: orderPhoneId,
+      authUid: authUid, // Link to Firebase Auth UID
       roomNumber: details.room,
       address: details.address,
       items: [...cart], // Clone cart
@@ -914,6 +1093,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       await setDoc(doc(db, 'orders', orderId), orderData);
       
+      // Decrement stock for each item
+      for (const item of cart) {
+        const productRef = doc(db, 'products', item.id);
+        await updateDoc(productRef, {
+          stock: increment(-item.quantity)
+        });
+      }
+      
       if (details.pointsUsed > 0) {
         await updateDoc(userDocRef, {
           points: increment(-details.pointsUsed)
@@ -944,6 +1131,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       await updateDoc(doc(db, 'orders', id), { status });
       
+      // Stock logic: Return stock if order is cancelled
+      if (status === 'cancelled' && oldStatus !== 'cancelled') {
+        for (const item of order.items) {
+          const productRef = doc(db, 'products', item.id);
+          await updateDoc(productRef, {
+            stock: increment(item.quantity)
+          });
+        }
+      }
+      // Deduct stock if order was cancelled and is now being restored (rare but possible)
+      else if (oldStatus === 'cancelled' && status !== 'cancelled') {
+        for (const item of order.items) {
+          const productRef = doc(db, 'products', item.id);
+          await updateDoc(productRef, {
+            stock: increment(-item.quantity)
+          });
+        }
+      }
+
       // Points logic: Add earned points only when marked as 'delivered'
       if (status === 'delivered' && oldStatus !== 'delivered' && order.uid) {
         await updateDoc(doc(db, 'users', order.uid), {
@@ -960,6 +1166,37 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           description: `Order ${id} delivered`,
           createdAt: serverTimestamp()
         });
+      }
+
+      // Notify User (Simulated via a subcollection in users/{uid}/notifications)
+      if (order.uid) {
+        const t = (key: string) => (translations[language] as any)[key] || key;
+        let title = '';
+        let message = '';
+
+        if (status === 'packing') {
+          title = t('orderPackingTitle');
+          message = t('orderPackingMsg').replace('{{id}}', id);
+        } else if (status === 'delivered') {
+          title = t('orderDeliveredTitle');
+          message = t('orderDeliveredMsg').replace('{{id}}', id);
+        } else if (status === 'cancelled') {
+          title = t('orderCancelledTitle');
+          message = t('orderCancelledMsg').replace('{{id}}', id);
+        }
+
+        if (title && message) {
+          const notificationId = `NOTIF-${Date.now()}`;
+          await setDoc(doc(db, 'users', order.uid, 'notifications', notificationId), {
+            id: notificationId,
+            title,
+            message,
+            type: 'order',
+            status: 'unread',
+            createdAt: serverTimestamp(),
+            orderId: id
+          });
+        }
       }
       
       // Add status update notification
@@ -1041,6 +1278,108 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (error) {
       console.error("Error deleting product:", error);
       // Re-sync will happen via onSnapshot
+    }
+  };
+
+  const updateProductStock = async (productId: string, newStock: number) => {
+    try {
+      await updateDoc(doc(db, 'products', productId), { stock: newStock });
+      await logAudit('update_stock', 'product', `Updated stock for ${productId} to ${newStock}`);
+    } catch (error) {
+      console.error("Error updating product stock:", error);
+    }
+  };
+
+  const addCoupon = async (coupon: Omit<Coupon, 'id'>) => {
+    try {
+      await addDoc(collection(db, 'coupons'), { ...coupon, usageCount: 0 });
+      await logAudit('add_coupon', 'coupon', `Added coupon ${coupon.code}`);
+    } catch (error) {
+      console.error("Error adding coupon:", error);
+    }
+  };
+
+  const updateCoupon = async (id: string, coupon: Partial<Coupon>) => {
+    try {
+      await updateDoc(doc(db, 'coupons', id), coupon);
+      await logAudit('update_coupon', 'coupon', `Updated coupon ${id}`);
+    } catch (error) {
+      console.error("Error updating coupon:", error);
+    }
+  };
+
+  const deleteCoupon = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'coupons', id));
+      await logAudit('delete_coupon', 'coupon', `Deleted coupon ${id}`);
+    } catch (error) {
+      console.error("Error deleting coupon:", error);
+    }
+  };
+
+  const logAudit = async (action: string, target: string, details: string) => {
+    try {
+      await addDoc(collection(db, 'auditLogs'), {
+        adminId: auth.currentUser?.uid || 'system',
+        adminName: auth.currentUser?.displayName || auth.currentUser?.email || 'System',
+        action,
+        target,
+        details,
+        createdAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error("Error logging audit:", error);
+    }
+  };
+
+  const sendBroadcast = async (notification: Omit<BroadcastNotification, 'id' | 'createdAt'>) => {
+    try {
+      await addDoc(collection(db, 'broadcastNotifications'), {
+        ...notification,
+        createdAt: serverTimestamp()
+      });
+      await logAudit('send_broadcast', 'notification', `Sent broadcast: ${notification.title}`);
+    } catch (error) {
+      console.error("Error sending broadcast:", error);
+    }
+  };
+
+  const addAdmin = async (admin: Omit<AdminUser, 'createdAt'>) => {
+    try {
+      await setDoc(doc(db, 'admins', admin.uid), {
+        ...admin,
+        createdAt: serverTimestamp()
+      });
+      await logAudit('add_admin', 'admin', `Added admin ${admin.email}`);
+    } catch (error) {
+      console.error("Error adding admin:", error);
+    }
+  };
+
+  const updateAdminRole = async (uid: string, role: AdminUser['role']) => {
+    try {
+      await updateDoc(doc(db, 'admins', uid), { role });
+      await logAudit('update_admin_role', 'admin', `Updated role for ${uid} to ${role}`);
+    } catch (error) {
+      console.error("Error updating admin role:", error);
+    }
+  };
+
+  const removeAdmin = async (uid: string) => {
+    try {
+      await deleteDoc(doc(db, 'admins', uid));
+      await logAudit('remove_admin', 'admin', `Removed admin ${uid}`);
+    } catch (error) {
+      console.error("Error removing admin:", error);
+    }
+  };
+
+  const updateUserPoints = async (uid: string, points: number) => {
+    try {
+      await updateDoc(doc(db, 'users', uid), { points });
+      await logAudit('update_user_points', 'user', `Updated points for user ${uid} to ${points}`);
+    } catch (error) {
+      console.error("Error updating user points:", error);
     }
   };
 
@@ -1376,7 +1715,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       deleteDeal,
       addBundle,
       updateBundle,
-      deleteBundle
+      deleteBundle,
+      updateProductStock,
+      coupons,
+      addCoupon,
+      updateCoupon,
+      deleteCoupon,
+      auditLogs,
+      logAudit,
+      broadcastNotifications,
+      sendBroadcast,
+      admins,
+      addAdmin,
+      updateAdminRole,
+      removeAdmin,
+      users,
+      updateUserPoints,
+      isAdmin
     }}>
       {children}
     </StoreContext.Provider>
