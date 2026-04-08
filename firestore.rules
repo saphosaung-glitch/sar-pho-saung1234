@@ -1,0 +1,145 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: products
+    // Document ID: productId
+    // Fields:
+    //   - id: string (required)
+    //   - name: string (required)
+    //   - mmName: string (optional)
+    //   - price: number (required)
+    //   - category: string (required)
+    //   - image: string (optional)
+    //   - unit: string (optional)
+    //   - isPremium: boolean (optional)
+    //
+    // Collection: orders
+    // Document ID: orderId
+    // Fields:
+    //   - id: string (required)
+    //   - roomNumber: string (required)
+    //   - items: list (required)
+    //   - total: number (required)
+    //   - status: string (required)
+    //   - customerName: string (required)
+    //   - customerPhone: string (required)
+    //   - paymentMethod: string (required)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: users
+    // Document ID: uid
+    // Fields:
+    //   - uid: string (required)
+    //   - name: string (required)
+    //   - phone: string (required)
+    //   - room: string (required)
+    //   - points: number (required)
+    //   - tier: string (required)
+    //   - referredBy: string (optional)
+    //   - lastActive: timestamp (optional)
+    //
+    // Collection: pointTransactions
+    // Document ID: transactionId
+    // Fields:
+    //   - id: string (required)
+    //   - uid: string (required)
+    //   - type: string (required)
+    //   - amount: number (required)
+    //   - description: string (required)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: settings
+    // Document ID: docId
+    // Fields:
+    //   - enabled: boolean (optional)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (request.auth.token.email == "saphosaung@gmail.com" ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+    }
+
+    function isValidOrder(data) {
+      return data.customerPhone is string && data.customerPhone.size() > 0 &&
+             data.total is number && data.total >= 0 &&
+             data.status in ['pending', 'packing', 'delivered', 'cancelled'];
+    }
+
+    function isValidUser(data) {
+      return data.phone is string && data.phone.size() > 0 &&
+             data.name is string && data.name.size() > 0 &&
+             data.points is number && data.points >= 0;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /test/connection {
+      allow read: if true;
+    }
+
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /orders/{orderId} {
+      allow read: if isAdmin() || true; 
+      allow create: if true;
+      allow update: if isAdmin() || (resource.data.customerPhone == request.resource.data.customerPhone && request.resource.data.status == 'cancelled' && resource.data.status == 'pending');
+      allow delete: if isAdmin();
+    }
+
+    match /users/{uid} {
+      allow read: if isAdmin() || true; 
+      allow create: if isValidUser(request.resource.data);
+      allow update: if isAdmin() || (isValidUser(request.resource.data) && request.resource.data.points == resource.data.points);
+
+      match /pointTransactions/{transactionId} {
+        allow read: if isAdmin() || true;
+        allow create: if isAdmin();
+      }
+
+      match /addresses/{addressId} {
+        allow read, write: if true;
+      }
+    }
+
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /promotionBanners/{bannerId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /deals/{dealId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /bundles/{bundleId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}

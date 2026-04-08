@@ -1,0 +1,58 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Cormorant Garamond", serif;
+  
+  --color-primary: #0d631b;
+  --color-primary-container: #2e7d32;
+  --color-on-primary-container: #cbffc2;
+  --color-tertiary: #6e5100;
+  --color-tertiary-fixed-dim: #fbbc00;
+  --color-on-tertiary-fixed: #261a00;
+  --color-surface: #f9f9f8;
+  --color-surface-container-low: #f3f4f3;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-high: #e7e8e7;
+  --color-surface-container-highest: #e1e3e2;
+  --color-on-surface: #191c1c;
+  --color-on-surface-variant: #40493d;
+  --color-outline-variant: #bfcaba;
+  --color-error: #ba1a1a;
+  --color-primary-fixed: #a3f69c;
+  --color-on-primary-fixed: #002204;
+}
+
+.dark {
+  --color-surface: #111414;
+  --color-surface-container-low: #1a1c1c;
+  --color-surface-container-lowest: #0c0e0e;
+  --color-surface-container-high: #242626;
+  --color-surface-container-highest: #2e3030;
+  --color-on-surface: #e1e3e2;
+  --color-on-surface-variant: #bfcaba;
+  --color-outline-variant: #40493d;
+  --color-primary: #a3f69c;
+  --color-primary-container: #005314;
+  --color-on-primary-container: #cbffc2;
+}
+
+@layer base {
+  body {
+    @apply bg-surface text-on-surface font-sans;
+  }
+}
+
+.hero-gradient {
+  background: linear-gradient(0deg, rgba(249,249,248,1) 15%, rgba(249,249,248,0.4) 50%, rgba(249,249,248,0) 100%);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

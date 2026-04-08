@@ -1,0 +1,5 @@
+{
+  "name": "စားတော်ဆက် (Sar Taw Set)",
+  "description": "A professional grocery delivery service for Myanmar workers in Malaysia, featuring room identification via QR codes, category-based shopping, and an admin dashboard for order management and market list auto-summing.",
+  "requestFramePermissions": ["camera"]
+}
