@@ -40,9 +40,12 @@ function ScrollToTop() {
   return null;
 }
 
+import { Toaster } from 'sonner';
+
 export default function App() {
   return (
     <StoreProvider>
+      <Toaster position="top-center" expand={false} richColors />
       <HashRouter>
         <ScrollToTop />
         <Routes>

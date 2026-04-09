@@ -1605,7 +1605,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!isAdmin) return;
 
-    const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(1));
+    const q = query(collection(db, 'orders'), orderBy('timestamp', 'desc'), limit(1));
     let initialLoad = true;
 
     const unsubscribe = onSnapshot(q, (snapshot) => {

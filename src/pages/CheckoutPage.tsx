@@ -8,6 +8,7 @@ import {
   Building, Navigation, Edit2, Phone, Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { toast } from 'sonner';
 
 export default function CheckoutPage() {
   const { 
@@ -45,6 +46,7 @@ export default function CheckoutPage() {
   const pointsDiscount = usePoints ? (pointsToUse / 500) : 0;
   const finalTotal = cartTotal - pointsDiscount;
   const [isUploading, setIsUploading] = useState(false);
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [receiptUploaded, setReceiptUploaded] = useState(false);
   const [copied, setCopied] = useState(false);
   
@@ -71,7 +73,7 @@ export default function CheckoutPage() {
 
     // Validation for Bank Transfer
     if (paymentMethod === 'Bank' && !receiptUploaded) {
-      alert(t('pleaseUploadReceipt'));
+      toast.error(t('pleaseUploadReceipt') || 'Please upload payment receipt');
       return;
     }
     
@@ -79,19 +81,32 @@ export default function CheckoutPage() {
     const paymentDisplay = paymentMethod === 'COD' ? 'cash' : 'bank';
 
     const handlePlaceOrder = async () => {
-      const order = await placeOrder({ 
-        name: selectedAddress?.name || userName, 
-        phone: selectedAddress?.phone || userPhone, 
-        room: selectedAddress ? `${selectedAddress.building || ''} ${selectedAddress.room || ''}`.trim() : roomNumber,
-        address: selectedAddress ? `${selectedAddress.street}, ${selectedAddress.township}, ${selectedAddress.city}, ${selectedAddress.region}` : undefined,
-        paymentMethod: paymentDisplay,
-        pointDiscount: pointsDiscount,
-        pointsUsed: usePoints ? pointsToUse : 0
-      });
-      if (order && typeof order === 'object') {
-        navigate(`/success?id=${order.id}`, { state: { order } });
-      } else {
-        alert(t('orderFailed'));
+      setIsPlacingOrder(true);
+      try {
+        const order = await placeOrder({ 
+          name: selectedAddress?.name || userName, 
+          phone: selectedAddress?.phone || userPhone, 
+          room: selectedAddress ? `${selectedAddress.building || ''} ${selectedAddress.room || ''}`.trim() : roomNumber,
+          address: selectedAddress ? `${selectedAddress.street}, ${selectedAddress.township}, ${selectedAddress.city}, ${selectedAddress.region}` : undefined,
+          paymentMethod: paymentDisplay,
+          pointDiscount: pointsDiscount,
+          pointsUsed: usePoints ? pointsToUse : 0
+        });
+        if (order && typeof order === 'object') {
+          navigate(`/success?id=${order.id}`, { state: { order } });
+        } else {
+          toast.error(t('orderFailed') + ' (Please check your connection or login status)');
+        }
+      } catch (error: any) {
+        console.error("Checkout error:", error);
+        const errorMsg = error?.message || '';
+        if (errorMsg.includes('permission') || errorMsg.includes('Missing or insufficient permissions')) {
+          toast.error(t('orderFailed') + ' (Permission Error. If you are using a phone number linked to a Google account, please log in.)');
+        } else {
+          toast.error(t('orderFailed') + ` (${errorMsg || 'Please check your connection'})`);
+        }
+      } finally {
+        setIsPlacingOrder(false);
       }
     };
 
@@ -611,15 +626,15 @@ export default function CheckoutPage() {
             <button 
               type="submit"
               form="checkout-form"
-              disabled={!isDeliveryEnabled}
+              disabled={!isDeliveryEnabled || isPlacingOrder}
               className={`flex-1 py-3.5 px-6 rounded-full font-black text-sm shadow-lg transition-all flex items-center justify-center gap-2 group ${
-                !isDeliveryEnabled 
+                (!isDeliveryEnabled || isPlacingOrder)
                   ? 'bg-gray-400 cursor-not-allowed' 
                   : 'bg-primary text-white shadow-primary/20 hover:bg-primary-container active:scale-95'
               }`}
             >
-              {t('placeOrder')}
-              <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
+              {isPlacingOrder ? t('processing') || 'Processing...' : t('placeOrder')}
+              {!isPlacingOrder && <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />}
             </button>
           </div>
         </div>

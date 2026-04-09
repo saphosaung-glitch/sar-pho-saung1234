@@ -2,33 +2,24 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { CheckCircle2, MessageCircle, ShoppingBag, MapPin, Clock, FileText, ChevronRight, Receipt, Check, Home, Copy, Wallet, Trophy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
 import { useStore, Order } from '../context/StoreContext';
 
 export default function SuccessPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { supportNumber, t, darkMode, formatPrice } = useStore();
+  const { orders, supportNumber, t, darkMode, formatPrice } = useStore();
   const orderId = searchParams.get('id');
-  const [order, setOrder] = useState<Order | null>(location.state?.order || null);
+  
+  const storeOrder = orders.find(o => o.id === orderId);
+  const [order, setOrder] = useState<Order | null>(location.state?.order || storeOrder || null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (!orderId) return;
-    // If we already have the order from state, we can still listen for updates (status changes)
-    const unsubscribe = onSnapshot(doc(db, 'orders', orderId), (doc) => {
-      if (doc.exists()) {
-        setOrder({
-          id: doc.id,
-          ...doc.data(),
-          timestamp: doc.data().createdAt?.toMillis() || Date.now()
-        } as Order);
-      }
-    });
-    return () => unsubscribe();
-  }, [orderId]);
+    if (storeOrder) {
+      setOrder(storeOrder);
+    }
+  }, [storeOrder]);
 
   const handleWhatsApp = () => {
     const message = encodeURIComponent(t('whatsappSupportMsg').replace('{orderId}', orderId || ''));

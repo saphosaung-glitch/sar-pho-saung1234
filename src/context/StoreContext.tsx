@@ -22,6 +22,8 @@ import { auth, db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { Address } from '../types';
 
+import { toast } from 'sonner';
+
 export interface Product {
   id: string;
   name: string;
@@ -289,7 +291,18 @@ export interface PaymentMethod {
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('sp_cart');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('sp_cart', JSON.stringify(cart));
+  }, [cart]);
   const [authUid, setAuthUid] = useState<string | null>(null);
   const [userName, setUserName] = useState(() => {
     return localStorage.getItem('sp_user_name') || '';
@@ -409,7 +422,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     if (!authUid || !isAdmin) return;
 
-    const q = query(collection(db, 'auditLogs'), orderBy('createdAt', 'desc'), limit(100));
+    const q = query(collection(db, 'auditLogs'), orderBy('timestamp', 'desc'), limit(100));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as AuditLog[];
       setAuditLogs(data);
@@ -421,7 +434,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Sync Broadcast Notifications from Firestore
   useEffect(() => {
-    const q = query(collection(db, 'broadcastNotifications'), orderBy('createdAt', 'desc'));
+    const q = query(collection(db, 'broadcastNotifications'), orderBy('timestamp', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any as BroadcastNotification[];
       setBroadcastNotifications(data);
@@ -615,6 +628,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
     } catch (error) {
       console.error("Error updating profile in Firestore:", error);
+      handleFirestoreError(error, OperationType.UPDATE, `users/${uid}`);
     }
   };
 
@@ -701,7 +715,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } else {
       ordersQuery = query(
         collection(db, 'orders'), 
-        where('uid', '==', uid)
+        where('authUid', '==', authUid)
       );
     }
 
@@ -730,9 +744,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         };
       }) as Order[];
       
-      // Sort by timestamp descending (newest first) for the state
-      const sortedOrders = fetchedOrders.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      setOrders(sortedOrders);
+      setOrders(prevOrders => {
+        // Keep local orders that don't have an authUid (guest orders)
+        const guestOrders = prevOrders.filter(o => !o.authUid);
+        // Merge and remove duplicates by ID
+        const allOrders = [...fetchedOrders, ...guestOrders];
+        const uniqueOrders = Array.from(new Map(allOrders.map(o => [o.id, o])).values());
+        // Sort by timestamp descending (newest first) for the state
+        return uniqueOrders.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      });
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'orders');
     });
@@ -1042,7 +1062,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const orderPhoneId = details.phone.replace(/[^0-9]/g, '');
     if (!orderPhoneId) return null;
     
-    const orderId = `SP-${Math.floor(Math.random() * 9000) + 1000}`;
+    // Generate a more unique order ID to prevent collisions which cause Permission Denied on update
+    const orderId = `SP-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 1000)}`;
     const earnedPoints = Math.floor(cartTotal * 10);
     const { date: deliveryDate, isToday } = getDeliveryDate();
     
@@ -1068,47 +1089,94 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     try {
-      // Update local state if not set or changed
-      if (!userPhone || userPhone !== details.phone) {
-        setUserPhone(details.phone);
-        localStorage.setItem('sp_user_phone', details.phone);
-      }
-      if (!userName || userName !== details.name) {
-        setUserName(details.name);
-        localStorage.setItem('sp_user_name', details.name);
-      }
-      if (!roomNumber || roomNumber !== details.room) {
-        setRoomNumber(details.room);
-        localStorage.setItem('sp_room', details.room);
-      }
+      let timeoutId: NodeJS.Timeout;
+      // Create a promise that rejects after 30 seconds
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Request timed out. Please check your connection.')), 30000);
+      });
 
-      const userDocRef = doc(db, 'users', orderPhoneId);
-      await setDoc(userDocRef, {
-        uid: orderPhoneId,
-        name: details.name,
-        phone: details.phone,
-        room: details.room,
-        lastActive: serverTimestamp()
-      }, { merge: true });
+      const placeOrderPromise = async () => {
+        // Update local state if not set or changed
+        if (!userPhone || userPhone !== details.phone) {
+          setUserPhone(details.phone);
+          localStorage.setItem('sp_user_phone', details.phone);
+        }
+        if (!userName || userName !== details.name) {
+          setUserName(details.name);
+          localStorage.setItem('sp_user_name', details.name);
+        }
+        if (!roomNumber || roomNumber !== details.room) {
+          setRoomNumber(details.room);
+          localStorage.setItem('sp_room', details.room);
+        }
 
-      await setDoc(doc(db, 'orders', orderId), orderData);
-      
-      // Decrement stock for each item
-      for (const item of cart) {
-        const productRef = doc(db, 'products', item.id);
-        await updateDoc(productRef, {
-          stock: increment(-item.quantity)
+        const userDocRef = doc(db, 'users', orderPhoneId);
+        const userUpdate: any = {
+          uid: orderPhoneId,
+          name: details.name,
+          phone: details.phone,
+          room: details.room,
+          lastActive: serverTimestamp()
+        };
+        
+        if (authUid) {
+          userUpdate.authUid = authUid;
+        }
+
+        if (details.pointsUsed > 0) {
+          userUpdate.points = increment(-details.pointsUsed);
+        }
+
+        try {
+          await setDoc(userDocRef, userUpdate, { merge: true });
+        } catch (userError: any) {
+          console.warn("Could not update user profile:", userError);
+          if (details.pointsUsed > 0) {
+            throw new Error("Permission Error: Cannot use points. Please log in if this is your account.");
+          }
+          // Continue placing order without updating user profile
+        }
+
+        const orderPromise = setDoc(doc(db, 'orders', orderId), orderData);
+        
+        // Merge cart items by ID to prevent concurrent updateDoc calls on the same document
+        const mergedCartItems = cart.reduce((acc, item) => {
+          if (acc[item.id]) {
+            acc[item.id].quantity += item.quantity;
+          } else {
+            acc[item.id] = { ...item };
+          }
+          return acc;
+        }, {} as Record<string, any>);
+
+        // Decrement stock for each item in parallel
+        const stockPromises = Object.values(mergedCartItems).map(item => {
+          const productRef = doc(db, 'products', item.id);
+          return updateDoc(productRef, {
+            stock: increment(-item.quantity)
+          }).catch(stockError => {
+            console.warn(`Could not update stock for ${item.id}:`, stockError);
+          });
         });
-      }
-      
-      if (details.pointsUsed > 0) {
-        await updateDoc(userDocRef, {
-          points: increment(-details.pointsUsed)
-        });
-      }
+        
+        await Promise.all([orderPromise, ...stockPromises]);
+
+        return orderData;
+      };
+
+      const result = await Promise.race([placeOrderPromise(), timeoutPromise]);
+      clearTimeout(timeoutId!);
 
       // Immediate UI updates
       setCart([]);
+      
+      // Add to local orders state immediately (crucial for guest users who don't have onSnapshot access)
+      const newOrderForState: Order = {
+        ...orderData,
+        createdAt: Date.now() // Override serverTimestamp for local state
+      } as Order;
+      setOrders(prev => [newOrderForState, ...prev]);
+
       const t = (key: string) => (translations[language] as any)[key] || key;
       addNotification({
         title: t('orderSuccessfulTitle'),
@@ -1116,10 +1184,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         type: 'order'
       });
 
-      return orderData;
-    } catch (error) {
+      return result;
+    } catch (error: any) {
       console.error("Error placing order:", error);
-      return null;
+      // Throw the error so CheckoutPage can catch it and show the message
+      throw error;
     }
   };
 
@@ -1325,7 +1394,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         action,
         target,
         details,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        timestamp: Date.now()
       });
     } catch (error) {
       console.error("Error logging audit:", error);
@@ -1336,7 +1406,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       await addDoc(collection(db, 'broadcastNotifications'), {
         ...notification,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        timestamp: Date.now()
       });
       await logAudit('send_broadcast', 'notification', `Sent broadcast: ${notification.title}`);
     } catch (error) {
@@ -1499,9 +1570,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
 
       await setDoc(doc(db, 'users', uid, 'addresses', addressId), newAddress);
+      toast.success(translations[language === 'mm' ? 'mm' : 'en'].addressSaved || 'Address saved successfully');
     } catch (error) {
       console.error("Error adding address:", error);
       setAddresses(previousAddresses); // Rollback
+      toast.error('Failed to save address. Please try again.');
+      handleFirestoreError(error, OperationType.WRITE, `users/${uid}/addresses/${addressId}`);
     }
   };
 
@@ -1529,9 +1603,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await Promise.all(batch);
       }
       await updateDoc(doc(db, 'users', uid, 'addresses', id), address);
+      toast.success(translations[language === 'mm' ? 'mm' : 'en'].addressUpdated || 'Address updated successfully');
     } catch (error) {
       console.error("Error updating address:", error);
       setAddresses(previousAddresses); // Rollback
+      toast.error('Failed to update address.');
+      handleFirestoreError(error, OperationType.UPDATE, `users/${uid}/addresses/${id}`);
     }
   };
 
@@ -1553,15 +1630,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     try {
-      const { deleteDoc } = await import('firebase/firestore');
       await deleteDoc(doc(db, 'users', uid, 'addresses', id));
       
       if (deletedAddress?.isDefault && updatedAddresses.length > 0) {
         await updateDoc(doc(db, 'users', uid, 'addresses', updatedAddresses[0].id), { isDefault: true });
       }
+      toast.success(translations[language === 'mm' ? 'mm' : 'en'].addressDeleted || 'Address deleted successfully');
     } catch (error) {
       console.error("Error removing address:", error);
       setAddresses(previousAddresses); // Rollback
+      toast.error('Failed to delete address.');
+      handleFirestoreError(error, OperationType.DELETE, `users/${uid}/addresses/${id}`);
     }
   };
 
