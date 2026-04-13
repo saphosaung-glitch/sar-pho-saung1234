@@ -113,10 +113,10 @@ export default function SuccessPage() {
         variants={containerVariants}
         initial="hidden"
         animate="visible"
-        className={`p-4 sm:p-6 rounded-[2rem] shadow-[0_15px_40px_rgba(0,0,0,0.08)] max-w-md w-full relative z-10 border border-on-surface/5 ${darkMode ? 'bg-surface-container-high' : 'bg-white'}`}
+        className={`p-5 sm:p-7 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.1)] max-w-[360px] w-full relative z-10 border border-on-surface/5 flex flex-col ${darkMode ? 'bg-surface-container-high' : 'bg-white'}`}
       >
         {/* Success Icon */}
-        <motion.div variants={itemVariants} className="flex justify-center mb-3">
+        <motion.div variants={itemVariants} className="flex justify-center mb-[2vh]">
           <div className="relative">
             <motion.div 
               initial={{ scale: 0 }}
@@ -128,33 +128,33 @@ export default function SuccessPage() {
               initial={{ scale: 0, rotate: -180 }}
               animate={{ scale: 1, rotate: 0 }}
               transition={{ type: 'spring', stiffness: 200, damping: 20, delay: 0.1 }}
-              className="relative bg-gradient-to-br from-primary to-primary-container w-16 h-16 rounded-full flex items-center justify-center shadow-lg shadow-primary/30"
+              className="relative bg-gradient-to-br from-primary to-primary-container w-14 h-14 rounded-full flex items-center justify-center shadow-lg shadow-primary/30"
             >
               <motion.div
                 initial={{ pathLength: 0, opacity: 0 }}
                 animate={{ pathLength: 1, opacity: 1 }}
                 transition={{ duration: 0.5, delay: 0.4 }}
               >
-                <Check size={32} className="text-white" strokeWidth={3} />
+                <Check size={28} className="text-white" strokeWidth={3} />
               </motion.div>
             </motion.div>
           </div>
         </motion.div>
 
         {/* Success Text */}
-        <motion.div variants={itemVariants} className="text-center mb-4">
-          <h1 className="text-xl sm:text-2xl font-black text-on-surface mb-1 tracking-tight">{t('orderSuccessful')}</h1>
-          <p className="text-on-surface-variant font-bold text-xs">
+        <motion.div variants={itemVariants} className="text-center mb-[2vh]">
+          <h1 className="text-xl sm:text-2xl font-black text-on-surface mb-1 tracking-tight leading-tight">{t('orderSuccessful')}</h1>
+          <p className="text-on-surface-variant font-bold text-[10px] sm:text-xs">
             {t('orderPlacedSuccess')}
           </p>
         </motion.div>
 
         {/* Order Progress */}
-        <motion.div variants={itemVariants} className="mb-4 px-2">
+        <motion.div variants={itemVariants} className="mb-[2.5vh] px-2">
           <div className="flex justify-between items-center mb-1.5">
-            <span className={`text-[9px] font-black uppercase tracking-tight ${order?.status === 'pending' ? 'text-primary' : 'text-on-surface-variant/40'}`}>{t('placed')}</span>
-            <span className={`text-[9px] font-black uppercase tracking-tight ${order?.status === 'packing' ? 'text-primary' : 'text-on-surface-variant/40'}`}>{t('preparing')}</span>
-            <span className={`text-[9px] font-black uppercase tracking-tight ${order?.status === 'delivered' ? 'text-primary' : 'text-on-surface-variant/40'}`}>{t('delivering')}</span>
+            <span className={`text-[8px] font-black uppercase tracking-tight ${order?.status === 'pending' ? 'text-primary' : 'text-on-surface-variant/40'}`}>{t('placed')}</span>
+            <span className={`text-[8px] font-black uppercase tracking-tight ${order?.status === 'packing' ? 'text-primary' : 'text-on-surface-variant/40'}`}>{t('preparing')}</span>
+            <span className={`text-[8px] font-black uppercase tracking-tight ${order?.status === 'delivered' ? 'text-primary' : 'text-on-surface-variant/40'}`}>{t('delivering')}</span>
           </div>
           <div className={`h-1 rounded-full overflow-hidden flex ${darkMode ? 'bg-surface-container-highest' : 'bg-surface-container-high'}`}>
             <motion.div 
@@ -166,76 +166,71 @@ export default function SuccessPage() {
           </div>
         </motion.div>
         
-        {/* Order Details Card */}
-        <motion.div variants={itemVariants} className={`p-4 rounded-[1.25rem] mb-4 border border-on-surface/5 ${darkMode ? 'bg-surface-container-highest' : 'bg-surface-container-low'}`}>
-          <div className="flex justify-between items-center mb-3 pb-3 border-b border-on-surface/10">
+        {/* Order Details Card (Receipt Style) */}
+        <motion.div 
+          variants={itemVariants} 
+          className={`p-5 rounded-[2rem] mb-[2.5vh] border border-on-surface/5 shadow-inner flex-grow flex flex-col justify-center ${darkMode ? 'bg-surface-container-highest' : 'bg-slate-50/80'}`}
+        >
+          <div className="flex justify-between items-center mb-4 pb-4 border-b border-dashed border-on-surface/20">
             <div className="flex items-center gap-2">
-              <Receipt size={16} className="text-primary" />
-              <span className="text-[10px] font-black text-on-surface uppercase tracking-widest">{t('orderId')}</span>
+              <Receipt size={14} className="text-primary" />
+              <span className="text-[9px] font-black text-on-surface uppercase tracking-widest">{t('orderId')}</span>
             </div>
-            <div className="flex items-center gap-2 relative">
-              <span className="text-xs font-black text-primary font-mono bg-primary/10 px-2 py-0.5 rounded-md">#{orderId || 'SP-8924'}</span>
-              <button 
-                onClick={() => copyToClipboard(orderId || 'SP-8924')}
-                className={`p-1 rounded-lg text-on-surface-variant hover:text-primary transition-colors active:scale-90 ${darkMode ? 'bg-surface-container-high' : 'bg-surface-container-high'}`}
-              >
-                {copied ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
-              </button>
-            </div>
+            <span className="text-xs font-black text-primary font-mono bg-primary/10 px-2 py-0.5 rounded-md">#{orderId || 'SP-8924'}</span>
           </div>
           
-          <div className="space-y-2">
-              <div className="flex justify-between items-center whitespace-nowrap overflow-hidden">
+          <div className="space-y-[1.5vh]">
+              <div className="flex justify-between items-center gap-4">
                 <div className="flex items-center gap-2 text-on-surface-variant flex-shrink-0">
                   <Home size={14} />
                   <span className="text-[10px] font-bold">{t('deliveryTo')}</span>
                 </div>
-                <span className="text-[10px] font-black text-on-surface ml-4 overflow-hidden text-ellipsis">
+                <span className="text-[10px] font-black text-on-surface text-right truncate max-w-[120px]">
                   {order?.address 
                     ? (order.address.split(',').reverse()[2]?.trim() || order.address.split(',')[3]?.trim()) 
                     : 'Kuchai Lama'}
                 </span>
               </div>
-              <div className="flex justify-between items-center whitespace-nowrap overflow-hidden">
+              <div className="flex justify-between items-center gap-4">
                 <div className="flex items-center gap-2 text-on-surface-variant flex-shrink-0">
                   <ShoppingBag size={14} />
                   <span className="text-[10px] font-bold">{t('totalAmount')}</span>
                 </div>
-                <span className="text-xs font-black text-primary ml-4 overflow-hidden text-ellipsis">
+                <span className="text-sm font-black text-primary">
                   {order ? formatPrice(order.total) : '...'}
                 </span>
               </div>
-              <div className="flex justify-between items-center whitespace-nowrap overflow-hidden">
+              <div className="flex justify-between items-center gap-4">
                 <div className="flex items-center gap-2 text-on-surface-variant flex-shrink-0">
                   <Clock size={14} />
                   <span className="text-[10px] font-bold">{t('estimatedDelivery')}</span>
                 </div>
-                <span className="text-[10px] font-black text-on-surface ml-4 overflow-hidden text-ellipsis">8:00AM - 10:00AM</span>
+                <span className="text-[10px] font-black text-on-surface">8:00AM - 10:00AM</span>
               </div>
-              <div className="flex justify-between items-center whitespace-nowrap overflow-hidden">
+              <div className="flex justify-between items-center gap-4">
                 <div className="flex items-center gap-2 text-on-surface-variant flex-shrink-0">
                   <Wallet size={14} />
                   <span className="text-[10px] font-bold">{t('payment')}</span>
                 </div>
-                <span className="text-[10px] font-black text-on-surface ml-4 overflow-hidden text-ellipsis">
+                <span className="text-[10px] font-black text-on-surface">
                   {!order ? '...' : (['cash', 'Cash', 'Tunai', 'COD'].includes(order.paymentMethod) ? 'COD' : 'Bank')}
                 </span>
               </div>
-              <div className="flex justify-between items-center whitespace-nowrap overflow-hidden">
+              <div className="flex justify-between items-center gap-4">
                 <div className="flex items-center gap-2 text-on-surface-variant flex-shrink-0">
                   <Trophy size={14} />
                   <span className="text-[10px] font-bold">{t('pointsEarned')}</span>
                 </div>
-                <span className="text-[10px] font-black text-amber-600 ml-4 overflow-hidden text-ellipsis">
+                <span className="text-[10px] font-black text-amber-600">
                   {order ? `+${order.earnedPoints}` : '...'} pts
                 </span>
               </div>
-              <div className="flex justify-between items-center whitespace-nowrap overflow-hidden">
+              <div className="flex justify-between items-center gap-4">
                 <div className="flex items-center gap-2 text-on-surface-variant flex-shrink-0">
                   <MapPin size={14} />
                   <span className="text-[10px] font-bold">{t('deliveryStatus')}</span>
                 </div>
-                <span className="text-[9px] font-black text-tertiary-fixed-dim bg-tertiary-fixed-dim/10 px-1.5 py-0.5 rounded-md uppercase tracking-tight ml-4 overflow-hidden text-ellipsis">{getStatusLabel()}</span>
+                <span className="text-[8px] font-black text-tertiary-fixed-dim bg-tertiary-fixed-dim/10 px-2 py-0.5 rounded-md uppercase tracking-tight">{getStatusLabel()}</span>
               </div>
           </div>
         </motion.div>
@@ -244,7 +239,7 @@ export default function SuccessPage() {
         <motion.div variants={itemVariants} className="space-y-2">
           <button 
             onClick={() => navigate('/orders', { state: { from: 'success' } })}
-            className="w-full bg-primary text-white py-3 rounded-full font-black text-xs shadow-lg shadow-primary/20 hover:bg-primary-container transition-all active:scale-95 flex items-center justify-center gap-2 group"
+            className="w-full bg-primary text-white py-3 rounded-2xl font-black text-xs shadow-lg shadow-primary/20 hover:bg-primary-container transition-all active:scale-95 flex items-center justify-center gap-2 group"
           >
             <FileText size={16} />
             <span className="truncate">{t('trackOrder')}</span>
@@ -254,14 +249,14 @@ export default function SuccessPage() {
           <div className="grid grid-cols-2 gap-2">
             <button 
               onClick={() => navigate('/menu')}
-              className={`text-on-surface border border-on-surface/10 py-2.5 rounded-full font-black text-[10px] transition-all active:scale-95 flex items-center justify-center gap-1.5 ${darkMode ? 'bg-surface-container-highest hover:bg-surface-container-high' : 'bg-surface-container-low hover:bg-surface-container-high'}`}
+              className={`text-on-surface border border-on-surface/10 py-2.5 rounded-2xl font-black text-[10px] transition-all active:scale-95 flex items-center justify-center gap-1.5 ${darkMode ? 'bg-surface-container-highest hover:bg-surface-container-high' : 'bg-surface-container-low hover:bg-surface-container-high'}`}
             >
               <ShoppingBag size={14} className="text-primary" />
               <span className="truncate">{t('continueShopping')}</span>
             </button>
             <button 
               onClick={handleWhatsApp}
-              className={`text-on-surface border border-on-surface/10 py-2.5 rounded-full font-black text-[10px] transition-all active:scale-95 flex items-center justify-center gap-1.5 ${darkMode ? 'bg-surface-container-highest hover:bg-surface-container-high' : 'bg-surface-container-low hover:bg-surface-container-high'}`}
+              className={`text-on-surface border border-on-surface/10 py-2.5 rounded-2xl font-black text-[10px] transition-all active:scale-95 flex items-center justify-center gap-1.5 ${darkMode ? 'bg-surface-container-highest hover:bg-surface-container-high' : 'bg-surface-container-low hover:bg-surface-container-high'}`}
             >
               <MessageCircle size={14} className="text-[#25D366]" />
               <span className="truncate">{t('contactSupport')}</span>
