@@ -6,10 +6,12 @@ import { useStore } from '../context/StoreContext';
 
 export default function WelcomePage() {
   const navigate = useNavigate();
-  const { darkMode, userPhone, t, isDeliveryEnabled } = useStore();
+  const { darkMode, userPhone, userName, t, isDeliveryEnabled } = useStore();
 
   const handleGetStarted = () => {
-    if (userPhone) {
+    // Check if user is registered (has name and phone)
+    const isRegistered = userName && userPhone;
+    if (isRegistered) {
       navigate('/menu');
     } else {
       navigate('/registration');

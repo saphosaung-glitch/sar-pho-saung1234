@@ -1,13 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useStore } from '../context/StoreContext';
-import { ChevronLeft, Receipt, Clock, CheckCircle2, Package, MapPin, Phone, User, Home, Wallet, Calendar, ArrowRight, MessageCircle } from 'lucide-react';
+import { ChevronLeft, Receipt, Clock, CheckCircle2, Package, MapPin, Phone, User, Home, Wallet, Calendar, ArrowRight, MessageCircle, RotateCcw } from 'lucide-react';
 import { motion } from 'motion/react';
+import { toast } from 'sonner';
 
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [showCancelModal, setShowCancelModal] = React.useState(false);
-  const { orders, supportNumber, cancelOrder, t, darkMode, formatPrice, getMainName, getSecondaryName } = useStore();
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [isReordering, setIsReordering] = useState(false);
+  const { orders, supportNumber, cancelOrder, reorder, t, darkMode, formatPrice, getMainName, getSecondaryName } = useStore();
   const navigate = useNavigate();
   
   const order = orders.find(o => o.id === id);
@@ -95,6 +97,23 @@ export default function OrderDetailPage() {
   const handleCancel = () => {
     cancelOrder(order.id);
     setShowCancelModal(false);
+  };
+
+  const handleReorder = async () => {
+    setIsReordering(true);
+    const result = await reorder(order);
+    setIsReordering(false);
+    
+    if (result.success) {
+      if (result.message) {
+        toast.info(result.message);
+      } else {
+        toast.success(t('addedToCart'));
+      }
+      navigate('/checkout');
+    } else {
+      toast.error(result.message || 'Failed to reorder');
+    }
   };
 
   return (
@@ -258,33 +277,47 @@ export default function OrderDetailPage() {
           </div>
         </section>
 
-        {/* Cancellation and Support Buttons */}
-        {order.status === 'pending' && (
-          <div className="flex gap-3 pb-6">
-            {isCancellable ? (
-              <button 
-                onClick={() => setShowCancelModal(true)}
-                className={`flex-1 py-3 rounded-2xl font-black text-xs transition-all active:scale-95 border ${darkMode ? 'bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20' : 'bg-red-50 text-red-600 border-red-100 hover:bg-red-100'}`}
-              >
-                {t('cancelOrder')}
-              </button>
-            ) : (
-              <button 
-                onClick={() => handleWhatsApp(false)}
-                className={`flex-1 py-3 rounded-2xl font-black text-xs transition-all active:scale-95 flex items-center justify-center gap-2 ${darkMode ? 'bg-on-surface text-surface hover:bg-on-surface/90' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
-              >
-                <MessageCircle size={16} />
-                {t('requestCancellation')}
-              </button>
-            )}
-            <button 
-              onClick={() => handleWhatsApp(true)}
-              className={`w-14 border rounded-2xl flex items-center justify-center transition-all active:scale-95 ${darkMode ? 'bg-surface-container-high border-on-surface/10 hover:bg-surface-container-highest' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
+        {/* Action Buttons */}
+        <div className="flex gap-2 pb-6">
+          {/* Left Dynamic Button */}
+          {order.status === 'delivered' || order.status === 'cancelled' ? (
+            <button
+              onClick={handleReorder}
+              disabled={isReordering}
+              className={`flex-1 py-2 rounded-xl font-black text-[10px] uppercase tracking-tight shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 disabled:opacity-50 ${darkMode ? 'bg-primary text-white shadow-primary/20' : 'bg-emerald-600 text-white shadow-emerald-900/20'}`}
             >
-              <MessageCircle size={20} className="text-[#25D366]" />
+              {isReordering ? (
+                <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <RotateCcw size={14} />
+              )}
+              <span className="truncate">{t('reorder')}</span>
             </button>
-          </div>
-        )}
+          ) : isCancellable ? (
+            <button 
+              onClick={() => setShowCancelModal(true)}
+              className={`flex-1 py-2 rounded-xl font-black text-[10px] uppercase tracking-tight transition-all active:scale-95 border ${darkMode ? 'bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20' : 'bg-red-50 text-red-600 border-red-100 hover:bg-red-100'}`}
+            >
+              <span className="truncate">{t('cancelOrder')}</span>
+            </button>
+          ) : (
+            <button 
+              onClick={() => handleWhatsApp(false)}
+              className={`flex-1 py-2 rounded-xl font-black text-[10px] uppercase tracking-tight transition-all active:scale-95 flex items-center justify-center gap-1.5 ${darkMode ? 'bg-on-surface text-surface hover:bg-on-surface/90' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
+            >
+              <MessageCircle size={14} />
+              <span className="truncate">{t('requestCancellation')}</span>
+            </button>
+          )}
+
+          {/* Right Support Button (Always visible) */}
+          <button 
+            onClick={() => handleWhatsApp(true)}
+            className={`w-12 h-10 border rounded-xl flex items-center justify-center transition-all active:scale-95 ${darkMode ? 'bg-surface-container-high border-on-surface/10 hover:bg-surface-container-highest' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
+          >
+            <MessageCircle size={18} className="text-[#25D366]" />
+          </button>
+        </div>
         
         {/* Confirmation Modal */}
         {showCancelModal && (

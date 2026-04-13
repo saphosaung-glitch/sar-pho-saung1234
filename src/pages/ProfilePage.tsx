@@ -474,13 +474,13 @@ export default function ProfilePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
-          className="pb-12"
+          className="pb-12 flex justify-center"
         >
           <button 
             onClick={() => setShowLogoutConfirm(true)}
-            className={`w-full flex items-center justify-center gap-3 p-5 rounded-[2rem] font-black text-sm transition-all active:scale-95 border ${darkMode ? 'bg-red-500/10 text-red-500 border-red-500/20' : 'bg-red-50 text-red-600 border-red-100'}`}
+            className={`flex items-center justify-center gap-2 px-6 py-3 rounded-2xl font-black text-xs transition-all active:scale-95 border ${darkMode ? 'bg-red-500/10 text-red-500 border-red-500/20' : 'bg-red-50 text-red-600 border-red-100'}`}
           >
-            <LogOut size={20} />
+            <LogOut size={16} />
             {t('logout')}
           </button>
         </motion.div>

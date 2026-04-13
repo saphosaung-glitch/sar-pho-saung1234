@@ -1,5 +1,4 @@
 export const CATEGORIES = [
-  { id: 'all', key: 'all' },
   { id: 'meat', key: 'meat' },
   { id: 'seafood', key: 'seafood' },
   { id: 'vegetables', key: 'vegetables' },

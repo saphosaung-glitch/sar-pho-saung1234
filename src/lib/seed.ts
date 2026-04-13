@@ -1,5 +1,6 @@
-import { collection, doc, setDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
+import { CATEGORIES } from '../constants';
 
 export const PRODUCTS = [
   { name: 'Fresh Atlantic Salmon', mmName: 'လတ်ဆတ်သော ဆယ်လ်မွန်ငါး', msName: 'Salmon Atlantik Segar', thName: 'ปลาแซลมอนแอตแลนติกสด', zhName: '新鲜大西洋鲑鱼', price: 35.00, unit: '1 kg', category: 'seafood', image: 'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?w=500', stock: 50 },
@@ -38,6 +39,36 @@ export const PRODUCTS = [
 
 export const seedDatabase = async () => {
   try {
+    // Seed Categories
+    const categoriesCollection = collection(db, 'categories');
+    const existingCats = await getDocs(categoriesCollection);
+    
+    // Always ensure default categories exist
+    for (let i = 0; i < CATEGORIES.length; i++) {
+      const cat = CATEGORIES[i];
+      const docRef = doc(categoriesCollection, cat.id);
+      await setDoc(docRef, {
+        ...cat,
+        isActive: true,
+        order: i
+      }, { merge: true });
+    }
+    
+    // Add Deals and Bundles categories
+    await setDoc(doc(categoriesCollection, 'deals'), {
+      id: 'deals',
+      key: 'deals',
+      isActive: true,
+      order: CATEGORIES.length
+    }, { merge: true });
+    
+    await setDoc(doc(categoriesCollection, 'bundles'), {
+      id: 'bundles',
+      key: 'bundles',
+      isActive: true,
+      order: CATEGORIES.length + 1
+    }, { merge: true });
+
     const productsCollection = collection(db, 'products');
     for (const product of PRODUCTS) {
       const productId = product.name.toLowerCase().replace(/[^a-z0-9]/g, '-');

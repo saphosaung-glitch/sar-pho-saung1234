@@ -6,17 +6,29 @@ import { User, Phone, Sparkles, ChevronRight } from 'lucide-react';
 
 export default function RegistrationPage() {
   const navigate = useNavigate();
-  const { setUserName, setUserPhone, addAddress, darkMode, t } = useStore();
+  const { setUserName, setUserPhone, isProfileLoaded, darkMode, t } = useStore();
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !phone) return;
     
+    setIsSubmitting(true);
+    
+    // Set phone first to trigger sync in StoreContext
+    const sanitizedPhone = phone.replace(/[^0-9]/g, '');
+    setUserPhone(sanitizedPhone);
     setUserName(name);
-    setUserPhone(phone);
-    navigate('/menu');
+    
+    // We don't necessarily need to wait for isProfileLoaded here because 
+    // the Menu page will also wait for it or show data as it arrives.
+    // But for a better UX, we can wait a bit or just navigate.
+    
+    setTimeout(() => {
+      navigate('/menu');
+    }, 800);
   };
 
   return (
@@ -89,10 +101,17 @@ export default function RegistrationPage() {
 
             <button 
               type="submit"
-              className={`mx-auto px-12 py-3 rounded-full font-black text-sm shadow-lg shadow-emerald-900/10 transition-all flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] ${darkMode ? 'bg-primary text-white' : 'bg-emerald-600 text-white'}`}
+              disabled={isSubmitting}
+              className={`mx-auto px-12 py-3 rounded-full font-black text-sm shadow-lg shadow-emerald-900/10 transition-all flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 ${darkMode ? 'bg-primary text-white' : 'bg-emerald-600 text-white'}`}
             >
-              {t('continue')}
-              <ChevronRight size={16} />
+              {isSubmitting ? (
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  {t('continue')}
+                  <ChevronRight size={16} />
+                </>
+              )}
             </button>
           </form>
         </motion.div>

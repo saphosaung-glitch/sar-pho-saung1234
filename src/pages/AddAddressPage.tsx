@@ -36,18 +36,23 @@ export default function AddAddressPage() {
     }
   }, [editId, addresses]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
-    // Optimistic: call and navigate immediately
-    setTimeout(() => {
+    
+    try {
       if (editId) {
-        updateAddress(editId, formData);
+        await updateAddress(editId, formData);
       } else {
-        addAddress(formData);
+        await addAddress(formData);
       }
       navigate(-1);
-    }, 600);
+    } catch (error) {
+      console.error("Error saving address:", error);
+      setIsSaving(false);
+      // Toast is already handled in StoreContext for success, 
+      // but for error we might want to stay on the page
+    }
   };
 
   const labels: ('Home' | 'Office' | 'Other')[] = ['Home', 'Office', 'Other'];

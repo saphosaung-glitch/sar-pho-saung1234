@@ -16,10 +16,11 @@ import {
   addDoc,
   deleteDoc,
   limit,
+  writeBatch,
   Unsubscribe
 } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { onAuthStateChanged, GoogleAuthProvider, signInWithPopup, setPersistence, browserLocalPersistence, signOut } from 'firebase/auth';
 import { Address } from '../types';
 
 import { toast } from 'sonner';
@@ -37,6 +38,11 @@ export interface Product {
   unit: string;
   isPremium?: boolean;
   stock: number;
+  salePrice?: number;
+  description?: string;
+  sku?: string;
+  weight?: string;
+  status: 'published' | 'draft';
 }
 
 export interface CartItem extends Product {
@@ -55,6 +61,9 @@ export interface Order {
   earnedPoints: number;
   status: 'pending' | 'packing' | 'delivered' | 'cancelled';
   paymentMethod: string;
+  address?: string;
+  deliveryDate?: string;
+  deliveryDay?: string;
   timestamp: number;
   createdAt: number;
   uid?: string;
@@ -113,6 +122,13 @@ export interface AdminUser {
   name: string;
 }
 
+export interface Category {
+  id: string;
+  key: string;
+  isActive: boolean;
+  order: number;
+}
+
 export interface PromotionBanner {
   id: string;
   type: string;
@@ -145,6 +161,7 @@ interface StoreContextType {
   cart: CartItem[];
   addToCart: (item: Omit<CartItem, 'quantity'>) => void;
   updateQuantity: (id: string, delta: number) => void;
+  clearCart: () => void;
   cartTotal: number;
   userName: string;
   setUserName: (name: string) => void;
@@ -188,6 +205,7 @@ interface StoreContextType {
   }) => any;
   updateOrderStatus: (id: string, status: Order['status']) => void;
   cancelOrder: (id: string) => void;
+  reorder: (order: Order) => Promise<{ success: boolean; message?: string }>;
   favorites: string[];
   toggleFavorite: (id: string) => void;
   notifications: Notification[];
@@ -223,6 +241,8 @@ interface StoreContextType {
   setDarkMode: (enabled: boolean) => void;
   isDeliveryEnabled: boolean;
   setIsDeliveryEnabled: (enabled: boolean) => Promise<void>;
+  isLowStockAlertEnabled: boolean;
+  setIsLowStockAlertEnabled: (enabled: boolean) => Promise<void>;
   cutoffTime: string;
   setCutoffTime: (time: string) => Promise<void>;
   getDeliveryDate: () => { date: string; isToday: boolean };
@@ -232,6 +252,7 @@ interface StoreContextType {
   authUid: string | null;
   products: Product[];
   addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
+  updateProduct: (id: string, updates: Partial<Product>) => Promise<void>;
   deleteProduct: (id: string) => Promise<void>;
   addresses: Address[];
   addAddress: (address: Omit<Address, 'id'>) => Promise<void>;
@@ -240,6 +261,10 @@ interface StoreContextType {
   setDefaultAddress: (id: string) => Promise<void>;
   selectedAddressId: string | null;
   setSelectedAddressId: (id: string | null) => void;
+  categories: Category[];
+  updateCategory: (id: string, updates: Partial<Category>) => Promise<void>;
+  addCategory: (category: Omit<Category, 'id'>) => Promise<void>;
+  deleteCategory: (id: string) => Promise<void>;
   promotionBanners: PromotionBanner[];
   deals: Deal[];
   bundles: Bundle[];
@@ -268,6 +293,7 @@ interface StoreContextType {
   users: any[];
   updateUserPoints: (uid: string, points: number) => Promise<void>;
   isAdmin: boolean;
+  isProfileLoaded: boolean;
 }
 
 export interface Notification {
@@ -292,65 +318,30 @@ const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [cart, setCart] = useState<CartItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('sp_cart');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
+    const saved = localStorage.getItem('sp_cart');
+    return saved ? JSON.parse(saved) : [];
   });
 
-  useEffect(() => {
-    localStorage.setItem('sp_cart', JSON.stringify(cart));
-  }, [cart]);
   const [authUid, setAuthUid] = useState<string | null>(null);
-  const [userName, setUserName] = useState(() => {
-    return localStorage.getItem('sp_user_name') || '';
-  });
-  const [userPhone, setUserPhone] = useState(() => {
-    return localStorage.getItem('sp_user_phone') || '';
-  });
-  const [userAvatar, setUserAvatar] = useState(() => {
-    return localStorage.getItem('sp_user_avatar') || '';
-  });
-  const [userEmail, setUserEmail] = useState(() => {
-    return localStorage.getItem('sp_user_email') || '';
-  });
-  const [userBirthday, setUserBirthday] = useState(() => {
-    return localStorage.getItem('sp_user_birthday') || '';
-  });
-  const [roomNumber, setRoomNumber] = useState(() => {
-    return localStorage.getItem('sp_room') || '';
-  });
+  const [userName, setUserName] = useState(() => localStorage.getItem('sp_user_name') || '');
+  const [userPhone, setUserPhone] = useState(() => localStorage.getItem('sp_user_phone') || '');
+  const [userAvatar, setUserAvatar] = useState(() => localStorage.getItem('sp_user_avatar') || '');
+  const [userEmail, setUserEmail] = useState(() => localStorage.getItem('sp_user_email') || '');
+  const [userBirthday, setUserBirthday] = useState(() => localStorage.getItem('sp_user_birthday') || '');
+  const [roomNumber, setRoomNumber] = useState(() => localStorage.getItem('sp_room') || '');
   const [orders, setOrders] = useState<Order[]>(() => {
     const saved = localStorage.getItem('sp_orders');
     return saved ? JSON.parse(saved) : [];
   });
-  const [estimatedDeliveryTime, setEstimatedDeliveryTimeState] = useState(() => {
-    return localStorage.getItem('sp_estimated_delivery') || '8:00 AM - 10:00 AM';
-  });
+  const [estimatedDeliveryTime, setEstimatedDeliveryTimeState] = useState('8:00 AM - 10:00 AM');
   const [points, setPoints] = useState(() => {
     const saved = localStorage.getItem('sp_points');
     return saved ? parseInt(saved, 10) : 0;
   });
-  const [products, setProducts] = useState<any[]>(() => {
-    const saved = localStorage.getItem('sp_products');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        return [];
-      }
-    }
-    return [];
-  });
-  const [addresses, setAddresses] = useState<Address[]>(() => {
-    const saved = localStorage.getItem('sp_addresses');
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [selectedAddressId, setSelectedAddressIdState] = useState<string | null>(() => {
-    return localStorage.getItem('sp_selected_address_id');
-  });
+  const [products, setProducts] = useState<any[]>([]);
+  const [addresses, setAddresses] = useState<Address[]>([]);
+  const [selectedAddressId, setSelectedAddressIdState] = useState<string | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [promotionBanners, setPromotionBanners] = useState<PromotionBanner[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [bundles, setBundles] = useState<Bundle[]>([]);
@@ -359,7 +350,41 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [broadcastNotifications, setBroadcastNotifications] = useState<BroadcastNotification[]>([]);
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [users, setUsers] = useState<any[]>([]);
-  const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem('isAdmin') === 'true');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isProfileLoaded, setIsProfileLoaded] = useState(false);
+
+  // UID for data is derived from phone number for persistence across devices
+  const uid = useMemo(() => {
+    if (!userPhone) return null;
+    return userPhone.replace(/[^0-9]/g, '');
+  }, [userPhone]);
+
+  // Sync Cart with Firestore
+  useEffect(() => {
+    if (!uid) return;
+    const userDocRef = doc(db, 'users', uid);
+    
+    // Always try to load from Firestore when UID is available
+    const unsubscribe = onSnapshot(userDocRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.cart) {
+          setCart(data.cart);
+        }
+      }
+    }, (error) => {
+      console.error("Firestore cart sync error:", error);
+    });
+
+    return () => unsubscribe();
+  }, [uid]);
+
+  // Sync Cart changes to Firestore
+  useEffect(() => {
+    if (uid) {
+      updateDoc(doc(db, 'users', uid), { cart }).catch(console.error);
+    }
+  }, [cart, uid]);
 
   const setSelectedAddressId = (id: string | null) => {
     setSelectedAddressIdState(id);
@@ -382,27 +407,105 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [products]);
 
+  // Persist orders to localStorage
+  useEffect(() => {
+    localStorage.setItem('sp_orders', JSON.stringify(orders));
+  }, [orders]);
+
+  // Persist points to localStorage
+  useEffect(() => {
+    localStorage.setItem('sp_points', points.toString());
+  }, [points]);
+
+  // Persist banners, deals, bundles to localStorage
+  useEffect(() => {
+    if (categories.length > 0) localStorage.setItem('sp_categories', JSON.stringify(categories));
+  }, [categories]);
+
+  useEffect(() => {
+    if (promotionBanners.length > 0) localStorage.setItem('sp_banners', JSON.stringify(promotionBanners));
+  }, [promotionBanners]);
+
+  useEffect(() => {
+    if (deals.length > 0) localStorage.setItem('sp_deals', JSON.stringify(deals));
+  }, [deals]);
+
+  useEffect(() => {
+    if (bundles.length > 0) localStorage.setItem('sp_bundles', JSON.stringify(bundles));
+  }, [bundles]);
+
+  useEffect(() => {
+    if (coupons.length > 0) localStorage.setItem('sp_coupons', JSON.stringify(coupons));
+  }, [coupons]);
+
+  useEffect(() => {
+    if (broadcastNotifications.length > 0) localStorage.setItem('sp_broadcasts', JSON.stringify(broadcastNotifications));
+  }, [broadcastNotifications]);
+
+  // Sync categories from Firestore
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'categories'), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Category[];
+      setCategories(data.sort((a, b) => a.order - b.order));
+    }, (error) => {
+      console.error('Firestore categories sync error:', error);
+    });
+    return () => unsubscribe();
+  }, [isAdmin]);
+
+  const updateCategory = async (id: string, updates: Partial<Category>) => {
+    try {
+      await updateDoc(doc(db, 'categories', id), updates);
+      toast.success('Category updated');
+    } catch (error) {
+      console.error('Error updating category:', error);
+      toast.error('Failed to update category');
+    }
+  };
+
+  const addCategory = async (category: Omit<Category, 'id'>) => {
+    try {
+      const id = category.key.toLowerCase().replace(/[^a-z0-9]/g, '-');
+      await setDoc(doc(db, 'categories', id), { ...category, id });
+      toast.success('Category added');
+    } catch (error) {
+      console.error('Error adding category:', error);
+      toast.error('Failed to add category');
+    }
+  };
+
+  const deleteCategory = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'categories', id));
+      toast.success('Category deleted');
+    } catch (error) {
+      console.error('Error deleting category:', error);
+      toast.error('Failed to delete category');
+    }
+  };
+
   // Sync products from Firestore
   useEffect(() => {
+    let isSeeding = false;
     const unsubscribe = onSnapshot(collection(db, 'products'), (querySnapshot) => {
       const productsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setProducts(productsData);
       
-      // Auto-seed if empty or outdated version
-      const SEED_VERSION = '1.0.1'; // Increment this to force re-seed
-      const currentSeed = localStorage.getItem('sp_seed_version');
-      
-      if ((querySnapshot.empty || currentSeed !== SEED_VERSION) && isAdmin) {
+      // Auto-seed only if the collection is completely empty
+      if (querySnapshot.empty && isAdmin && !isSeeding) {
+        isSeeding = true;
         import('../lib/seed').then(({ seedDatabase }) => {
           seedDatabase().then(() => {
-            localStorage.setItem('sp_seed_version', SEED_VERSION);
+            isSeeding = false;
           }).catch(err => {
             console.error('Auto-seed failed:', err);
+            isSeeding = false;
           });
         });
       }
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'products');
+      console.error('Firestore products sync error:', error);
+      // Don't throw to keep the app stable with cached data
     });
     return () => unsubscribe();
   }, [isAdmin]);
@@ -413,7 +516,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Coupon[];
       setCoupons(data);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'coupons');
+      console.error('Firestore coupons sync error:', error);
     });
     return () => unsubscribe();
   }, []);
@@ -427,7 +530,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as AuditLog[];
       setAuditLogs(data);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'auditLogs');
+      console.error('Firestore auditLogs sync error:', error);
     });
     return () => unsubscribe();
   }, [authUid, isAdmin]);
@@ -439,7 +542,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any as BroadcastNotification[];
       setBroadcastNotifications(data);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'broadcastNotifications');
+      console.error('Firestore broadcastNotifications sync error:', error);
     });
     return () => unsubscribe();
   }, []);
@@ -452,7 +555,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const data = snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() })) as any as AdminUser[];
       setAdmins(data);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'admins');
+      console.error('Firestore admins sync error:', error);
     });
     return () => unsubscribe();
   }, [authUid, isAdmin]);
@@ -465,7 +568,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setUsers(data);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'users');
+      console.error('Firestore users sync error:', error);
     });
     return () => unsubscribe();
   }, [authUid, isAdmin]);
@@ -476,7 +579,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as PromotionBanner[];
       setPromotionBanners(data);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'promotionBanners');
+      console.error('Firestore promotionBanners sync error:', error);
     });
     return () => unsubscribe();
   }, []);
@@ -487,7 +590,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Deal[];
       setDeals(data);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'deals');
+      console.error('Firestore deals sync error:', error);
     });
     return () => unsubscribe();
   }, []);
@@ -498,13 +601,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Bundle[];
       setBundles(data);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'bundles');
+      console.error('Firestore bundles sync error:', error);
     });
     return () => unsubscribe();
   }, []);
 
   // Initialize Auth session
   useEffect(() => {
+    // Set persistence to LOCAL to keep user logged in across sessions
+    setPersistence(auth, browserLocalPersistence).catch(console.error);
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         setAuthUid(user.uid);
@@ -521,7 +627,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     if (!authUid) {
       setIsAdmin(false);
-      localStorage.setItem('isAdmin', 'false');
       return;
     }
 
@@ -529,33 +634,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const hardcodedAdmins = ['saphosaung@gmail.com', 'yelwinaung9981@gmail.com'];
     if (userEmail && hardcodedAdmins.includes(userEmail)) {
       setIsAdmin(true);
-      localStorage.setItem('isAdmin', 'true');
     }
 
     const unsub = onSnapshot(doc(db, 'admins', authUid), (snap) => {
       if (snap.exists()) {
         setIsAdmin(true);
-        localStorage.setItem('isAdmin', 'true');
       } else if (userEmail && !hardcodedAdmins.includes(userEmail)) {
         setIsAdmin(false);
-        localStorage.setItem('isAdmin', 'false');
       }
     }, () => {
       // If permission denied, they are likely not an admin
       if (userEmail && !hardcodedAdmins.includes(userEmail)) {
         setIsAdmin(false);
-        localStorage.setItem('isAdmin', 'false');
       }
     });
 
     return () => unsub();
   }, [authUid, userEmail]);
-
-  // UID for data is derived from phone number for persistence across devices
-  const uid = useMemo(() => {
-    if (!userPhone) return null;
-    return userPhone.replace(/[^0-9]/g, '');
-  }, [userPhone]);
 
   const signInWithGoogle = async () => {
     try {
@@ -566,7 +661,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await signOut(auth);
     setUserName('');
     setUserPhone('');
     setRoomNumber('');
@@ -575,12 +671,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setUserEmail('');
     setUserBirthday('');
     setOrders([]);
+    setCart([]);
     localStorage.removeItem('sp_user_name');
     localStorage.removeItem('sp_user_phone');
     localStorage.removeItem('sp_room');
     localStorage.removeItem('sp_user_avatar');
     localStorage.removeItem('sp_user_email');
     localStorage.removeItem('sp_user_birthday');
+    localStorage.removeItem('sp_orders');
+    localStorage.removeItem('sp_points');
+    localStorage.removeItem('sp_cart');
+    setIsProfileLoaded(false);
+    auth.signOut();
   };
 
   const updateUserProfile = async (profile: {
@@ -634,8 +736,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Sync User Profile with Firestore using Phone Number as ID
   useEffect(() => {
-    if (!uid || !authUid) return;
+    if (!uid) {
+      setIsProfileLoaded(false);
+      return;
+    }
 
+    setIsProfileLoaded(false);
     const userDocRef = doc(db, 'users', uid);
     let unsubscribe: Unsubscribe | null = null;
 
@@ -646,7 +752,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           // Create initial profile if it doesn't exist
           await setDoc(userDocRef, {
             uid: uid, // Use phone-based UID
-            authUid: authUid, // Link to Firebase Auth UID
+            authUid: authUid || null, // Link to Firebase Auth UID if available
             name: userName,
             phone: userPhone,
             room: roomNumber,
@@ -655,29 +761,63 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             birthday: userBirthday,
             points: 0,
             tier: 'Bronze',
+            favorites: favorites,
             lastActive: serverTimestamp()
           }, { merge: true });
         } else {
-          // Update last active and ensure authUid is linked
-          await updateDoc(userDocRef, {
+          // Update last active and ensure authUid is linked if available
+          const data = docSnap.data();
+          const firestoreFavorites = data.favorites || [];
+          // Merge local favorites with firestore favorites
+          const mergedFavorites = Array.from(new Set([...firestoreFavorites, ...favorites]));
+          
+          const updateData: any = {
             lastActive: serverTimestamp(),
-            authUid: authUid
-          }).catch(() => {});
+            favorites: mergedFavorites,
+            name: userName || data.name // Auto-update name if a new one is provided
+          };
+          if (authUid) updateData.authUid = authUid;
+          
+          await updateDoc(userDocRef, updateData).catch(() => {});
         }
 
         unsubscribe = onSnapshot(userDocRef, (snap) => {
           if (snap.exists()) {
             const data = snap.data();
             setPoints(data.points || 0);
-            // Sync back to local if empty
-            if (!userName && data.name) setUserName(data.name);
-            if (!roomNumber && data.room) setRoomNumber(data.room);
-            if (!userAvatar && data.avatar) setUserAvatar(data.avatar);
-            if (!userEmail && data.email) setUserEmail(data.email);
-            if (!userBirthday && data.birthday) setUserBirthday(data.birthday);
+            // Sync back to local state from Firestore
+            if (data.name) {
+              setUserName(data.name);
+              localStorage.setItem('sp_user_name', data.name);
+            }
+            if (data.phone) {
+              setUserPhone(data.phone);
+              localStorage.setItem('sp_user_phone', data.phone);
+            }
+            if (data.room) {
+              setRoomNumber(data.room);
+              localStorage.setItem('sp_room', data.room);
+            }
+            if (data.avatar) {
+              setUserAvatar(data.avatar);
+              localStorage.setItem('sp_user_avatar', data.avatar);
+            }
+            if (data.email) {
+              setUserEmail(data.email);
+              localStorage.setItem('sp_user_email', data.email);
+            }
+            if (data.birthday) {
+              setUserBirthday(data.birthday);
+              localStorage.setItem('sp_user_birthday', data.birthday);
+            }
+            if (data.favorites) {
+              setFavorites(data.favorites);
+            }
           }
+          setIsProfileLoaded(true);
         }, (error) => {
           handleFirestoreError(error, OperationType.GET, `users/${uid}`);
+          setIsProfileLoaded(true);
         });
       } catch (error) {
         console.error("Profile sync error:", error);
@@ -706,16 +846,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Sync Orders from Firestore
   useEffect(() => {
-    if (!uid || !authUid) return;
+    if (!uid) return;
 
-    // If admin, show all orders. If user, show only their orders.
+    // If admin, show all orders. If user, show only their orders based on phone UID.
     let ordersQuery;
     if (isAdmin) {
       ordersQuery = query(collection(db, 'orders'));
     } else {
       ordersQuery = query(
         collection(db, 'orders'), 
-        where('authUid', '==', authUid)
+        where('uid', '==', uid)
       );
     }
 
@@ -817,7 +957,55 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [darkMode, setDarkMode] = useState(() => {
     return localStorage.getItem('sp_dark_mode') === 'true';
   });
+
+  // Persist favorites to localStorage
+  useEffect(() => {
+    localStorage.setItem('sp_favorites', JSON.stringify(favorites));
+  }, [favorites]);
+
+  // Persist notifications to localStorage
+  useEffect(() => {
+    localStorage.setItem('sp_notifications', JSON.stringify(notifications));
+  }, [notifications]);
+
+  // Persist settings to localStorage
+  useEffect(() => {
+    localStorage.setItem('sp_email_enabled', emailNotificationsEnabled.toString());
+  }, [emailNotificationsEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('sp_2fa_enabled', twoFactorEnabled.toString());
+  }, [twoFactorEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('sp_biometric_enabled', biometricEnabled.toString());
+  }, [biometricEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('sp_data_sharing_enabled', dataSharingEnabled.toString());
+  }, [dataSharingEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('sp_stealth_mode_enabled', stealthModeEnabled.toString());
+  }, [stealthModeEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('sp_payment_methods', JSON.stringify(paymentMethods));
+  }, [paymentMethods]);
+
+  useEffect(() => {
+    localStorage.setItem('sp_language', language);
+  }, [language]);
+
+  useEffect(() => {
+    localStorage.setItem('sp_currency', currency);
+  }, [currency]);
+
+  useEffect(() => {
+    localStorage.setItem('sp_dark_mode', darkMode.toString());
+  }, [darkMode]);
   const [isDeliveryEnabled, setIsDeliveryEnabledState] = useState(true);
+  const [isLowStockAlertEnabled, setIsLowStockAlertEnabledState] = useState(true);
   const [cutoffTime, setCutoffTimeState] = useState('06:00');
 
   // Sync settings from Firestore
@@ -826,6 +1014,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (snap.exists()) {
         const data = snap.data();
         setIsDeliveryEnabledState(data.enabled ?? true);
+        setIsLowStockAlertEnabledState(data.lowStockAlertsEnabled ?? true);
         setCutoffTimeState(data.cutoffTime ?? '06:00');
         setEstimatedDeliveryTimeState(data.estimatedDeliveryTime ?? '8:00 AM - 10:00 AM');
       }
@@ -842,6 +1031,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     try {
       await setDoc(doc(db, 'settings', 'delivery'), { enabled }, { merge: true });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'settings/delivery');
+    }
+  };
+
+  const setIsLowStockAlertEnabled = async (enabled: boolean) => {
+    if (!authUid) return;
+    try {
+      await setDoc(doc(db, 'settings', 'delivery'), { lowStockAlertsEnabled: enabled }, { merge: true });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'settings/delivery');
     }
@@ -889,104 +1087,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return { date: dateStr, isToday };
   };
 
-  useEffect(() => {
-    localStorage.setItem('sp_user_name', userName);
-  }, [userName]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_user_avatar', userAvatar);
-  }, [userAvatar]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_user_email', userEmail);
-  }, [userEmail]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_user_birthday', userBirthday);
-  }, [userBirthday]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_user_phone', userPhone);
-  }, [userPhone]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_room', roomNumber);
-  }, [roomNumber]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_orders', JSON.stringify(orders));
-  }, [orders]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_points', points.toString());
-  }, [points]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_support_number', supportNumber);
-  }, [supportNumber]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_bank_name', bankName);
-  }, [bankName]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_bank_acc_num', bankAccountNumber);
-  }, [bankAccountNumber]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_bank_acc_name', bankAccountName);
-  }, [bankAccountName]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_favorites', JSON.stringify(favorites));
-  }, [favorites]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_notifications', JSON.stringify(notifications));
-  }, [notifications]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_email_enabled', emailNotificationsEnabled.toString());
-  }, [emailNotificationsEnabled]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_2fa_enabled', twoFactorEnabled.toString());
-  }, [twoFactorEnabled]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_biometric_enabled', biometricEnabled.toString());
-  }, [biometricEnabled]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_data_sharing_enabled', dataSharingEnabled.toString());
-  }, [dataSharingEnabled]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_stealth_mode_enabled', stealthModeEnabled.toString());
-  }, [stealthModeEnabled]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_payment_methods', JSON.stringify(paymentMethods));
-  }, [paymentMethods]);
-
-  useEffect(() => {
-    console.log('StoreContext: Language state changed to:', language);
-    localStorage.setItem('sp_language', language);
-  }, [language]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_currency', currency);
-  }, [currency]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_dark_mode', darkMode.toString());
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [darkMode]);
-
   const addToCart = (item: Omit<CartItem, 'quantity'>) => {
     setCart(prev => {
       const existing = prev.find(i => i.id === item.id);
@@ -998,6 +1098,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const updateQuantity = (id: string, delta: number) => {
     setCart(prev => prev.map(i => i.id === id ? { ...i, quantity: Math.max(0, i.quantity + delta) } : i).filter(i => i.quantity > 0));
   };
+
+  const clearCart = () => {
+    setCart([]);
+    localStorage.removeItem('sp_cart');
+  };
+
+  // Persist cart to localStorage
+  useEffect(() => {
+    if (cart.length > 0) {
+      localStorage.setItem('sp_cart', JSON.stringify(cart));
+    } else {
+      localStorage.removeItem('sp_cart');
+    }
+  }, [cart]);
 
   const cartTotal = useMemo(() => cart.reduce((acc, item) => acc + (item.price * item.quantity), 0), [cart]);
 
@@ -1062,7 +1176,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const orderPhoneId = details.phone.replace(/[^0-9]/g, '');
     if (!orderPhoneId) return null;
     
-    // Generate a more unique order ID to prevent collisions which cause Permission Denied on update
+    // Generate a more unique order ID
     const orderId = `SP-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 1000)}`;
     const earnedPoints = Math.floor(cartTotal * 10);
     const { date: deliveryDate, isToday } = getDeliveryDate();
@@ -1070,10 +1184,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const orderData = {
       id: orderId,
       uid: orderPhoneId,
-      authUid: authUid, // Link to Firebase Auth UID
+      authUid: authUid,
       roomNumber: details.room,
-      address: details.address,
-      items: [...cart], // Clone cart
+      address: details.address || null,
+      items: [...cart],
       total: cartTotal - details.pointDiscount,
       pointDiscount: details.pointDiscount,
       pointsUsed: details.pointsUsed,
@@ -1089,91 +1203,67 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     try {
-      let timeoutId: NodeJS.Timeout;
-      // Create a promise that rejects after 30 seconds
-      const timeoutPromise = new Promise((_, reject) => {
-        timeoutId = setTimeout(() => reject(new Error('Request timed out. Please check your connection.')), 30000);
+      // 1. Update local state immediately for responsiveness
+      if (!userPhone || userPhone !== details.phone) {
+        setUserPhone(details.phone);
+        localStorage.setItem('sp_user_phone', details.phone);
+      }
+      if (!userName || userName !== details.name) {
+        setUserName(details.name);
+        localStorage.setItem('sp_user_name', details.name);
+      }
+      if (!roomNumber || roomNumber !== details.room) {
+        setRoomNumber(details.room);
+        localStorage.setItem('sp_room', details.room);
+      }
+
+      const batch = writeBatch(db);
+      
+      // 2. Update/Create User Profile
+      const userDocRef = doc(db, 'users', orderPhoneId);
+      const userUpdate: any = {
+        uid: orderPhoneId,
+        name: details.name,
+        phone: details.phone,
+        room: details.room,
+        cart: [], // Clear cart in Firestore
+        lastActive: serverTimestamp()
+      };
+      
+      if (authUid) userUpdate.authUid = authUid;
+      if (details.pointsUsed > 0) userUpdate.points = increment(-details.pointsUsed);
+      
+      batch.set(userDocRef, userUpdate, { merge: true });
+
+      // 3. Create Order
+      const orderRef = doc(db, 'orders', orderId);
+      batch.set(orderRef, orderData);
+
+      // 4. Update Product Stock (Atomic in the same batch)
+      const mergedCartItems = cart.reduce((acc, item) => {
+        if (acc[item.id]) {
+          acc[item.id].quantity += item.quantity;
+        } else {
+          acc[item.id] = { ...item };
+        }
+        return acc;
+      }, {} as Record<string, CartItem>);
+
+      Object.values(mergedCartItems).forEach((item: CartItem) => {
+        const productRef = doc(db, 'products', item.id);
+        batch.update(productRef, {
+          stock: increment(-item.quantity)
+        });
       });
 
-      const placeOrderPromise = async () => {
-        // Update local state if not set or changed
-        if (!userPhone || userPhone !== details.phone) {
-          setUserPhone(details.phone);
-          localStorage.setItem('sp_user_phone', details.phone);
-        }
-        if (!userName || userName !== details.name) {
-          setUserName(details.name);
-          localStorage.setItem('sp_user_name', details.name);
-        }
-        if (!roomNumber || roomNumber !== details.room) {
-          setRoomNumber(details.room);
-          localStorage.setItem('sp_room', details.room);
-        }
+      // Commit the batch - this is a single network request
+      await batch.commit();
 
-        const userDocRef = doc(db, 'users', orderPhoneId);
-        const userUpdate: any = {
-          uid: orderPhoneId,
-          name: details.name,
-          phone: details.phone,
-          room: details.room,
-          lastActive: serverTimestamp()
-        };
-        
-        if (authUid) {
-          userUpdate.authUid = authUid;
-        }
-
-        if (details.pointsUsed > 0) {
-          userUpdate.points = increment(-details.pointsUsed);
-        }
-
-        try {
-          await setDoc(userDocRef, userUpdate, { merge: true });
-        } catch (userError: any) {
-          console.warn("Could not update user profile:", userError);
-          if (details.pointsUsed > 0) {
-            throw new Error("Permission Error: Cannot use points. Please log in if this is your account.");
-          }
-          // Continue placing order without updating user profile
-        }
-
-        const orderPromise = setDoc(doc(db, 'orders', orderId), orderData);
-        
-        // Merge cart items by ID to prevent concurrent updateDoc calls on the same document
-        const mergedCartItems = cart.reduce((acc, item) => {
-          if (acc[item.id]) {
-            acc[item.id].quantity += item.quantity;
-          } else {
-            acc[item.id] = { ...item };
-          }
-          return acc;
-        }, {} as Record<string, any>);
-
-        // Decrement stock for each item in parallel
-        const stockPromises = Object.values(mergedCartItems).map(item => {
-          const productRef = doc(db, 'products', item.id);
-          return updateDoc(productRef, {
-            stock: increment(-item.quantity)
-          }).catch(stockError => {
-            console.warn(`Could not update stock for ${item.id}:`, stockError);
-          });
-        });
-        
-        await Promise.all([orderPromise, ...stockPromises]);
-
-        return orderData;
-      };
-
-      const result = await Promise.race([placeOrderPromise(), timeoutPromise]);
-      clearTimeout(timeoutId!);
-
-      // Immediate UI updates
+      // 5. Post-success UI updates
       setCart([]);
-      
-      // Add to local orders state immediately (crucial for guest users who don't have onSnapshot access)
       const newOrderForState: Order = {
         ...orderData,
-        createdAt: Date.now() // Override serverTimestamp for local state
+        createdAt: Date.now()
       } as Order;
       setOrders(prev => [newOrderForState, ...prev]);
 
@@ -1184,10 +1274,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         type: 'order'
       });
 
-      return result;
+      return orderData;
     } catch (error: any) {
       console.error("Error placing order:", error);
-      // Throw the error so CheckoutPage can catch it and show the message
+      
+      // Handle specific permission errors gracefully
+      if (error?.message?.includes('permission') || error?.code === 'permission-denied') {
+        throw new Error("Permission Denied: If you have an account, please log in. Otherwise, please check your network.");
+      }
+      
       throw error;
     }
   };
@@ -1315,6 +1410,60 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
     } catch (error) {
       console.error("Error cancelling order:", error);
+    }
+  };
+
+  const reorder = async (order: Order): Promise<{ success: boolean; message?: string }> => {
+    try {
+      const itemsToAdd: CartItem[] = [];
+      const outOfStockItems: string[] = [];
+
+      for (const item of order.items) {
+        const product = products.find(p => p.id === item.id);
+        if (product && product.stock >= item.quantity) {
+          itemsToAdd.push({
+            ...item,
+            price: product.price // Use current price
+          });
+        } else {
+          outOfStockItems.push(item.name);
+        }
+      }
+
+      if (itemsToAdd.length === 0) {
+        return { 
+          success: false, 
+          message: language === 'mm' ? 'ပစ္စည်းအားလုံး လက်ကျန်မရှိတော့ပါ။' : 'All items are currently out of stock.' 
+        };
+      }
+
+      // Add items to cart
+      setCart(prev => {
+        const newCart = [...prev];
+        itemsToAdd.forEach(item => {
+          const existing = newCart.find(i => i.id === item.id);
+          if (existing) {
+            existing.quantity += item.quantity;
+          } else {
+            newCart.push(item);
+          }
+        });
+        return newCart;
+      });
+
+      if (outOfStockItems.length > 0) {
+        return { 
+          success: true, 
+          message: language === 'mm' 
+            ? `${outOfStockItems.join(', ')} တို့မှာ လက်ကျန်မရှိတော့သဖြင့် ကျန်ရှိသောပစ္စည်းများကိုသာ Cart ထဲသို့ ထည့်ပေးထားပါသည်။` 
+            : `Some items (${outOfStockItems.join(', ')}) are out of stock and were skipped.` 
+        };
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error("Error reordering:", error);
+      return { success: false, message: 'An error occurred while reordering.' };
     }
   };
 
@@ -1463,9 +1612,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     
     try {
       await setDoc(doc(db, 'products', productId), newProduct);
+      await logAudit('add_product', 'product', `Added product ${product.name}`);
     } catch (error) {
       console.error("Error adding product:", error);
-      // Re-sync will happen via onSnapshot
+    }
+  };
+
+  const updateProduct = async (id: string, updates: Partial<Product>) => {
+    try {
+      await updateDoc(doc(db, 'products', id), updates);
+      await logAudit('update_product', 'product', `Updated product ${id}`);
+    } catch (error) {
+      console.error("Error updating product:", error);
     }
   };
 
@@ -1571,10 +1729,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       await setDoc(doc(db, 'users', uid, 'addresses', addressId), newAddress);
       toast.success(translations[language === 'mm' ? 'mm' : 'en'].addressSaved || 'Address saved successfully');
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error adding address:", error);
       setAddresses(previousAddresses); // Rollback
-      toast.error('Failed to save address. Please try again.');
+      
+      const isPermissionError = error?.message?.includes('permission') || error?.code === 'permission-denied';
+      const t = (key: string) => (translations[language] as any)[key] || key;
+      
+      if (isPermissionError) {
+        toast.error(t('errorAddingAddress') + ': Permission Denied. If you have an account, please log in.');
+      } else {
+        toast.error(t('errorAddingAddress') || 'Failed to save address. Please try again.');
+      }
+      
       handleFirestoreError(error, OperationType.WRITE, `users/${uid}/addresses/${addressId}`);
     }
   };
@@ -1604,10 +1771,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
       await updateDoc(doc(db, 'users', uid, 'addresses', id), address);
       toast.success(translations[language === 'mm' ? 'mm' : 'en'].addressUpdated || 'Address updated successfully');
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating address:", error);
       setAddresses(previousAddresses); // Rollback
-      toast.error('Failed to update address.');
+      
+      const isPermissionError = error?.message?.includes('permission') || error?.code === 'permission-denied';
+      const t = (key: string) => (translations[language] as any)[key] || key;
+      
+      if (isPermissionError) {
+        toast.error(t('errorUpdatingAddress') + ': Permission Denied. If you have an account, please log in.');
+      } else {
+        toast.error(t('errorUpdatingAddress') || 'Failed to update address.');
+      }
+      
       handleFirestoreError(error, OperationType.UPDATE, `users/${uid}/addresses/${id}`);
     }
   };
@@ -1664,6 +1840,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       cart, 
       addToCart, 
       updateQuantity, 
+      clearCart,
       cartTotal, 
       userName,
       setUserName,
@@ -1690,6 +1867,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       placeOrder, 
       updateOrderStatus,
       cancelOrder,
+      reorder,
       favorites,
       toggleFavorite,
       notifications,
@@ -1764,6 +1942,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setDarkMode,
       isDeliveryEnabled,
       setIsDeliveryEnabled,
+      isLowStockAlertEnabled,
+      setIsLowStockAlertEnabled,
       cutoffTime,
       setCutoffTime,
       estimatedDeliveryTime,
@@ -1775,6 +1955,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       authUid,
       products,
       addProduct,
+      updateProduct,
       deleteProduct,
       addresses,
       addAddress,
@@ -1783,6 +1964,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setDefaultAddress,
       selectedAddressId,
       setSelectedAddressId,
+      categories,
+      updateCategory,
+      addCategory,
+      deleteCategory,
       promotionBanners,
       deals,
       bundles,
@@ -1810,7 +1995,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       removeAdmin,
       users,
       updateUserPoints,
-      isAdmin
+      isAdmin,
+      isProfileLoaded
     }}>
       {children}
     </StoreContext.Provider>

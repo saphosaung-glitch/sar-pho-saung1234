@@ -3,9 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { HashRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { HashRouter, Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { useEffect } from 'react';
-import { StoreProvider } from './context/StoreContext';
+import { Toaster } from 'sonner';
+import { StoreProvider, useStore } from './context/StoreContext';
 import RegistrationPage from './pages/RegistrationPage';
 import WelcomePage from './pages/WelcomePage';
 import MenuPage from './pages/MenuPage';
@@ -32,6 +33,11 @@ import AddAddressPage from './pages/AddAddressPage';
 import DealsPage from './pages/DealsPage';
 import DealDetailPage from './pages/DealDetailPage';
 
+function AdminRoute({ children }: { children: JSX.Element }) {
+  const { isAdmin } = useStore();
+  return isAdmin ? children : <Navigate to="/admin-login" replace />;
+}
+
 function ScrollToTop() {
   const { pathname } = useLocation();
   useEffect(() => {
@@ -40,41 +46,66 @@ function ScrollToTop() {
   return null;
 }
 
-import { Toaster } from 'sonner';
+function ProtectedRoute({ children }: { children: JSX.Element }) {
+  const { userName, userPhone } = useStore();
+  const location = useLocation();
+  
+  // If user hasn't registered (no name or phone), redirect to registration
+  if (!userName || !userPhone) {
+    return <Navigate to="/registration" state={{ from: location }} replace />;
+  }
+  
+  return children;
+}
+
+function ThemeHandler() {
+  const { darkMode } = useStore();
+  
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [darkMode]);
+  
+  return null;
+}
 
 export default function App() {
   return (
     <StoreProvider>
+      <ThemeHandler />
       <Toaster position="top-center" expand={false} richColors />
       <HashRouter>
         <ScrollToTop />
         <Routes>
           <Route path="/" element={<WelcomePage />} />
           <Route path="/registration" element={<RegistrationPage />} />
-          <Route path="/menu" element={<MenuPage />} />
-          <Route path="/deals" element={<DealsPage />} />
-          <Route path="/deals/type/:type" element={<DealsPage />} />
-          <Route path="/deals/:id" element={<DealDetailPage />} />
-          <Route path="/search" element={<SearchPage />} />
-          <Route path="/checkout" element={<CheckoutPage />} />
-          <Route path="/success" element={<SuccessPage />} />
-          <Route path="/orders" element={<OrdersPage />} />
-          <Route path="/orders/:id" element={<OrderDetailPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/edit-profile" element={<EditProfilePage />} />
-          <Route path="/help-center" element={<HelpCenterPage />} />
-          <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
-          <Route path="/about-us" element={<AboutUsPage />} />
-          <Route path="/points" element={<PointsPage />} />
-          <Route path="/favorites" element={<FavoritesPage />} />
-          <Route path="/notifications" element={<NotificationsPage />} />
-          <Route path="/payment-methods" element={<PaymentMethodsPage />} />
-          <Route path="/security" element={<SecurityPage />} />
-          <Route path="/address-management" element={<AddressManagementPage />} />
-          <Route path="/add-address" element={<AddAddressPage />} />
+          <Route path="/menu" element={<ProtectedRoute><MenuPage /></ProtectedRoute>} />
+          <Route path="/deals" element={<ProtectedRoute><DealsPage /></ProtectedRoute>} />
+          <Route path="/deals/type/:type" element={<ProtectedRoute><DealsPage /></ProtectedRoute>} />
+          <Route path="/deals/:id" element={<ProtectedRoute><DealDetailPage /></ProtectedRoute>} />
+          <Route path="/search" element={<ProtectedRoute><SearchPage /></ProtectedRoute>} />
+          <Route path="/checkout" element={<ProtectedRoute><CheckoutPage /></ProtectedRoute>} />
+          <Route path="/success" element={<ProtectedRoute><SuccessPage /></ProtectedRoute>} />
+          <Route path="/orders" element={<ProtectedRoute><OrdersPage /></ProtectedRoute>} />
+          <Route path="/orders/:id" element={<ProtectedRoute><OrderDetailPage /></ProtectedRoute>} />
+          <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+          <Route path="/edit-profile" element={<ProtectedRoute><EditProfilePage /></ProtectedRoute>} />
+          <Route path="/help-center" element={<ProtectedRoute><HelpCenterPage /></ProtectedRoute>} />
+          <Route path="/privacy-policy" element={<ProtectedRoute><PrivacyPolicyPage /></ProtectedRoute>} />
+          <Route path="/about-us" element={<ProtectedRoute><AboutUsPage /></ProtectedRoute>} />
+          <Route path="/points" element={<ProtectedRoute><PointsPage /></ProtectedRoute>} />
+          <Route path="/favorites" element={<ProtectedRoute><FavoritesPage /></ProtectedRoute>} />
+          <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
+          <Route path="/payment-methods" element={<ProtectedRoute><PaymentMethodsPage /></ProtectedRoute>} />
+          <Route path="/security" element={<ProtectedRoute><SecurityPage /></ProtectedRoute>} />
+          <Route path="/address-management" element={<ProtectedRoute><AddressManagementPage /></ProtectedRoute>} />
+          <Route path="/add-address" element={<ProtectedRoute><AddAddressPage /></ProtectedRoute>} />
           <Route path="/setup-admin" element={<SetupAdminPage />} />
           <Route path="/admin-login" element={<AdminLoginPage />} />
-          <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
         </Routes>
       </HashRouter>
     </StoreProvider>

@@ -168,9 +168,10 @@
         "action": { "type": "string" },
         "target": { "type": "string" },
         "details": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time" },
+        "timestamp": { "type": "number" }
       },
-      "required": ["id", "adminId", "action", "createdAt"]
+      "required": ["id", "adminId", "action", "createdAt", "timestamp"]
     },
     "BroadcastNotification": {
       "title": "BroadcastNotification",
@@ -198,6 +199,18 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["uid", "email", "role"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "A product category.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "key": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "order": { "type": "number" }
+      },
+      "required": ["id", "key", "isActive", "order"]
     }
   },
   "firestore": {
@@ -248,6 +261,10 @@
     "/admins/{uid}": {
       "schema": { "$ref": "Admin" },
       "description": "Admin users and roles."
+    },
+    "/categories/{categoryId}": {
+      "schema": { "$ref": "Category" },
+      "description": "Product categories."
     }
   }
 }

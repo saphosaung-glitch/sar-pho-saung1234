@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../context/StoreContext';
-import { ChevronLeft, Heart, Plus, ShoppingCart, Search } from 'lucide-react';
+import { ChevronLeft, Heart, Plus, ShoppingCart, Search, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
 export default function FavoritesPage() {
-  const { favorites, toggleFavorite, addToCart, cart, cartTotal, t, darkMode, formatPrice, getMainName, getSecondaryName } = useStore();
+  const { favorites, toggleFavorite, addToCart, cart, cartTotal, clearCart, t, darkMode, formatPrice, getMainName, getSecondaryName } = useStore();
   const navigate = useNavigate();
   const [products, setProducts] = useState<any[]>([]);
 
@@ -109,23 +109,32 @@ export default function FavoritesPage() {
             className="fixed bottom-8 left-0 right-0 px-4 z-40"
           >
             <div className={`backdrop-blur-2xl rounded-2xl p-3 flex items-center justify-between shadow-lg border border-primary/10 ${darkMode ? 'bg-surface-container-high/90' : 'bg-surface-container-lowest/90'}`}>
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-md shadow-primary/20">
-                  <ShoppingCart className="text-white" size={18} />
+              <div className="flex items-center gap-2 overflow-hidden">
+                <div className="w-9 h-9 shrink-0 bg-primary rounded-xl flex items-center justify-center shadow-md shadow-primary/20">
+                  <ShoppingCart className="text-white" size={16} />
                 </div>
-                <div className="flex flex-col">
-                  <span className="text-on-surface-variant text-[9px] font-black uppercase tracking-[0.2em] leading-none mb-1">{t('yourSelection')}</span>
-                  <span className="text-on-surface text-sm font-black tracking-tighter">
+                <div className="flex flex-col overflow-hidden whitespace-nowrap">
+                  <span className="text-on-surface-variant text-[9px] font-black uppercase tracking-[0.2em] leading-none mb-1 truncate">{t('yourSelection')}</span>
+                  <span className="text-on-surface text-sm font-black tracking-tighter truncate">
                     {cart.reduce((a,b) => a + b.quantity, 0)} {t('items')} | {formatPrice(cartTotal)}
                   </span>
                 </div>
               </div>
-              <button 
-                onClick={() => navigate('/checkout')}
-                className="bg-primary text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-md shadow-primary/20"
-              >
-                {t('checkout')}
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button 
+                  onClick={() => clearCart()}
+                  className="w-9 h-9 shrink-0 flex items-center justify-center rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 active:scale-95 transition-all"
+                  aria-label="Clear Cart"
+                >
+                  <Trash2 size={16} />
+                </button>
+                <button 
+                  onClick={() => navigate('/checkout')}
+                  className="bg-primary shrink-0 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-md shadow-primary/20 whitespace-nowrap"
+                >
+                  {t('checkout')}
+                </button>
+              </div>
             </div>
           </motion.div>
         )}

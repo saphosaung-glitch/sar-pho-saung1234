@@ -1,18 +1,21 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword } from 'firebase/auth';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDocFromServer } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache, doc, getDocFromServer } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase SDK
 console.log("Initializing Firebase with project:", firebaseConfig.projectId);
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firestore with offline persistence enabled
+// Initialize Firestore with memory cache to avoid lease errors in iframe environment
 export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+  localCache: memoryLocalCache()
 }, firebaseConfig.firestoreDatabaseId);
 
 export const auth = getAuth(app);
+// Explicitly pass the storage bucket to ensure it's correctly initialized
+export const storage = getStorage(app, firebaseConfig.storageBucket ? `gs://${firebaseConfig.storageBucket}` : undefined);
 export { signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword };
 
 export enum OperationType {

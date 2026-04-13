@@ -1,14 +1,16 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useStore } from '../context/StoreContext';
-import { ChevronLeft, Package, Clock, CheckCircle2, XCircle, AlertCircle, ChevronRight } from 'lucide-react';
+import { ChevronLeft, Package, Clock, CheckCircle2, XCircle, AlertCircle, ChevronRight, RotateCcw } from 'lucide-react';
 import { motion } from 'motion/react';
+import { toast } from 'sonner';
 
 export default function OrdersPage() {
-  const { orders, t, darkMode, formatPrice } = useStore();
+  const { orders, t, darkMode, formatPrice, reorder } = useStore();
   const navigate = useNavigate();
   const location = useLocation();
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [reorderingId, setReorderingId] = useState<string | null>(null);
 
   const handleBack = () => {
     if (location.state?.from === 'success') {
@@ -17,6 +19,24 @@ export default function OrdersPage() {
       navigate('/profile');
     } else {
       navigate(-1);
+    }
+  };
+
+  const handleReorder = async (e: React.MouseEvent, order: any) => {
+    e.stopPropagation();
+    setReorderingId(order.id);
+    const result = await reorder(order);
+    setReorderingId(null);
+    
+    if (result.success) {
+      if (result.message) {
+        toast.info(result.message);
+      } else {
+        toast.success(t('addedToCart'));
+      }
+      navigate('/checkout');
+    } else {
+      toast.error(result.message || 'Failed to reorder');
     }
   };
 
@@ -108,9 +128,23 @@ export default function OrdersPage() {
                   </div>
 
                   <div className="flex items-center justify-between pt-3 border-t border-on-surface/5">
-                    <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-lg border ${getStatusColor(order.status)}`}>
-                      {t(order.status?.toLowerCase()) || order.status}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-lg border ${getStatusColor(order.status)}`}>
+                        {t(order.status?.toLowerCase()) || order.status}
+                      </span>
+                      <button
+                        onClick={(e) => handleReorder(e, order)}
+                        disabled={reorderingId === order.id}
+                        className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50 ${darkMode ? 'bg-primary/10 text-primary border-primary/20' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}
+                      >
+                        {reorderingId === order.id ? (
+                          <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <RotateCcw size={12} />
+                        )}
+                        {t('reorder')}
+                      </button>
+                    </div>
                     <div className="flex items-center gap-1 text-on-surface-variant">
                       <span className="text-[10px] font-bold">{t('viewDetails')}</span>
                       <ChevronRight size={14} />

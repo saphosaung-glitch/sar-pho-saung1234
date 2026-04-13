@@ -47,6 +47,7 @@ export default function CheckoutPage() {
   const finalTotal = cartTotal - pointsDiscount;
   const [isUploading, setIsUploading] = useState(false);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
   const [receiptUploaded, setReceiptUploaded] = useState(false);
   const [copied, setCopied] = useState(false);
   
@@ -70,6 +71,12 @@ export default function CheckoutPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (cart.length === 0) return;
+    
+    // Validation for Delivery Address
+    if (!selectedAddress) {
+      toast.error(t('pleaseSelectAddress') || 'Please select a delivery address');
+      return;
+    }
 
     // Validation for Bank Transfer
     if (paymentMethod === 'Bank' && !receiptUploaded) {
@@ -93,7 +100,10 @@ export default function CheckoutPage() {
           pointsUsed: usePoints ? pointsToUse : 0
         });
         if (order && typeof order === 'object') {
-          navigate(`/success?id=${order.id}`, { state: { order } });
+          setShowSuccessOverlay(true);
+          setTimeout(() => {
+            navigate(`/success?id=${order.id}`, { state: { order } });
+          }, 1500);
         } else {
           toast.error(t('orderFailed') + ' (Please check your connection or login status)');
         }
@@ -639,6 +649,43 @@ export default function CheckoutPage() {
           </div>
         </div>
       )}
+
+      {/* Success Animation Overlay */}
+      <AnimatePresence>
+        {showSuccessOverlay && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-primary flex flex-col items-center justify-center text-white"
+          >
+            <motion.div
+              initial={{ scale: 0, rotate: -180 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+              className="w-24 h-24 bg-white rounded-full flex items-center justify-center mb-6 shadow-2xl"
+            >
+              <Check size={48} className="text-primary" strokeWidth={4} />
+            </motion.div>
+            <motion.h2 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="text-2xl font-black tracking-tight"
+            >
+              {t('orderSuccessful')}
+            </motion.h2>
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.4 }}
+              className="text-white/70 font-bold mt-2"
+            >
+              {t('redirecting') || 'Redirecting to success page...'}
+            </motion.p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
