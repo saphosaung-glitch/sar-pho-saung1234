@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import React, { useEffect } from 'react';
 import { HashRouter, Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom';
-import { useEffect } from 'react';
 import { Toaster } from 'sonner';
 import { StoreProvider, useStore } from './context/StoreContext';
 import RegistrationPage from './pages/RegistrationPage';
@@ -33,7 +33,7 @@ import AddAddressPage from './pages/AddAddressPage';
 import DealsPage from './pages/DealsPage';
 import DealDetailPage from './pages/DealDetailPage';
 
-function AdminRoute({ children }: { children: JSX.Element }) {
+function AdminRoute({ children }: { children: React.ReactNode }) {
   const { isAdmin } = useStore();
   return isAdmin ? children : <Navigate to="/admin-login" replace />;
 }
@@ -46,7 +46,7 @@ function ScrollToTop() {
   return null;
 }
 
-function ProtectedRoute({ children }: { children: JSX.Element }) {
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { userName, userPhone } = useStore();
   const location = useLocation();
   

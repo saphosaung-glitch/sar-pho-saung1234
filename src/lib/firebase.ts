@@ -46,9 +46,19 @@ export interface FirestoreErrorInfo {
   }
 }
 
+let isQuotaExceeded = false;
+
+export function getIsQuotaExceeded() {
+  return isQuotaExceeded;
+}
+
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  if (errorMessage.includes('resource-exhausted')) {
+    isQuotaExceeded = true;
+  }
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errorMessage,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,

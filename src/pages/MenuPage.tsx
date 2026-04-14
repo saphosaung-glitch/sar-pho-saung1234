@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useStore } from '../context/StoreContext';
 import { ShoppingCart, Search, Menu as MenuIcon, Plus, Store, Receipt, User, Settings, X, Sliders, Camera, Heart, Bell, Trash2, CheckCircle2, Sparkles } from 'lucide-react';
+import { AddToCartButton } from '../components/AddToCartButton';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, onSnapshot, query, orderBy, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -171,20 +172,20 @@ export default function MenuPage() {
 
         {/* Search Bar */}
         <div ref={searchBoxRef} className="px-4 -mt-2 cursor-pointer" onClick={() => navigate('/search')}>
-          <div className={`relative pointer-events-none flex items-center rounded-2xl shadow-sm border border-on-surface/5 transition-all ${darkMode ? 'bg-surface-container-high' : 'bg-surface-container-lowest'}`}>
-            <div className="pl-4 text-on-surface-variant/50">
-              <Search size={18} />
+          <div className={`relative pointer-events-none flex items-center rounded-full shadow-sm border border-on-surface/5 transition-all ${darkMode ? 'bg-surface-container-high' : 'bg-surface-container-lowest'}`}>
+            <div className="pl-5 text-on-surface-variant/50">
+              <Search size={16} />
             </div>
             <input 
               type="text"
               placeholder={t('searchPlaceholder')}
               readOnly
-              className="w-full bg-transparent py-3 pl-3 pr-4 text-sm font-medium outline-none text-on-surface"
+              className="w-full bg-transparent py-2.5 pl-3 pr-4 text-xs font-medium outline-none text-on-surface"
             />
-            <div className="flex items-center gap-2 pr-4 text-on-surface-variant/50">
-              <Sliders size={18} />
-              <div className="w-[1px] h-4 bg-on-surface-variant/20" />
-              <Camera size={18} />
+            <div className="flex items-center gap-2 pr-5 text-on-surface-variant/50">
+              <Sliders size={16} />
+              <div className="w-[1px] h-3 bg-on-surface-variant/20" />
+              <Camera size={16} />
             </div>
           </div>
         </div>
@@ -229,10 +230,14 @@ export default function MenuPage() {
         {/* Product Grid */}
         <section ref={productGridRef} className="mt-1 px-4 min-h-[70vh] scroll-mt-[104px]">
           <div className="flex items-baseline justify-between mb-2">
-            <h3 className="text-base font-black text-on-surface tracking-tighter">
-              {selectedCategory === 'deals' ? 'Daily Deals' : selectedCategory === 'bundles' ? 'Bundles' : t('dailyEssentials')}
+            <h3 className={`text-base font-black tracking-tighter ${darkMode ? 'text-on-surface-variant' : 'text-on-surface-variant'}`}>
+              {selectedCategory === 'all' 
+                ? t('all') 
+                : (activeCategories.find(c => c.id === selectedCategory)?.key 
+                    ? t(activeCategories.find(c => c.id === selectedCategory)!.key) 
+                    : t('dailyEssentials'))}
             </h3>
-            <span className="text-[9px] font-bold text-on-surface-variant/60 uppercase tracking-widest">
+            <span className="text-[9px] font-bold text-on-surface-variant/40 uppercase tracking-widest">
               {filteredItems.length} {t('items')}
             </span>
           </div>
@@ -265,11 +270,18 @@ export default function MenuPage() {
                       </button>
                     )}
                     <img 
-                      className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110" 
+                      className={`w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 ${item.isAvailable === false ? 'opacity-50' : ''}`} 
                       src={item.image} 
                       alt={item.name || item.title}
                       referrerPolicy="no-referrer"
                     />
+                    {item.isAvailable === false && (
+                      <div className="absolute inset-0 flex items-center justify-center z-20">
+                        <div className="bg-black/70 px-3 py-1 rounded-lg">
+                          <span className="text-white font-black text-[10px] uppercase tracking-widest">Sold Out</span>
+                        </div>
+                      </div>
+                    )}
                     {item.isDeal && (
                       <div className="absolute top-2 left-2 px-2 py-0.5 bg-rose-500 text-white text-[8px] font-black uppercase tracking-widest rounded-lg shadow-lg">Deal</div>
                     )}
@@ -280,7 +292,7 @@ export default function MenuPage() {
                   </div>
 
                   {/* Content Section */}
-                  <div className="p-3.5 flex flex-col flex-1 justify-between gap-2">
+                  <div className="p-2 flex flex-col flex-1 justify-between gap-1">
                     <div className="space-y-1">
                       <div className="flex flex-col">
                         <h4 className="text-on-surface font-black text-xs leading-tight line-clamp-1 tracking-tight group-hover:text-primary transition-colors duration-300">
@@ -307,12 +319,11 @@ export default function MenuPage() {
                         </p>
                       </div>
                       
-                      <button 
-                        onClick={() => addToCart(item)}
-                        className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-500 active:scale-90 shadow-sm ${darkMode ? 'bg-surface-container-low text-primary hover:bg-primary hover:text-white' : 'bg-surface-container-low text-primary hover:bg-primary hover:text-white'}`}
-                      >
-                        <Plus size={14} strokeWidth={3} />
-                      </button>
+                      <AddToCartButton 
+                        onClick={() => item.isAvailable !== false ? addToCart(item) : null}
+                        darkMode={darkMode}
+                        className={item.isAvailable === false ? 'opacity-50 cursor-not-allowed' : ''}
+                      />
                     </div>
                   </div>
                 </motion.div>
@@ -339,12 +350,12 @@ export default function MenuPage() {
             initial={{ y: 100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 100, opacity: 0 }}
-            className="fixed bottom-8 left-0 right-0 px-4 z-40"
+            className="fixed bottom-6 left-0 right-0 px-4 z-40"
           >
-            <div className={`${darkMode ? 'bg-surface-container-high/90' : 'bg-surface-container-lowest/90'} backdrop-blur-2xl rounded-2xl p-3 flex items-center justify-between shadow-lg border border-primary/10`}>
+            <div className={`${darkMode ? 'bg-surface-container-high/90' : 'bg-surface-container-lowest/90'} backdrop-blur-2xl rounded-2xl p-2.5 flex items-center justify-between shadow-lg border border-primary/10`}>
               <div className="flex items-center gap-2 overflow-hidden">
-                <div className="w-9 h-9 shrink-0 bg-primary rounded-xl flex items-center justify-center shadow-md shadow-primary/20">
-                  <ShoppingCart className="text-white" size={16} />
+                <div className="w-8 h-8 shrink-0 bg-primary rounded-xl flex items-center justify-center shadow-md shadow-primary/20">
+                  <ShoppingCart className="text-white" size={14} />
                 </div>
                 <div className="flex flex-col overflow-hidden whitespace-nowrap">
                   <span className="text-on-surface-variant text-[9px] font-black uppercase tracking-[0.2em] leading-none mb-1 truncate">{t('yourSelection')}</span>
@@ -356,14 +367,14 @@ export default function MenuPage() {
               <div className="flex items-center gap-2 shrink-0">
                 <button 
                   onClick={() => clearCart()}
-                  className="w-9 h-9 shrink-0 flex items-center justify-center rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 active:scale-95 transition-all"
+                  className="w-8 h-8 shrink-0 flex items-center justify-center rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 active:scale-95 transition-all"
                   aria-label="Clear Cart"
                 >
-                  <Trash2 size={16} />
+                  <Trash2 size={14} />
                 </button>
                 <button 
                   onClick={() => navigate('/checkout')}
-                  className="bg-primary shrink-0 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-md shadow-primary/20 whitespace-nowrap"
+                  className="bg-primary shrink-0 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-md shadow-primary/20 whitespace-nowrap"
                 >
                   {t('checkout')}
                 </button>

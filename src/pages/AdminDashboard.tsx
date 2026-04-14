@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore, Product, Order } from '../context/StoreContext';
-import { LogOut, Package, Clock, CheckCircle2, LayoutDashboard, ShoppingBag, ListChecks, ChevronRight, MapPin, Settings, Phone, Save, CreditCard, DollarSign, Database, RefreshCw, Plus, Trash2, Sparkles, Image as ImageIcon, Tag, Hash, ShieldCheck, Menu, X, Search, SlidersHorizontal, Eye, Printer, User, Users, Calendar, BarChart3, TrendingUp, PieChart as PieChartIcon, AlertTriangle, Download, Bell, Ticket, History, MessageSquare } from 'lucide-react';
+import { LogOut, Package, Clock, CheckCircle2, LayoutDashboard, ShoppingBag, ListChecks, ChevronRight, MapPin, Settings, Phone, Save, CreditCard, DollarSign, Database, RefreshCw, Plus, Trash2, Sparkles, Image as ImageIcon, Tag, Hash, ShieldCheck, Menu, X, Search, SlidersHorizontal, Eye, Printer, User, Users, Calendar, BarChart3, TrendingUp, PieChart as PieChartIcon, AlertTriangle, Download, Bell, Ticket, History, MessageSquare, ToggleLeft, ToggleRight } from 'lucide-react';
 import * as Popover from '@radix-ui/react-popover';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
@@ -1197,6 +1197,7 @@ function AddProductModal({
   t: any 
 }) {
   const [loading, setLoading] = useState(false);
+  const [loadingText, setLoadingText] = useState('Saving...');
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [useAI, setUseAI] = useState(true);
@@ -1282,6 +1283,7 @@ function AddProductModal({
     }
     
     setLoading(true);
+    setLoadingText('Saving product...');
     try {
       let translations = {
         mmName: formData.mmName,
@@ -1291,6 +1293,7 @@ function AddProductModal({
       };
 
       if (useAI && !product) { // Only auto-translate for new products
+        setLoadingText('Translating product name...');
         const aiTranslations = await translateProductName(formData.name);
         translations = {
           mmName: aiTranslations.mmName || formData.name,
@@ -1308,6 +1311,7 @@ function AddProductModal({
         salePrice: formData.salePrice ? Number(formData.salePrice) : undefined,
       };
 
+      setLoadingText('Uploading to database...');
       if (product && updateProduct) {
         await updateProduct(product.id, productData);
         toast.success('Product updated successfully!');
@@ -1329,6 +1333,7 @@ function AddProductModal({
       toast.error("Failed to save product.");
     } finally {
       setLoading(false);
+      setLoadingText('Saving...');
     }
   };
 
@@ -1694,7 +1699,7 @@ function AddProductModal({
                   className={`flex-[2] py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-xl transition-all flex items-center justify-center gap-2 ${loading ? 'opacity-50' : 'hover:scale-[1.02] active:scale-[0.98]'} ${darkMode ? 'bg-primary text-surface' : 'bg-emerald-600 text-white'}`}
                 >
                   {loading ? <RefreshCw className="animate-spin" size={16} /> : <Save size={16} />}
-                  {loading ? 'Saving...' : 'Save Product'}
+                  {loading ? loadingText : 'Save Product'}
                 </button>
               </div>
             </form>
@@ -2317,33 +2322,11 @@ function ProductsTab({ products, categories, addProduct, updateProduct, deletePr
                         <Settings size={18} />
                       </button>
                       <button 
-                        onClick={() => {
-                          const newStock = prompt(`Update stock for ${product.name}:`, product.stock.toString());
-                          if (newStock !== null) updateProduct(product.id, { stock: parseInt(newStock) });
-                        }}
-                        className="p-2 rounded-xl hover:bg-primary/10 text-primary transition-colors"
-                        title="Update Stock"
+                        onClick={() => updateProduct(product.id, { isAvailable: !product.isAvailable })}
+                        className={`p-2 rounded-xl transition-colors ${product.isAvailable === false ? 'hover:bg-amber-500/10 text-amber-500' : 'hover:bg-emerald-500/10 text-emerald-500'}`}
+                        title={product.isAvailable === false ? "Set as Available" : "Set as Sold Out"}
                       >
-                        <Package size={18} />
-                      </button>
-                      <button 
-                        onClick={() => {
-                          const newPrice = prompt(`Update price for ${product.name}:`, product.price.toString());
-                          if (newPrice !== null) updateProduct(product.id, { price: parseFloat(newPrice) });
-                        }}
-                        className="p-2 rounded-xl hover:bg-emerald-500/10 text-emerald-500 transition-colors"
-                        title="Update Price"
-                      >
-                        <DollarSign size={18} />
-                      </button>
-                      <button 
-                        onClick={() => {
-                          if (confirm(`Mark ${product.name} as Sold Out?`)) updateProduct(product.id, { stock: 0 });
-                        }}
-                        className="p-2 rounded-xl hover:bg-amber-500/10 text-amber-500 transition-colors"
-                        title="Sold Out"
-                      >
-                        <AlertTriangle size={18} />
+                        {product.isAvailable === false ? <ToggleLeft size={18} /> : <ToggleRight size={18} />}
                       </button>
                       <button 
                         onClick={() => {

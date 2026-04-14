@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, X, ArrowLeft, Plus, SlidersHorizontal, Camera, Clock, TrendingUp, Check, ScanLine, ShoppingCart, Heart, Trash2 } from 'lucide-react';
+import { AddToCartButton } from '../components/AddToCartButton';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useStore } from '../context/StoreContext';
@@ -232,13 +233,6 @@ export default function SearchPage() {
               ) : (
                 <>
                   <button 
-                    onClick={handleCameraClick}
-                    className="text-on-surface-variant/50 hover:text-on-surface transition-colors"
-                  >
-                    <Camera size={18} />
-                  </button>
-                  <div className="w-[1px] h-4 bg-on-surface-variant/20"></div>
-                  <button 
                     onClick={() => setShowFilters(true)}
                     className="text-on-surface-variant/50 hover:text-on-surface transition-colors relative"
                   >
@@ -246,6 +240,13 @@ export default function SearchPage() {
                     {(selectedCategory !== 'all' || sortBy !== 'relevance') && (
                       <span className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full"></span>
                     )}
+                  </button>
+                  <div className="w-[1px] h-4 bg-on-surface-variant/20"></div>
+                  <button 
+                    onClick={handleCameraClick}
+                    className="text-on-surface-variant/50 hover:text-on-surface transition-colors"
+                  >
+                    <Camera size={18} />
                   </button>
                 </>
               )}
@@ -368,7 +369,7 @@ export default function SearchPage() {
                 </div>
 
                 {/* Content Section - Compact and single-line price */}
-                <div className="p-3.5 flex flex-col flex-1 justify-between gap-2">
+                <div className="p-2 flex flex-col flex-1 justify-between gap-1">
                   <div className="space-y-1">
                     <div className="flex flex-col">
                       <h4 className="text-on-surface font-black text-xs leading-tight line-clamp-1 tracking-tight group-hover:text-primary transition-colors duration-300">
@@ -388,12 +389,10 @@ export default function SearchPage() {
                       {formatPrice(product.price)}
                     </p>
                     
-                    <button 
+                    <AddToCartButton 
                       onClick={() => addToCart(product)}
-                      className="w-8 h-8 bg-surface-container-low hover:bg-primary hover:text-white text-primary rounded-xl flex items-center justify-center transition-all duration-500 active:scale-90 shadow-sm"
-                    >
-                      <Plus size={14} strokeWidth={3} />
-                    </button>
+                      darkMode={darkMode}
+                    />
                   </div>
                 </div>
               </motion.div>
@@ -557,12 +556,12 @@ export default function SearchPage() {
             initial={{ y: 100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 100, opacity: 0 }}
-            className="fixed bottom-8 left-0 right-0 px-4 z-40"
+            className="fixed bottom-6 left-0 right-0 px-4 z-40"
           >
-            <div className={`${darkMode ? 'bg-surface-container-high/90' : 'bg-white/90'} backdrop-blur-2xl rounded-2xl p-3 flex items-center justify-between shadow-lg border border-primary/10`}>
+            <div className={`${darkMode ? 'bg-surface-container-high/90' : 'bg-white/90'} backdrop-blur-2xl rounded-2xl p-2.5 flex items-center justify-between shadow-lg border border-primary/10`}>
               <div className="flex items-center gap-2 overflow-hidden">
-                <div className="w-9 h-9 shrink-0 bg-primary rounded-xl flex items-center justify-center shadow-md shadow-primary/20">
-                  <ShoppingCart className="text-white" size={16} />
+                <div className="w-8 h-8 shrink-0 bg-primary rounded-xl flex items-center justify-center shadow-md shadow-primary/20">
+                  <ShoppingCart className="text-white" size={14} />
                 </div>
                 <div className="flex flex-col overflow-hidden whitespace-nowrap">
                   <span className="text-on-surface-variant text-[9px] font-black uppercase tracking-[0.2em] leading-none mb-1 truncate">{t('yourSelection')}</span>
@@ -574,14 +573,14 @@ export default function SearchPage() {
               <div className="flex items-center gap-2 shrink-0">
                 <button 
                   onClick={() => clearCart()}
-                  className="w-9 h-9 shrink-0 flex items-center justify-center rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 active:scale-95 transition-all"
+                  className="w-8 h-8 shrink-0 flex items-center justify-center rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 active:scale-95 transition-all"
                   aria-label="Clear Cart"
                 >
-                  <Trash2 size={16} />
+                  <Trash2 size={14} />
                 </button>
                 <button 
                   onClick={() => navigate('/checkout')}
-                  className="bg-primary shrink-0 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-md shadow-primary/20 whitespace-nowrap"
+                  className="bg-primary shrink-0 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-md shadow-primary/20 whitespace-nowrap"
                 >
                   {t('checkout')}
                 </button>

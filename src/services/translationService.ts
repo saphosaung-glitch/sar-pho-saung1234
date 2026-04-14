@@ -26,7 +26,7 @@ export async function translateProductName(englishName: string) {
   }
   try {
     const response = await aiClient.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.0-flash",
       contents: `Translate the following grocery product name into Myanmar, Thai, Chinese (Simplified), and Malay. 
       Return the result as a JSON object with keys: mmName, thName, zhName, msName.
       Product Name: ${englishName}`,

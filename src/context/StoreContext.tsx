@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useMemo, useEffect } from 'react';
+import React, { createContext, useContext, useState, useMemo, useEffect, useRef } from 'react';
 import { translations } from '../lib/translations';
 import { 
   collection, 
@@ -19,7 +19,7 @@ import {
   writeBatch,
   Unsubscribe
 } from 'firebase/firestore';
-import { auth, db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { auth, db, handleFirestoreError, OperationType, getIsQuotaExceeded } from '../lib/firebase';
 import { onAuthStateChanged, GoogleAuthProvider, signInWithPopup, setPersistence, browserLocalPersistence, signOut } from 'firebase/auth';
 import { Address } from '../types';
 
@@ -43,10 +43,22 @@ export interface Product {
   sku?: string;
   weight?: string;
   status: 'published' | 'draft';
+  isAvailable?: boolean;
 }
 
 export interface CartItem extends Product {
   quantity: number;
+}
+
+export interface Session {
+  id: string;
+  userId: string;
+  deviceType: 'mobile' | 'tablet' | 'desktop';
+  browser: string;
+  os: string;
+  lastActive: number;
+  isCurrent: boolean;
+  userAgent: string;
 }
 
 export interface Order {
@@ -214,14 +226,6 @@ interface StoreContextType {
   clearNotifications: () => void;
   emailNotificationsEnabled: boolean;
   setEmailNotificationsEnabled: (enabled: boolean) => void;
-  twoFactorEnabled: boolean;
-  setTwoFactorEnabled: (enabled: boolean) => void;
-  biometricEnabled: boolean;
-  setBiometricEnabled: (enabled: boolean) => void;
-  dataSharingEnabled: boolean;
-  setDataSharingEnabled: (enabled: boolean) => void;
-  stealthModeEnabled: boolean;
-  setStealthModeEnabled: (enabled: boolean) => void;
   paymentMethods: PaymentMethod[];
   addPaymentMethod: (method: Omit<PaymentMethod, 'id'>) => void;
   removePaymentMethod: (id: string) => void;
@@ -294,6 +298,8 @@ interface StoreContextType {
   updateUserPoints: (uid: string, points: number) => Promise<void>;
   isAdmin: boolean;
   isProfileLoaded: boolean;
+  sessions: Session[];
+  revokeSession: (sessionId: string) => Promise<void>;
 }
 
 export interface Notification {
@@ -352,12 +358,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [users, setUsers] = useState<any[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isProfileLoaded, setIsProfileLoaded] = useState(false);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [currentSessionId] = useState(() => {
+    let id = sessionStorage.getItem('sp_session_id');
+    if (!id) {
+      id = Math.random().toString(36).substring(2, 15);
+      sessionStorage.setItem('sp_session_id', id);
+    }
+    return id;
+  });
 
   // UID for data is derived from phone number for persistence across devices
   const uid = useMemo(() => {
     if (!userPhone) return null;
     return userPhone.replace(/[^0-9]/g, '');
   }, [userPhone]);
+
+  const lastSyncedCartRef = useRef<string>('');
 
   // Sync Cart with Firestore
   useEffect(() => {
@@ -369,7 +386,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (snap.exists()) {
         const data = snap.data();
         if (data.cart) {
-          setCart(data.cart);
+          const cartString = JSON.stringify(data.cart);
+          if (cartString !== lastSyncedCartRef.current) {
+            lastSyncedCartRef.current = cartString;
+            setCart(data.cart);
+          }
         }
       }
     }, (error) => {
@@ -381,8 +402,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Sync Cart changes to Firestore
   useEffect(() => {
-    if (uid) {
-      updateDoc(doc(db, 'users', uid), { cart }).catch(console.error);
+    if (uid && !getIsQuotaExceeded()) {
+      const cartString = JSON.stringify(cart);
+      if (cartString !== lastSyncedCartRef.current) {
+        lastSyncedCartRef.current = cartString;
+        updateDoc(doc(db, 'users', uid), { cart }).catch(console.error);
+      }
     }
   }, [cart, uid]);
 
@@ -661,7 +686,111 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  // Session tracking
+  useEffect(() => {
+    if (!uid) {
+      setSessions([]);
+      return;
+    }
+
+    const registerSession = async () => {
+      const userAgent = navigator.userAgent;
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(userAgent);
+      const isTablet = /iPad/i.test(userAgent) || (isMobile && window.innerWidth > 768);
+      const deviceType = isTablet ? 'tablet' : isMobile ? 'mobile' : 'desktop';
+      
+      let browser = 'Unknown';
+      if (userAgent.indexOf("Firefox") > -1) browser = "Firefox";
+      else if (userAgent.indexOf("SamsungBrowser") > -1) browser = "Samsung Browser";
+      else if (userAgent.indexOf("Opera") > -1 || userAgent.indexOf("OPR") > -1) browser = "Opera";
+      else if (userAgent.indexOf("Trident") > -1) browser = "Internet Explorer";
+      else if (userAgent.indexOf("Edge") > -1) browser = "Edge";
+      else if (userAgent.indexOf("Chrome") > -1) browser = "Chrome";
+      else if (userAgent.indexOf("Safari") > -1) browser = "Safari";
+
+      let os = 'Unknown';
+      if (userAgent.indexOf("Win") != -1) os = "Windows";
+      if (userAgent.indexOf("Mac") != -1) os = "MacOS";
+      if (userAgent.indexOf("X11") != -1) os = "UNIX";
+      if (userAgent.indexOf("Linux") != -1) os = "Linux";
+      if (/Android/.test(userAgent)) os = "Android";
+      if (/iPhone|iPad|iPod/.test(userAgent)) os = "iOS";
+
+      const sessionData: Session = {
+        id: currentSessionId,
+        userId: uid,
+        deviceType,
+        browser,
+        os,
+        lastActive: Date.now(),
+        isCurrent: true,
+        userAgent
+      };
+
+      try {
+        const sessionDoc = await getDoc(doc(db, 'users', uid, 'sessions', currentSessionId));
+        if (!sessionDoc.exists()) {
+          await setDoc(doc(db, 'users', uid, 'sessions', currentSessionId), sessionData);
+        } else {
+          await updateDoc(doc(db, 'users', uid, 'sessions', currentSessionId), {
+            lastActive: Date.now()
+          });
+        }
+      } catch (error) {
+        console.error("Error registering session:", error);
+      }
+    };
+
+    registerSession();
+
+    const sessionsRef = collection(db, 'users', uid, 'sessions');
+    const unsubscribe = onSnapshot(sessionsRef, (snapshot) => {
+      const t = (key: string) => (translations[language] as any)[key] || key;
+      const sessionsData = snapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id,
+        isCurrent: doc.id === currentSessionId
+      })) as Session[];
+      
+      setSessions(sessionsData.sort((a, b) => b.lastActive - a.lastActive));
+
+      const currentSessionExists = snapshot.docs.some(doc => doc.id === currentSessionId);
+      if (!currentSessionExists && uid) {
+        toast.error(t('sessionTerminated'));
+        logout();
+      }
+    });
+
+    const interval = setInterval(() => {
+      if (!getIsQuotaExceeded()) {
+        updateDoc(doc(db, 'users', uid, 'sessions', currentSessionId), {
+          lastActive: Date.now()
+        }).catch(() => {});
+      }
+    }, 1000 * 60 * 10); // Update every 10 minutes instead of 5
+
+    return () => {
+      unsubscribe();
+      clearInterval(interval);
+    };
+  }, [uid, currentSessionId]);
+
+  const revokeSession = async (sessionId: string) => {
+    if (!uid) return;
+    const t = (key: string) => (translations[language] as any)[key] || key;
+    try {
+      await deleteDoc(doc(db, 'users', uid, 'sessions', sessionId));
+      toast.success(t('sessionRevoked'));
+    } catch (error) {
+      console.error("Error revoking session:", error);
+      toast.error(t('failedToRevokeSession'));
+    }
+  };
+
   const logout = async () => {
+    if (uid && currentSessionId) {
+      await deleteDoc(doc(db, 'users', uid, 'sessions', currentSessionId)).catch(console.error);
+    }
     await signOut(auth);
     setUserName('');
     setUserPhone('');
@@ -924,22 +1053,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const saved = localStorage.getItem('sp_email_enabled');
     return saved === null ? true : saved === 'true';
   });
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(() => {
-    const saved = localStorage.getItem('sp_2fa_enabled');
-    return saved === 'true';
-  });
-  const [biometricEnabled, setBiometricEnabled] = useState(() => {
-    const saved = localStorage.getItem('sp_biometric_enabled');
-    return saved === null ? true : saved === 'true';
-  });
-  const [dataSharingEnabled, setDataSharingEnabled] = useState(() => {
-    const saved = localStorage.getItem('sp_data_sharing_enabled');
-    return saved === null ? true : saved === 'true';
-  });
-  const [stealthModeEnabled, setStealthModeEnabled] = useState(() => {
-    const saved = localStorage.getItem('sp_stealth_mode_enabled');
-    return saved === 'true';
-  });
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(() => {
     const saved = localStorage.getItem('sp_payment_methods');
     return saved ? JSON.parse(saved) : [
@@ -972,22 +1085,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     localStorage.setItem('sp_email_enabled', emailNotificationsEnabled.toString());
   }, [emailNotificationsEnabled]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_2fa_enabled', twoFactorEnabled.toString());
-  }, [twoFactorEnabled]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_biometric_enabled', biometricEnabled.toString());
-  }, [biometricEnabled]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_data_sharing_enabled', dataSharingEnabled.toString());
-  }, [dataSharingEnabled]);
-
-  useEffect(() => {
-    localStorage.setItem('sp_stealth_mode_enabled', stealthModeEnabled.toString());
-  }, [stealthModeEnabled]);
 
   useEffect(() => {
     localStorage.setItem('sp_payment_methods', JSON.stringify(paymentMethods));
@@ -1876,14 +1973,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       clearNotifications,
       emailNotificationsEnabled,
       setEmailNotificationsEnabled,
-      twoFactorEnabled,
-      setTwoFactorEnabled,
-      biometricEnabled,
-      setBiometricEnabled,
-      dataSharingEnabled,
-      setDataSharingEnabled,
-      stealthModeEnabled,
-      setStealthModeEnabled,
       paymentMethods,
       addPaymentMethod,
       removePaymentMethod,
@@ -1996,7 +2085,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       users,
       updateUserPoints,
       isAdmin,
-      isProfileLoaded
+      isProfileLoaded,
+      sessions,
+      revokeSession
     }}>
       {children}
     </StoreContext.Provider>

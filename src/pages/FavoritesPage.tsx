@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../context/StoreContext';
 import { ChevronLeft, Heart, Plus, ShoppingCart, Search, Trash2 } from 'lucide-react';
+import { AddToCartButton } from '../components/AddToCartButton';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -63,19 +64,17 @@ export default function FavoritesPage() {
                   <img className="w-full h-full object-cover" src={product.image} alt={product.name} referrerPolicy="no-referrer" />
                 </div>
 
-                <div className="p-3.5 flex flex-col flex-1 justify-between gap-2">
+                <div className="p-2 flex flex-col flex-1 justify-between gap-1">
                   <div className="space-y-1">
                     <h4 className="text-on-surface font-black text-xs leading-tight line-clamp-1 tracking-tight">{getMainName(product)}</h4>
                     <p className="text-on-surface-variant/60 text-[10px] font-medium leading-tight">{getSecondaryName(product)}</p>
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-primary font-black text-sm tracking-tighter">{formatPrice(product.price)}</p>
-                    <button 
+                    <AddToCartButton 
                       onClick={() => addToCart(product)}
-                      className={`w-8 h-8 rounded-xl flex items-center justify-center ${darkMode ? 'bg-surface-container-low text-primary' : 'bg-surface-container-low text-primary'}`}
-                    >
-                      <Plus size={14} strokeWidth={3} />
-                    </button>
+                      darkMode={darkMode}
+                    />
                   </div>
                 </div>
               </motion.div>
@@ -106,12 +105,12 @@ export default function FavoritesPage() {
             initial={{ y: 100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 100, opacity: 0 }}
-            className="fixed bottom-8 left-0 right-0 px-4 z-40"
+            className="fixed bottom-6 left-0 right-0 px-4 z-40"
           >
-            <div className={`backdrop-blur-2xl rounded-2xl p-3 flex items-center justify-between shadow-lg border border-primary/10 ${darkMode ? 'bg-surface-container-high/90' : 'bg-surface-container-lowest/90'}`}>
+            <div className={`backdrop-blur-2xl rounded-2xl p-2.5 flex items-center justify-between shadow-lg border border-primary/10 ${darkMode ? 'bg-surface-container-high/90' : 'bg-surface-container-lowest/90'}`}>
               <div className="flex items-center gap-2 overflow-hidden">
-                <div className="w-9 h-9 shrink-0 bg-primary rounded-xl flex items-center justify-center shadow-md shadow-primary/20">
-                  <ShoppingCart className="text-white" size={16} />
+                <div className="w-8 h-8 shrink-0 bg-primary rounded-xl flex items-center justify-center shadow-md shadow-primary/20">
+                  <ShoppingCart className="text-white" size={14} />
                 </div>
                 <div className="flex flex-col overflow-hidden whitespace-nowrap">
                   <span className="text-on-surface-variant text-[9px] font-black uppercase tracking-[0.2em] leading-none mb-1 truncate">{t('yourSelection')}</span>
@@ -123,14 +122,14 @@ export default function FavoritesPage() {
               <div className="flex items-center gap-2 shrink-0">
                 <button 
                   onClick={() => clearCart()}
-                  className="w-9 h-9 shrink-0 flex items-center justify-center rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 active:scale-95 transition-all"
+                  className="w-8 h-8 shrink-0 flex items-center justify-center rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 active:scale-95 transition-all"
                   aria-label="Clear Cart"
                 >
-                  <Trash2 size={16} />
+                  <Trash2 size={14} />
                 </button>
                 <button 
                   onClick={() => navigate('/checkout')}
-                  className="bg-primary shrink-0 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-md shadow-primary/20 whitespace-nowrap"
+                  className="bg-primary shrink-0 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-md shadow-primary/20 whitespace-nowrap"
                 >
                   {t('checkout')}
                 </button>

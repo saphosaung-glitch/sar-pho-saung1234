@@ -316,16 +316,16 @@ export default function CheckoutPage() {
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.95 }}
                         key={item.id} 
-                        className={`flex gap-4 py-3 border-b last:border-0 transition-colors ${darkMode ? 'border-white/5' : 'border-on-surface/5'}`}
+                        className={`flex gap-3 py-2 border-b last:border-0 transition-colors ${darkMode ? 'border-white/5' : 'border-on-surface/5'}`}
                       >
-                        <div className={`w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 border relative ${darkMode ? 'bg-slate-800 border-white/5' : 'bg-surface-container-low border-on-surface/5'}`}>
+                        <div className={`w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 border relative ${darkMode ? 'bg-slate-800 border-white/5' : 'bg-surface-container-low border-on-surface/5'}`}>
                           <img src={item.image} alt={item.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                           <div className="absolute inset-0 ring-1 ring-inset ring-black/5 rounded-xl"></div>
                         </div>
                         <div className="flex-grow flex flex-col justify-center">
                           <p className={`font-black text-xs leading-tight mb-0.5 ${darkMode ? 'text-white' : 'text-on-surface'}`}>{getMainName(item)}</p>
                           <p className={`text-[9px] font-bold leading-tight mb-0.5 ${darkMode ? 'text-white/40' : 'text-on-surface-variant'}`}>{getSecondaryName(item)}</p>
-                          <p className={`text-[9px] font-bold text-primary mb-2`}>{t('qty')}: {item.quantity} {item.unit}</p>
+                          <p className={`text-[9px] font-bold text-primary mb-1`}>{t('qty')}: {item.quantity} {item.unit}</p>
                           <div className="flex items-center justify-between mt-auto">
                             <p className="font-black text-primary text-xs">{formatPrice(item.price * item.quantity)}</p>
                             <div className={`rounded-xl p-1 shadow-inner flex items-center ${darkMode ? 'bg-slate-800' : 'bg-surface-container-low'}`}>
