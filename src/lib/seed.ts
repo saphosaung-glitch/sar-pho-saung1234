@@ -1,5 +1,5 @@
 import { collection, doc, setDoc, getDocs } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, getIsQuotaExceeded, handleFirestoreError, OperationType } from './firebase';
 import { CATEGORIES } from '../constants';
 
 export const PRODUCTS = [
@@ -38,6 +38,10 @@ export const PRODUCTS = [
 ];
 
 export const seedDatabase = async () => {
+  if (getIsQuotaExceeded()) {
+    console.warn('Quota exceeded, skipping database seed.');
+    return;
+  }
   try {
     // Seed Categories
     const categoriesCollection = collection(db, 'categories');
@@ -76,11 +80,15 @@ export const seedDatabase = async () => {
     }
     console.log('Database seeded successfully!');
   } catch (error) {
-    console.error('Error seeding database:', error);
+    handleFirestoreError(error, OperationType.WRITE, 'seedDatabase');
   }
 };
 
 export const seedSampleOrders = async () => {
+  if (getIsQuotaExceeded()) {
+    console.warn('Quota exceeded, skipping sample order seed.');
+    return;
+  }
   try {
     const ordersCollection = collection(db, 'orders');
     const sampleOrders = [];
@@ -115,6 +123,6 @@ export const seedSampleOrders = async () => {
     }
     console.log('Sample orders seeded successfully!');
   } catch (error) {
-    console.error('Error seeding sample orders:', error);
+    handleFirestoreError(error, OperationType.WRITE, 'seedSampleOrders');
   }
 };

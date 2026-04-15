@@ -2,138 +2,94 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    //
-    // Collection: products
-    // Fields: id, name, mmName, price, category, image, unit, isPremium
-    //
-    // Collection: orders
-    // Fields: id, roomNumber, items, total, status, customerName, customerPhone, paymentMethod, createdAt, uid
-    //
-    // Collection: users
-    // Fields: uid, name, phone, room, points, tier, favorites, lastActive
-    //
-    // Collection: admins
-    // Fields: uid, email, role
-    //
-    // Collection: categories
-    // Fields: id, key, isActive, order
-    //
-    // ===============================================================
-
-    // ===============================================================
     // Helper Functions
     // ===============================================================
-    
     function isAuthenticated() {
       return request.auth != null;
     }
-    
+
     function isOwner(userId) {
-      return isAuthenticated() && 
-        (request.auth.uid == userId || 
-         (exists(/databases/$(database)/documents/users/$(userId)) && 
-          get(/databases/$(database)/documents/users/$(userId)).data.authUid == request.auth.uid));
-    }
-    
-    function isDocOwner() {
-      return isAuthenticated() && resource.data.authUid == request.auth.uid;
+      // userId is the phone number, check if the user document has the correct authUid
+      let userDoc = get(/databases/$(database)/documents/users/$(userId));
+      return isAuthenticated() && userDoc.exists() && userDoc.data.authUid == request.auth.uid;
     }
 
     function isAdmin() {
       return isAuthenticated() && 
-        (exists(/databases/$(database)/documents/admins/$(request.auth.uid)) || 
-         request.auth.token.email == "saphosaung@gmail.com" ||
+        (request.auth.token.email == "saphosaung@gmail.com" ||
          request.auth.token.email == "yelwinaung9981@gmail.com");
-    }
-
-    function isValidUser(data) {
-      return data.keys().hasAll(['uid', 'points', 'tier']) &&
-             data.uid is string &&
-             data.points is number &&
-             data.tier is string;
-    }
-
-    function isValidOrder(data) {
-      return data.keys().hasAll(['id', 'items', 'total', 'status', 'createdAt']) &&
-             data.id is string &&
-             data.items is list &&
-             data.total is number &&
-             data.status in ['pending', 'packing', 'delivered', 'cancelled'];
     }
 
     // ===============================================================
     // Rules
     // ===============================================================
 
-    // Admins have full access to everything
-    match /{path=**} {
-      allow read, write: if isAdmin();
-    }
-
-    // Products, Categories, Deals, Bundles, Banners - Public Read
-    match /products/{productId} {
-      allow read: if true;
-      allow update: if true; // Allow stock decrement
-    }
-    match /categories/{categoryId} {
-      allow read: if true;
-    }
-    match /deals/{dealId} {
-      allow read: if true;
-    }
-    match /bundles/{bundleId} {
-      allow read: if true;
-    }
-    match /promotionBanners/{bannerId} {
-      allow read: if true;
-    }
-    match /broadcastNotifications/{notificationId} {
-      allow read: if true;
-    }
-
-    // Settings Collection
-    match /settings/{settingId} {
-      allow read: if true;
-      allow write: if true; // Allow public update for now
-    }
-
-    // Test Connection
-    match /test/connection {
-      allow read: if true;
-    }
-
-    // Users Collection - Public access for demo/development
     match /users/{userId} {
-      allow read, write: if true;
-      
-      // Subcollections
-      match /{allPaths=**} {
-        allow read, write: if true;
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+
+      match /addresses/{addressId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow write: if isOwner(userId) || isAdmin();
       }
     }
 
-    // Orders Collection - Public access for demo/development
     match /orders/{orderId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated() && (resource.data.uid == request.auth.uid || resource.data.authUid == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated();
+      allow update: if isAdmin();
+      allow list: if isAuthenticated(); // Allow listing for admin dashboard
     }
 
-    // Coupons
-    match /coupons/{couponId} {
+    match /products/{productId} {
       allow read: if true;
-    }
-
-    // Admins Collection
-    match /admins/{uid} {
-      allow read: if isAdmin() || isOwner(uid);
       allow write: if isAdmin();
     }
 
-    // Audit Logs
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /coupons/{couponId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /deals/{dealId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /bundles/{bundleId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /broadcastNotifications/{notificationId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /promotionBanners/{bannerId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     match /auditLogs/{logId} {
       allow read: if isAdmin();
-      allow create: if isAuthenticated(); // Allow logging actions
+      allow write: if isAdmin();
+    }
+
+    match /admins/{adminId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
     }
   }
 }

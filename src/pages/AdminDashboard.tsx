@@ -2538,6 +2538,7 @@ export default function AdminDashboard() {
     darkMode, t,
     isDeliveryEnabled, setIsDeliveryEnabled,
     isLowStockAlertEnabled, setIsLowStockAlertEnabled,
+    isMaintenanceMode, updateMaintenanceMode,
     cutoffTime, setCutoffTime,
     estimatedDeliveryTime, setEstimatedDeliveryTime,
     signInWithGoogle, authUid, userEmail,
@@ -3657,6 +3658,24 @@ export default function AdminDashboard() {
                       </div>
 
                       <div className="grid grid-cols-1 gap-4">
+                        <div className={`p-6 rounded-2xl border flex items-center justify-between ${darkMode ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-100'}`}>
+                          <div>
+                            <h4 className={`font-black uppercase tracking-widest text-xs ${darkMode ? 'text-on-surface' : 'text-emerald-900'}`}>Maintenance Mode</h4>
+                            <p className={`text-[10px] font-bold ${darkMode ? 'text-on-surface-variant/40' : 'text-gray-400'}`}>Pause all new orders</p>
+                          </div>
+                          <button
+                            onClick={() => updateMaintenanceMode(!isMaintenanceMode)}
+                            className={`w-16 h-9 rounded-full relative p-1 transition-all duration-500 ${
+                              isMaintenanceMode ? 'bg-rose-500' : (darkMode ? 'bg-white/10' : 'bg-gray-200')
+                            }`}
+                          >
+                            <motion.div 
+                              animate={{ x: isMaintenanceMode ? 28 : 0 }}
+                              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                              className="w-7 h-7 bg-white rounded-full shadow-xl" 
+                            />
+                          </button>
+                        </div>
                         <button 
                           onClick={handleSeed}
                           disabled={isSeeding}

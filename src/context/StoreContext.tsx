@@ -430,6 +430,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const lastSyncedCartRef = useRef<string>('');
   const lastSyncedUidRef = useRef<string | null>(null);
+  const lastSyncedUserDataRef = useRef<string>('');
   const isInitialMount = useRef(true);
 
   // Sync User Data with Firestore
@@ -479,6 +480,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       console.log("StoreContext: User data snapshot received. Exists:", snap.exists());
       if (snap.exists()) {
         const data = snap.data();
+        console.log("StoreContext: User data snapshot data:", data);
         console.log("StoreContext: User data found in Firestore", data);
         
         // Sync Profile - only update if different to avoid unnecessary re-renders
@@ -509,41 +511,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
       setIsProfileLoaded(true);
     }, (error) => {
-      console.error("Firestore user data sync error:", error);
+      handleFirestoreError(error, OperationType.LIST, `users/${uid}`);
       setIsProfileLoaded(true);
     });
 
     return () => unsubscribe();
   }, [uid]);
-
-  // Sync User Data changes to Firestore with debounce
-  useEffect(() => {
-    if (!uid || getIsQuotaExceeded() || !isProfileLoaded) return;
-    
-    const userData = {
-      name: userName,
-      phone: userPhone,
-      email: userEmail,
-      birthday: userBirthday,
-      avatar: userAvatar,
-      room: roomNumber,
-      points: points,
-      cart: cart,
-      favorites: favorites,
-      lastUpdated: Date.now()
-    };
-
-    const timeoutId = setTimeout(async () => {
-      try {
-        await setDoc(doc(db, 'users', uid), userData, { merge: true });
-        console.log("StoreContext: User data synced to Firestore");
-      } catch (error) {
-        console.error("StoreContext: Error syncing user data to Firestore", error);
-      }
-    }, 2000);
-
-    return () => clearTimeout(timeoutId);
-  }, [uid, userName, userPhone, userEmail, userBirthday, userAvatar, roomNumber, points, cart, favorites, isProfileLoaded]);
 
   const setSelectedAddressId = (id: string | null) => {
     setSelectedAddressIdState(id);
@@ -607,70 +580,93 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Category[];
       setCategories(data.sort((a, b) => a.order - b.order));
     }, (error) => {
-      console.error('Firestore categories sync error:', error);
+      handleFirestoreError(error, OperationType.LIST, 'categories');
     });
     return () => unsubscribe();
   }, [isAdmin]);
 
   const updateCategory = async (id: string, updates: Partial<Category>) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot update category.');
+      return;
+    }
     try {
       await updateDoc(doc(db, 'categories', id), updates);
       toast.success('Category updated');
     } catch (error) {
-      console.error('Error updating category:', error);
       toast.error('Failed to update category');
+      handleFirestoreError(error, OperationType.UPDATE, `categories/${id}`);
     }
   };
 
   const addCategory = async (category: Omit<Category, 'id'>) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot add category.');
+      return;
+    }
     try {
       const id = category.key.toLowerCase().replace(/[^a-z0-9]/g, '-');
       await setDoc(doc(db, 'categories', id), { ...category, id });
       toast.success('Category added');
     } catch (error) {
-      console.error('Error adding category:', error);
       toast.error('Failed to add category');
+      handleFirestoreError(error, OperationType.CREATE, 'categories');
     }
   };
 
   const deleteCategory = async (id: string) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot delete category.');
+      return;
+    }
     try {
       await deleteDoc(doc(db, 'categories', id));
       toast.success('Category deleted');
     } catch (error) {
-      console.error('Error deleting category:', error);
       toast.error('Failed to delete category');
+      handleFirestoreError(error, OperationType.DELETE, `categories/${id}`);
     }
   };
 
-  // Sync products from Firestore
+  // Sync products from Firestore with caching
   useEffect(() => {
-    let isSeeding = false;
-    const unsubscribe = onSnapshot(collection(db, 'products'), (querySnapshot) => {
-      const productsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      console.log("StoreContext: Products synced from Firestore. Count:", productsData.length);
-      setProducts(productsData);
-      
-      // Auto-seed only if the collection is completely empty
-      if (querySnapshot.empty && !isSeeding) {
-        isSeeding = true;
-        console.log("StoreContext: Products collection is empty, seeding database...");
-        import('../lib/seed').then(({ seedDatabase }) => {
-          seedDatabase().then(() => {
-            console.log("StoreContext: Database seeded successfully");
-            isSeeding = false;
-          }).catch(err => {
-            console.error('Auto-seed failed:', err);
-            isSeeding = false;
-          });
-        });
+    const CACHE_KEY = 'cached_menu';
+    const CACHE_DURATION = 60 * 60 * 1000; // 1 hour
+
+    const fetchProducts = async () => {
+      const cachedData = localStorage.getItem(CACHE_KEY);
+      if (cachedData) {
+        const { timestamp, data } = JSON.parse(cachedData);
+        if (Date.now() - timestamp < CACHE_DURATION) {
+          console.log("StoreContext: Using cached products.");
+          setProducts(data);
+          return;
+        }
       }
-    }, (error) => {
-      console.error('Firestore products sync error:', error);
-      // Don't throw to keep the app stable with cached data
-    });
-    return () => unsubscribe();
-  }, [isAdmin]);
+
+      console.log("StoreContext: Fetching products from Firestore...");
+      try {
+        const querySnapshot = await getDocs(collection(db, 'products'));
+        const productsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setProducts(productsData);
+        localStorage.setItem(CACHE_KEY, JSON.stringify({ timestamp: Date.now(), data: productsData }));
+
+        // Auto-seed only if the collection is completely empty
+        if (querySnapshot.empty && !getIsQuotaExceeded()) {
+          console.log("StoreContext: Products collection is empty, seeding database...");
+          import('../lib/seed').then(({ seedDatabase }) => {
+            seedDatabase().catch(err => {
+              handleFirestoreError(err, OperationType.WRITE, 'seedDatabase');
+            });
+          });
+        }
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'products');
+      }
+    };
+
+    fetchProducts();
+  }, []); // Only run once on mount
 
   // Sync Coupons from Firestore
   useEffect(() => {
@@ -771,7 +767,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Initialize Auth session
   useEffect(() => {
     // Set persistence to LOCAL to keep user logged in across sessions
-    setPersistence(auth, browserLocalPersistence).catch(console.error);
+    setPersistence(auth, browserLocalPersistence).catch(err => handleFirestoreError(err, OperationType.WRITE, 'auth/persistence'));
 
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
@@ -785,7 +781,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           if (err.code === 'auth/admin-restricted-operation') {
             console.warn("Anonymous auth is disabled in Firebase Console. Please enable it to allow guest users to save data.");
           } else {
-            console.error("Anonymous sign-in failed:", err);
+            handleFirestoreError(err, OperationType.WRITE, 'auth/anonymous-signin');
           }
         });
       }
@@ -838,7 +834,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
     } catch (error) {
-      console.error("Google Sign-in error:", error);
+      handleFirestoreError(error, OperationType.WRITE, 'auth/google-signin');
     }
   };
 
@@ -852,20 +848,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const revokeSession = async (sessionId: string) => {
     if (!uid) return;
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot revoke session.');
+      return;
+    }
     const t = (key: string) => (translations[language] as any)[key] || key;
     try {
       await deleteDoc(doc(db, 'users', uid, 'sessions', sessionId));
       toast.success(t('sessionRevoked'));
     } catch (error) {
-      console.error("Error revoking session:", error);
       toast.error(t('failedToRevokeSession'));
+      handleFirestoreError(error, OperationType.DELETE, `users/${uid}/sessions/${sessionId}`);
     }
   };
 
   const logout = async () => {
     try {
-      if (authUid && currentSessionId) {
-        await deleteDoc(doc(db, 'users', authUid, 'sessions', currentSessionId)).catch(console.error);
+      if (authUid && currentSessionId && !getIsQuotaExceeded()) {
+        await deleteDoc(doc(db, 'users', authUid, 'sessions', currentSessionId)).catch(err => handleFirestoreError(err, OperationType.DELETE, `users/${authUid}/sessions/${currentSessionId}`));
       }
       await signOut(auth);
       setAuthUid(null);
@@ -882,7 +882,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       localStorage.clear();
       sessionStorage.clear();
     } catch (error) {
-      console.error("Logout error:", error);
+      handleFirestoreError(error, OperationType.DELETE, `users/${authUid}/sessions/${currentSessionId}`);
     }
   };
 
@@ -923,6 +923,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     // Update Firestore
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Profile updated locally.');
+      return;
+    }
     const userDocRef = doc(db, 'users', uid);
     try {
       const updateData: any = {
@@ -956,6 +960,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       try {
         const docSnap = await getDoc(userDocRef);
         if (!docSnap.exists()) {
+          if (getIsQuotaExceeded()) return;
           // Create initial profile if it doesn't exist
           await setDoc(userDocRef, {
             uid: uid, // Use phone-based UID
@@ -1030,7 +1035,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setIsProfileLoaded(true);
         });
       } catch (error) {
-        console.error("Profile sync error:", error);
+        handleFirestoreError(error, OperationType.GET, `users/${uid}`);
       }
     };
 
@@ -1180,6 +1185,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [darkMode]);
   const [isDeliveryEnabled, setIsDeliveryEnabledState] = useState(true);
   const [isLowStockAlertEnabled, setIsLowStockAlertEnabledState] = useState(true);
+  const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
   const [cutoffTime, setCutoffTimeState] = useState('06:00');
 
   // Sync settings from Firestore
@@ -1195,12 +1201,28 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, 'settings/delivery');
     });
-    return () => unsubscribe();
+
+    const unsubscribeMaintenance = onSnapshot(doc(db, 'settings', 'maintenance'), (snap) => {
+      if (snap.exists()) {
+        setIsMaintenanceMode(snap.data().isPaused ?? false);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'settings/maintenance');
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeMaintenance();
+    };
   }, []);
 
   const setIsDeliveryEnabled = async (enabled: boolean) => {
     if (!authUid) {
       console.error('Cannot update delivery settings: User not authenticated.');
+      return;
+    }
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot update settings.');
       return;
     }
     try {
@@ -1212,6 +1234,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const setIsLowStockAlertEnabled = async (enabled: boolean) => {
     if (!authUid) return;
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot update settings.');
+      return;
+    }
     try {
       await setDoc(doc(db, 'settings', 'delivery'), { lowStockAlertsEnabled: enabled }, { merge: true });
     } catch (error) {
@@ -1221,6 +1247,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const setCutoffTime = async (time: string) => {
     if (!authUid) return;
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot update settings.');
+      return;
+    }
     try {
       await setDoc(doc(db, 'settings', 'delivery'), { cutoffTime: time }, { merge: true });
     } catch (error) {
@@ -1230,10 +1260,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const setEstimatedDeliveryTime = async (time: string) => {
     if (!authUid) return;
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot update settings.');
+      return;
+    }
     try {
       await setDoc(doc(db, 'settings', 'delivery'), { estimatedDeliveryTime: time }, { merge: true });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'settings/delivery');
+    }
+  };
+
+  const updateMaintenanceMode = async (isPaused: boolean) => {
+    if (!authUid) return;
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot update settings.');
+      return;
+    }
+    try {
+      await setDoc(doc(db, 'settings', 'maintenance'), { isPaused }, { merge: true });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'settings/maintenance');
     }
   };
 
@@ -1395,6 +1442,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         localStorage.setItem('sp_room', details.room);
       }
 
+      // Check quota before starting batch
+      if (getIsQuotaExceeded()) {
+        throw new Error("Firebase Quota Exceeded: The daily limit for orders has been reached. Please try again later or contact support.");
+      }
+      
+      if (isMaintenanceMode) {
+        throw new Error("System is currently under maintenance. Please try again later.");
+      }
+
       const batch = writeBatch(db);
       
       // 2. Update/Create User Profile
@@ -1434,13 +1490,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
       });
 
-      // Check quota before committing
-      if (getIsQuotaExceeded()) {
-        throw new Error("Firebase Quota Exceeded: The daily limit for orders has been reached. Please try again later or contact support.");
-      }
-
       // Commit the batch - this is a single network request
-      await batch.commit();
+      try {
+        await batch.commit();
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, 'batch-order');
+      }
 
       // 5. Post-success UI updates
       setCart([]);
@@ -1459,7 +1514,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       return orderData;
     } catch (error: any) {
-      console.error("Error placing order:", error);
+      handleFirestoreError(error, OperationType.WRITE, 'place-order');
       
       // Handle specific permission errors gracefully
       if (error?.message?.includes('permission') || error?.code === 'permission-denied') {
@@ -1471,6 +1526,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const updateOrderStatus = async (id: string, status: Order['status']) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot update order status.');
+      return;
+    }
     const order = orders.find(o => o.id === id);
     if (!order) return;
     const oldStatus = order.status;
@@ -1555,11 +1614,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         type: 'order'
       });
     } catch (error) {
-      console.error("Error updating order status:", error);
+      handleFirestoreError(error, OperationType.UPDATE, `orders/${id}`);
     }
   };
 
   const cancelOrder = async (id: string) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot cancel order.');
+      return;
+    }
     const order = orders.find(o => o.id === id);
     if (!order || order.status === 'cancelled') return;
 
@@ -1592,7 +1655,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         type: 'order'
       });
     } catch (error) {
-      console.error("Error cancelling order:", error);
+      handleFirestoreError(error, OperationType.UPDATE, `orders/${id}`);
     }
   };
 
@@ -1645,7 +1708,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       return { success: true };
     } catch (error) {
-      console.error("Error reordering:", error);
+      handleFirestoreError(error, OperationType.WRITE, 'reorder');
       return { success: false, message: 'An error occurred while reordering.' };
     }
   };
@@ -1658,18 +1721,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setFavorites(newFavorites);
     
     if (uid) {
+      if (getIsQuotaExceeded()) return;
       try {
         await updateDoc(doc(db, 'users', uid), {
           favorites: newFavorites
         });
       } catch (error) {
-        console.error("Error syncing favorites:", error);
+        handleFirestoreError(error, OperationType.UPDATE, `users/${uid}`);
         // Optional: Rollback if critical, but for favorites local is usually fine
       }
     }
   };
 
   const deleteProduct = async (id: string) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot delete product.');
+      return;
+    }
     // Optimistic delete from local state
     setProducts(prev => prev.filter(p => p.id !== id));
     
@@ -1677,44 +1745,60 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const { deleteDoc } = await import('firebase/firestore');
       await deleteDoc(doc(db, 'products', id));
     } catch (error) {
-      console.error("Error deleting product:", error);
+      handleFirestoreError(error, OperationType.DELETE, `products/${id}`);
       // Re-sync will happen via onSnapshot
     }
   };
 
   const updateProductStock = async (productId: string, newStock: number) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot update stock.');
+      return;
+    }
     try {
       await updateDoc(doc(db, 'products', productId), { stock: newStock });
       await logAudit('update_stock', 'product', `Updated stock for ${productId} to ${newStock}`);
     } catch (error) {
-      console.error("Error updating product stock:", error);
+      handleFirestoreError(error, OperationType.UPDATE, `products/${productId}`);
     }
   };
 
   const addCoupon = async (coupon: Omit<Coupon, 'id'>) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot add coupon.');
+      return;
+    }
     try {
       await addDoc(collection(db, 'coupons'), { ...coupon, usageCount: 0 });
       await logAudit('add_coupon', 'coupon', `Added coupon ${coupon.code}`);
     } catch (error) {
-      console.error("Error adding coupon:", error);
+      handleFirestoreError(error, OperationType.CREATE, 'coupons');
     }
   };
 
   const updateCoupon = async (id: string, coupon: Partial<Coupon>) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot update coupon.');
+      return;
+    }
     try {
       await updateDoc(doc(db, 'coupons', id), coupon);
       await logAudit('update_coupon', 'coupon', `Updated coupon ${id}`);
     } catch (error) {
-      console.error("Error updating coupon:", error);
+      handleFirestoreError(error, OperationType.UPDATE, `coupons/${id}`);
     }
   };
 
   const deleteCoupon = async (id: string) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot delete coupon.');
+      return;
+    }
     try {
       await deleteDoc(doc(db, 'coupons', id));
       await logAudit('delete_coupon', 'coupon', `Deleted coupon ${id}`);
     } catch (error) {
-      console.error("Error deleting coupon:", error);
+      handleFirestoreError(error, OperationType.DELETE, `coupons/${id}`);
     }
   };
 
@@ -1724,6 +1808,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const sendBroadcast = async (notification: Omit<BroadcastNotification, 'id' | 'createdAt'>) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot send broadcast.');
+      return;
+    }
     try {
       await addDoc(collection(db, 'broadcastNotifications'), {
         ...notification,
@@ -1732,11 +1820,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
       await logAudit('send_broadcast', 'notification', `Sent broadcast: ${notification.title}`);
     } catch (error) {
-      console.error("Error sending broadcast:", error);
+      handleFirestoreError(error, OperationType.CREATE, 'broadcastNotifications');
     }
   };
 
   const addAdmin = async (admin: Omit<AdminUser, 'createdAt'>) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot add admin.');
+      return;
+    }
     try {
       await setDoc(doc(db, 'admins', admin.uid), {
         ...admin,
@@ -1744,20 +1836,28 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
       await logAudit('add_admin', 'admin', `Added admin ${admin.email}`);
     } catch (error) {
-      console.error("Error adding admin:", error);
+      handleFirestoreError(error, OperationType.WRITE, `admins/${admin.uid}`);
     }
   };
 
   const updateAdminRole = async (uid: string, role: AdminUser['role']) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot update admin role.');
+      return;
+    }
     try {
       await updateDoc(doc(db, 'admins', uid), { role });
       await logAudit('update_admin_role', 'admin', `Updated role for ${uid} to ${role}`);
     } catch (error) {
-      console.error("Error updating admin role:", error);
+      handleFirestoreError(error, OperationType.UPDATE, `admins/${uid}`);
     }
   };
 
   const removeAdmin = async (uid: string) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot remove admin.');
+      return;
+    }
     try {
       await deleteDoc(doc(db, 'admins', uid));
       await logAudit('remove_admin', 'admin', `Removed admin ${uid}`);
@@ -1767,6 +1867,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const updateUserPoints = async (uid: string, points: number) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot update user points.');
+      return;
+    }
     try {
       await updateDoc(doc(db, 'users', uid), { points });
       await logAudit('update_user_points', 'user', `Updated points for user ${uid} to ${points}`);
@@ -1776,6 +1880,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const addProduct = async (product: Omit<Product, 'id'>) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot add product.');
+      return;
+    }
     const productId = product.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
     const newProduct = { ...product, id: productId };
     
@@ -1791,6 +1899,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const updateProduct = async (id: string, updates: Partial<Product>) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot update product.');
+      return;
+    }
     try {
       await updateDoc(doc(db, 'products', id), updates);
       await logAudit('update_product', 'product', `Updated product ${id}`);
@@ -1800,6 +1912,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const addPromotionBanner = async (banner: Omit<PromotionBanner, 'id'>) => {
+    if (getIsQuotaExceeded()) return;
     try {
       await addDoc(collection(db, 'promotionBanners'), banner);
     } catch (error) {
@@ -1808,6 +1921,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const updatePromotionBanner = async (id: string, banner: Partial<PromotionBanner>) => {
+    if (getIsQuotaExceeded()) return;
     try {
       await updateDoc(doc(db, 'promotionBanners', id), banner);
     } catch (error) {
@@ -1816,6 +1930,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const deletePromotionBanner = async (id: string) => {
+    if (getIsQuotaExceeded()) return;
     try {
       await deleteDoc(doc(db, 'promotionBanners', id));
     } catch (error) {
@@ -1824,6 +1939,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const addDeal = async (deal: Omit<Deal, 'id'>) => {
+    if (getIsQuotaExceeded()) return;
     try {
       await addDoc(collection(db, 'deals'), deal);
     } catch (error) {
@@ -1832,6 +1948,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const updateDeal = async (id: string, deal: Partial<Deal>) => {
+    if (getIsQuotaExceeded()) return;
     try {
       await updateDoc(doc(db, 'deals', id), deal);
     } catch (error) {
@@ -1840,6 +1957,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const deleteDeal = async (id: string) => {
+    if (getIsQuotaExceeded()) return;
     try {
       await deleteDoc(doc(db, 'deals', id));
     } catch (error) {
@@ -1848,6 +1966,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const addBundle = async (bundle: Omit<Bundle, 'id'>) => {
+    if (getIsQuotaExceeded()) return;
     try {
       await addDoc(collection(db, 'bundles'), bundle);
     } catch (error) {
@@ -1856,23 +1975,29 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const updateBundle = async (id: string, bundle: Partial<Bundle>) => {
+    if (getIsQuotaExceeded()) return;
     try {
       await updateDoc(doc(db, 'bundles', id), bundle);
     } catch (error) {
-      console.error("Error updating bundle:", error);
+      handleFirestoreError(error, OperationType.UPDATE, `bundles/${id}`);
     }
   };
 
   const deleteBundle = async (id: string) => {
+    if (getIsQuotaExceeded()) return;
     try {
       await deleteDoc(doc(db, 'bundles', id));
     } catch (error) {
-      console.error("Error deleting bundle:", error);
+      handleFirestoreError(error, OperationType.DELETE, `bundles/${id}`);
     }
   };
 
   const addAddress = async (address: Omit<Address, 'id'>) => {
     if (!uid) return;
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Your changes will be saved locally but may not sync to the cloud until tomorrow.');
+      return;
+    }
     const addressId = `addr-${Date.now()}`;
     const newAddress = { ...address, id: addressId } as Address;
     
@@ -1902,7 +2027,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       await setDoc(doc(db, 'users', uid, 'addresses', addressId), newAddress);
       toast.success(translations[language === 'mm' ? 'mm' : 'en'].addressSaved || 'Address saved successfully');
     } catch (error: any) {
-      console.error("Error adding address:", error);
       setAddresses(previousAddresses); // Rollback
       
       const isPermissionError = error?.message?.includes('permission') || error?.code === 'permission-denied';
@@ -1920,6 +2044,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const updateAddress = async (id: string, address: Partial<Address>) => {
     if (!uid) return;
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Your changes will be saved locally but may not sync to the cloud until tomorrow.');
+      return;
+    }
     
     // Optimistic Update
     const previousAddresses = [...addresses];
@@ -1944,7 +2072,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       await updateDoc(doc(db, 'users', uid, 'addresses', id), address);
       toast.success(translations[language === 'mm' ? 'mm' : 'en'].addressUpdated || 'Address updated successfully');
     } catch (error: any) {
-      console.error("Error updating address:", error);
       setAddresses(previousAddresses); // Rollback
       
       const isPermissionError = error?.message?.includes('permission') || error?.code === 'permission-denied';
@@ -1962,6 +2089,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const removeAddress = async (id: string) => {
     if (!uid) return;
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Your changes will be saved locally but may not sync to the cloud until tomorrow.');
+      return;
+    }
     
     // Optimistic Update
     const previousAddresses = [...addresses];
@@ -1985,7 +2116,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
       toast.success(translations[language === 'mm' ? 'mm' : 'en'].addressDeleted || 'Address deleted successfully');
     } catch (error) {
-      console.error("Error removing address:", error);
       setAddresses(previousAddresses); // Rollback
       toast.error('Failed to delete address.');
       handleFirestoreError(error, OperationType.DELETE, `users/${uid}/addresses/${id}`);
@@ -1994,6 +2124,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const setDefaultAddress = async (id: string) => {
     if (!uid) return;
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot set default address.');
+      return;
+    }
     try {
       const batch: any[] = [];
       addresses.forEach(a => {
@@ -2003,7 +2137,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
       await Promise.all(batch);
     } catch (error) {
-      console.error("Error setting default address:", error);
+      handleFirestoreError(error, OperationType.UPDATE, `users/${uid}/addresses`);
     }
   };
 
@@ -2108,6 +2242,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setIsDeliveryEnabled,
       isLowStockAlertEnabled,
       setIsLowStockAlertEnabled,
+      isMaintenanceMode,
+      updateMaintenanceMode,
       cutoffTime,
       setCutoffTime,
       estimatedDeliveryTime,

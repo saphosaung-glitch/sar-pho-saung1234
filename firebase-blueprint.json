@@ -1,270 +1,40 @@
 {
   "entities": {
-    "Product": {
-      "title": "Product",
-      "description": "A menu item.",
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile information",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
+        "uid": { "type": "string" },
         "name": { "type": "string" },
-        "mmName": { "type": "string" },
-        "price": { "type": "number" },
-        "category": { "type": "string" },
-        "image": { "type": "string" },
-        "unit": { "type": "string" },
-        "isPremium": { "type": "boolean" }
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "points": { "type": "number" },
+        "role": { "type": "string", "enum": ["user", "admin"] }
       },
-      "required": ["id", "name", "price", "category"]
+      "required": ["uid", "name"]
     },
     "Order": {
       "title": "Order",
-      "description": "A customer order.",
+      "description": "Customer order",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
-        "roomNumber": { "type": "string" },
-        "items": { "type": "array" },
+        "uid": { "type": "string" },
         "total": { "type": "number" },
-        "status": { "type": "string" },
-        "customerName": { "type": "string" },
-        "customerPhone": { "type": "string" },
-        "paymentMethod": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "status": { "type": "string" }
       },
-      "required": ["id", "roomNumber", "items", "total", "status", "createdAt"]
-    },
-    "User": {
-      "title": "User",
-      "description": "A customer profile.",
-      "type": "object",
-      "properties": {
-        "uid": { "type": "string" },
-        "name": { "type": "string" },
-        "phone": { "type": "string" },
-        "room": { "type": "string" },
-        "points": { "type": "number" },
-        "tier": { "type": "string" },
-        "referredBy": { "type": "string" },
-        "lastActive": { "type": "string", "format": "date-time" }
-      },
-      "required": ["uid", "points", "tier"]
-    },
-    "PointTransaction": {
-      "title": "PointTransaction",
-      "description": "A record of points earned or spent.",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "uid": { "type": "string" },
-        "type": { "type": "string" },
-        "amount": { "type": "number" },
-        "description": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["id", "uid", "type", "amount", "createdAt"]
-    },
-    "Address": {
-      "title": "Address",
-      "description": "A delivery address.",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "phone": { "type": "string" },
-        "region": { "type": "string" },
-        "city": { "type": "string" },
-        "township": { "type": "string" },
-        "street": { "type": "string" },
-        "building": { "type": "string" },
-        "room": { "type": "string" },
-        "label": { "type": "string", "enum": ["Home", "Office", "Other"] },
-        "isDefault": { "type": "boolean" }
-      },
-      "required": ["id", "name", "phone", "region", "city", "township", "street", "label", "isDefault"]
-    },
-    "PromotionBanner": {
-      "title": "PromotionBanner",
-      "description": "A banner shown on the menu page.",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "type": { "type": "string" },
-        "tag": { "type": "string" },
-        "title": { "type": "string" },
-        "subtitle": { "type": "string" },
-        "image": { "type": "string" },
-        "color": { "type": "string" },
-        "isActive": { "type": "boolean" }
-      },
-      "required": ["id", "type", "title", "image", "isActive"]
-    },
-    "Deal": {
-      "title": "Deal",
-      "description": "A specific discounted item.",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "type": { "type": "string" },
-        "title": { "type": "string" },
-        "titleMm": { "type": "string" },
-        "originalPrice": { "type": "number" },
-        "price": { "type": "number" },
-        "discount": { "type": "string" },
-        "image": { "type": "string" },
-        "endTime": { "type": "string", "format": "date-time" },
-        "soldCount": { "type": "number" },
-        "totalCount": { "type": "number" },
-        "description": { "type": "string" },
-        "descriptionMm": { "type": "string" },
-        "isActive": { "type": "boolean" }
-      },
-      "required": ["id", "type", "title", "price", "image", "isActive"]
-    },
-    "Bundle": {
-      "title": "Bundle",
-      "description": "A combo pack of items.",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "type": { "type": "string" },
-        "title": { "type": "string" },
-        "titleMm": { "type": "string" },
-        "description": { "type": "string" },
-        "descriptionMm": { "type": "string" },
-        "originalPrice": { "type": "number" },
-        "price": { "type": "number" },
-        "image": { "type": "string" },
-        "items": { "type": "array" },
-        "isActive": { "type": "boolean" }
-      },
-      "required": ["id", "title", "price", "image", "isActive"]
-    },
-    "Coupon": {
-      "title": "Coupon",
-      "description": "A discount coupon code.",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "code": { "type": "string" },
-        "type": { "type": "string", "enum": ["percentage", "fixed"] },
-        "value": { "type": "number" },
-        "minOrderAmount": { "type": "number" },
-        "maxDiscount": { "type": "number" },
-        "expiryDate": { "type": "string", "format": "date-time" },
-        "usageLimit": { "type": "number" },
-        "usageCount": { "type": "number" },
-        "isActive": { "type": "boolean" }
-      },
-      "required": ["id", "code", "type", "value", "isActive"]
-    },
-    "AuditLog": {
-      "title": "AuditLog",
-      "description": "A record of admin actions.",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "adminId": { "type": "string" },
-        "adminName": { "type": "string" },
-        "action": { "type": "string" },
-        "target": { "type": "string" },
-        "details": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "timestamp": { "type": "number" }
-      },
-      "required": ["id", "adminId", "action", "createdAt", "timestamp"]
-    },
-    "BroadcastNotification": {
-      "title": "BroadcastNotification",
-      "description": "A notification sent to all users.",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "title": { "type": "string" },
-        "message": { "type": "string" },
-        "image": { "type": "string" },
-        "type": { "type": "string", "enum": ["promotion", "system", "update"] },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["id", "title", "message", "createdAt"]
-    },
-    "Admin": {
-      "title": "Admin",
-      "description": "An administrative user.",
-      "type": "object",
-      "properties": {
-        "uid": { "type": "string" },
-        "email": { "type": "string" },
-        "role": { "type": "string", "enum": ["superadmin", "staff"] },
-        "name": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["uid", "email", "role"]
-    },
-    "Category": {
-      "title": "Category",
-      "description": "A product category.",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "key": { "type": "string" },
-        "isActive": { "type": "boolean" },
-        "order": { "type": "number" }
-      },
-      "required": ["id", "key", "isActive", "order"]
+      "required": ["id", "uid", "total"]
     }
   },
   "firestore": {
-    "/products/{productId}": {
-      "schema": { "$ref": "Product" },
-      "description": "Menu products."
+    "/users/{uid}": {
+      "schema": { "$ref": "UserProfile" },
+      "description": "User profiles"
     },
     "/orders/{orderId}": {
       "schema": { "$ref": "Order" },
-      "description": "Customer orders."
-    },
-    "/users/{uid}": {
-      "schema": { "$ref": "User" },
-      "description": "Customer profiles."
-    },
-    "/users/{uid}/pointTransactions/{transactionId}": {
-      "schema": { "$ref": "PointTransaction" },
-      "description": "Point history for a user."
-    },
-    "/users/{uid}/addresses/{addressId}": {
-      "schema": { "$ref": "Address" },
-      "description": "Delivery addresses for a user."
-    },
-    "/promotionBanners/{bannerId}": {
-      "schema": { "$ref": "PromotionBanner" },
-      "description": "Banners for the menu page."
-    },
-    "/deals/{dealId}": {
-      "schema": { "$ref": "Deal" },
-      "description": "Discounted items."
-    },
-    "/bundles/{bundleId}": {
-      "schema": { "$ref": "Bundle" },
-      "description": "Combo packs."
-    },
-    "/coupons/{couponId}": {
-      "schema": { "$ref": "Coupon" },
-      "description": "Discount coupons."
-    },
-    "/auditLogs/{logId}": {
-      "schema": { "$ref": "AuditLog" },
-      "description": "Admin activity logs."
-    },
-    "/broadcastNotifications/{notificationId}": {
-      "schema": { "$ref": "BroadcastNotification" },
-      "description": "Global notifications."
-    },
-    "/admins/{uid}": {
-      "schema": { "$ref": "Admin" },
-      "description": "Admin users and roles."
-    },
-    "/categories/{categoryId}": {
-      "schema": { "$ref": "Category" },
-      "description": "Product categories."
+      "description": "Orders"
     }
   }
 }

@@ -101,9 +101,10 @@ export default function CheckoutPage() {
         });
         if (order && typeof order === 'object') {
           setShowSuccessOverlay(true);
+          // Faster transition to success page
           setTimeout(() => {
-            navigate(`/success?id=${order.id}`, { state: { order } });
-          }, 1500);
+            navigate(`/success?id=${order.id}`, { state: { order }, replace: true });
+          }, 800);
         } else {
           toast.error(t('orderFailed') + ' (Please check your connection or login status)');
         }
@@ -170,7 +171,7 @@ export default function CheckoutPage() {
           </div>
         )}
 
-        {cart.length === 0 ? (
+        {cart.length === 0 && !isPlacingOrder && !showSuccessOverlay ? (
           <div className="py-32 px-6 text-center flex flex-col items-center">
             <motion.div 
               initial={{ scale: 0.8, opacity: 0 }}
@@ -658,20 +659,21 @@ export default function CheckoutPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
             className="fixed inset-0 z-[100] bg-primary flex flex-col items-center justify-center text-white"
           >
             <motion.div
-              initial={{ scale: 0, rotate: -180 }}
-              animate={{ scale: 1, rotate: 0 }}
-              transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+              initial={{ scale: 0.5, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
               className="w-24 h-24 bg-white rounded-full flex items-center justify-center mb-6 shadow-2xl"
             >
               <Check size={48} className="text-primary" strokeWidth={4} />
             </motion.div>
             <motion.h2 
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
+              transition={{ delay: 0.1 }}
               className="text-2xl font-black tracking-tight"
             >
               {t('orderSuccessful')}
@@ -679,10 +681,10 @@ export default function CheckoutPage() {
             <motion.p
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.4 }}
+              transition={{ delay: 0.2 }}
               className="text-white/70 font-bold mt-2"
             >
-              {t('redirecting') || 'Redirecting to success page...'}
+              {t('redirecting') || 'Redirecting...'}
             </motion.p>
           </motion.div>
         )}
