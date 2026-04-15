@@ -10,45 +10,51 @@ export default function RegistrationPage() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCheckingAccount, setIsCheckingAccount] = useState(false);
+  const [pendingName, setPendingName] = useState('');
   const location = useLocation();
 
-  // Redirect if already registered
+  // Handle navigation after profile is loaded
   React.useEffect(() => {
-    console.log("RegistrationPage: Checking registration status", { userName, userPhone });
-    if (userName && userPhone) {
+    if (isCheckingAccount && isProfileLoaded) {
+      console.log("RegistrationPage: Profile loaded, checking if user exists", { userName, userPhone });
+      
+      // If userName is still empty after sync, it's a new user, so set the name they entered
+      if (!userName && pendingName) {
+        console.log("RegistrationPage: New user, setting name:", pendingName);
+        setUserName(pendingName);
+      } else if (userName) {
+        console.log("RegistrationPage: Existing user found:", userName);
+      }
+      
+      setIsCheckingAccount(false);
+      setIsSubmitting(false);
+      
       const from = location.state?.from?.pathname || '/menu';
-      console.log("RegistrationPage: User already registered, redirecting to", from);
+      console.log("RegistrationPage: Navigating to", from);
       navigate(from, { replace: true });
     }
-  }, [userName, userPhone, navigate, location.state]);
+  }, [isCheckingAccount, isProfileLoaded, userName, pendingName, setUserName, navigate, location.state]);
+
+  // Redirect if already registered (on initial load)
+  React.useEffect(() => {
+    if (!isCheckingAccount && userName && userPhone) {
+      const from = location.state?.from?.pathname || '/menu';
+      navigate(from, { replace: true });
+    }
+  }, [userName, userPhone, navigate, location.state, isCheckingAccount]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("RegistrationPage: Submitting form", { name, phone });
-    if (!name || !phone) {
-      console.warn("RegistrationPage: Name or phone missing");
-      return;
-    }
+    if (!name || !phone) return;
     
     setIsSubmitting(true);
+    setIsCheckingAccount(true);
+    setPendingName(name);
     
-    try {
-      // Set phone first to trigger sync in StoreContext
-      const sanitizedPhone = phone.replace(/[^0-9]/g, '');
-      console.log("RegistrationPage: Sanitized phone", sanitizedPhone);
-      setUserPhone(sanitizedPhone);
-      setUserName(name);
-      
-      console.log("RegistrationPage: States set, waiting for redirect...");
-      // Small delay to ensure state updates and persistence
-      setTimeout(() => {
-        console.log("RegistrationPage: Navigating to /menu");
-        navigate('/menu', { replace: true });
-      }, 500);
-    } catch (error) {
-      console.error("Registration error:", error);
-      setIsSubmitting(false);
-    }
+    const sanitizedPhone = phone.replace(/[^0-9]/g, '');
+    setUserPhone(sanitizedPhone);
+    // The useEffect above will handle the rest once isProfileLoaded becomes true
   };
 
   const isRedirected = location.state?.from;

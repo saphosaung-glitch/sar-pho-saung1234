@@ -374,9 +374,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const saved = localStorage.getItem('sp_points');
     return saved ? parseInt(saved, 10) : 0;
   });
-  const [products, setProducts] = useState<any[]>([]);
-  const [addresses, setAddresses] = useState<Address[]>([]);
+  const [products, setProducts] = useState<any[]>(() => {
+    const saved = localStorage.getItem('sp_products');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [addresses, setAddresses] = useState<Address[]>(() => {
+    const saved = localStorage.getItem('sp_addresses');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [selectedAddressId, setSelectedAddressIdState] = useState<string | null>(null);
+  const [favorites, setFavorites] = useState<string[]>(() => {
+    const saved = localStorage.getItem('sp_favorites');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [categories, setCategories] = useState<Category[]>([]);
   const [promotionBanners, setPromotionBanners] = useState<PromotionBanner[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
@@ -419,52 +429,121 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [userPhone]);
 
   const lastSyncedCartRef = useRef<string>('');
+  const lastSyncedUidRef = useRef<string | null>(null);
+  const isInitialMount = useRef(true);
 
-  // Sync Cart with Firestore
+  // Sync User Data with Firestore
   useEffect(() => {
-    if (!uid) return;
-    const userDocRef = doc(db, 'users', uid);
+    if (!uid) {
+      console.log("StoreContext: No UID available, skipping user data sync");
+      setIsProfileLoaded(true);
+      lastSyncedUidRef.current = null;
+      return;
+    }
     
-    // Always try to load from Firestore when UID is available
+    // Reset user-specific state when switching users to avoid data leakage
+    // But only if it's a different UID than before
+    if (lastSyncedUidRef.current !== uid) {
+      console.log("StoreContext: UID changed or initial load with UID", { old: lastSyncedUidRef.current, new: uid });
+      
+      // If it's not the initial mount, we reset the state for the new user
+      // On initial mount, we keep the localStorage data until Firestore syncs
+      if (!isInitialMount.current) {
+        console.log("StoreContext: Not initial mount, resetting user state for new UID");
+        const resetUserState = () => {
+          setUserName('');
+          setUserEmail('');
+          setUserBirthday('');
+          setUserAvatar('');
+          setRoomNumber('');
+          setPoints(0);
+          // We don't clear the cart here to allow guest cart to be synced to the new account
+          // If the new account already has a cart in Firestore, it will be overwritten in onSnapshot
+          setAddresses([]);
+          setOrders([]);
+          setFavorites([]);
+        };
+        resetUserState();
+      }
+      
+      lastSyncedUidRef.current = uid;
+      setIsProfileLoaded(false);
+    }
+    
+    isInitialMount.current = false;
+    
+    const userDocRef = doc(db, 'users', uid);
+    console.log("StoreContext: Setting up user data sync for UID:", uid);
+    
     const unsubscribe = onSnapshot(userDocRef, (snap) => {
+      console.log("StoreContext: User data snapshot received. Exists:", snap.exists());
       if (snap.exists()) {
         const data = snap.data();
+        console.log("StoreContext: User data found in Firestore", data);
+        
+        // Sync Profile - only update if different to avoid unnecessary re-renders
+        if (data.name !== undefined) setUserName(data.name || '');
+        if (data.email !== undefined) setUserEmail(data.email || '');
+        if (data.birthday !== undefined) setUserBirthday(data.birthday || '');
+        if (data.avatar !== undefined) setUserAvatar(data.avatar || '');
+        if (data.room !== undefined) setRoomNumber(data.room || '');
+        
+        // Sync Points
+        if (typeof data.points === 'number') setPoints(data.points);
+        
+        // Sync Cart
         if (data.cart) {
           const cartString = JSON.stringify(data.cart);
           if (cartString !== lastSyncedCartRef.current) {
+            console.log("StoreContext: Syncing cart from Firestore", data.cart);
             lastSyncedCartRef.current = cartString;
             setCart(data.cart);
           }
         }
+        
+        // Sync Favorites
+        if (data.favorites) setFavorites(data.favorites);
+      } else {
+        console.log("StoreContext: No user data found in Firestore for UID:", uid);
+        // This is a new user
       }
+      setIsProfileLoaded(true);
     }, (error) => {
-      console.error("Firestore cart sync error:", error);
+      console.error("Firestore user data sync error:", error);
+      setIsProfileLoaded(true);
     });
 
     return () => unsubscribe();
   }, [uid]);
 
-  // Sync Cart changes to Firestore with debounce
+  // Sync User Data changes to Firestore with debounce
   useEffect(() => {
-    if (!uid || getIsQuotaExceeded()) return;
+    if (!uid || getIsQuotaExceeded() || !isProfileLoaded) return;
     
-    const cartString = JSON.stringify(cart);
-    if (cartString === lastSyncedCartRef.current) return;
+    const userData = {
+      name: userName,
+      phone: userPhone,
+      email: userEmail,
+      birthday: userBirthday,
+      avatar: userAvatar,
+      room: roomNumber,
+      points: points,
+      cart: cart,
+      favorites: favorites,
+      lastUpdated: Date.now()
+    };
 
     const timeoutId = setTimeout(async () => {
       try {
-        await updateDoc(doc(db, 'users', uid), { 
-          cart,
-          lastUpdated: Date.now()
-        });
-        lastSyncedCartRef.current = cartString;
+        await setDoc(doc(db, 'users', uid), userData, { merge: true });
+        console.log("StoreContext: User data synced to Firestore");
       } catch (error) {
-        handleFirestoreError(error, OperationType.UPDATE, `users/${uid}/cart`);
+        console.error("StoreContext: Error syncing user data to Firestore", error);
       }
-    }, 2000); // 2 second debounce
+    }, 2000);
 
     return () => clearTimeout(timeoutId);
-  }, [cart, uid]);
+  }, [uid, userName, userPhone, userEmail, userBirthday, userAvatar, roomNumber, points, cart, favorites, isProfileLoaded]);
 
   const setSelectedAddressId = (id: string | null) => {
     setSelectedAddressIdState(id);
@@ -569,13 +648,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     let isSeeding = false;
     const unsubscribe = onSnapshot(collection(db, 'products'), (querySnapshot) => {
       const productsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      console.log("StoreContext: Products synced from Firestore. Count:", productsData.length);
       setProducts(productsData);
       
       // Auto-seed only if the collection is completely empty
-      if (querySnapshot.empty && isAdmin && !isSeeding) {
+      if (querySnapshot.empty && !isSeeding) {
         isSeeding = true;
+        console.log("StoreContext: Products collection is empty, seeding database...");
         import('../lib/seed').then(({ seedDatabase }) => {
           seedDatabase().then(() => {
+            console.log("StoreContext: Database seeded successfully");
             isSeeding = false;
           }).catch(err => {
             console.error('Auto-seed failed:', err);
@@ -1039,10 +1121,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
   const [bankAccountName, setBankAccountName] = useState(() => {
     return localStorage.getItem('sp_bank_acc_name') || 'SAPHOSAUNG GROCERY';
-  });
-  const [favorites, setFavorites] = useState<string[]>(() => {
-    const saved = localStorage.getItem('sp_favorites');
-    return saved ? JSON.parse(saved) : [];
   });
   const [notifications, setNotifications] = useState<Notification[]>(() => {
     const saved = localStorage.getItem('sp_notifications');
