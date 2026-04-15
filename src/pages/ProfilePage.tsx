@@ -7,8 +7,9 @@ import {
   Camera, Save, Sparkles, ChevronRight, Heart, 
   Headphones, Bell, Moon, CreditCard, ShieldCheck,
   Trophy, Trash2, MessageCircle, HelpCircle, Shield, Info,
-  Clock, Package, Mail, Calendar
+  Clock, Package, Mail, Calendar, Database, RefreshCw
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function ProfilePage() {
@@ -19,7 +20,7 @@ export default function ProfilePage() {
     points, language, setLanguage, t,
     darkMode, setDarkMode, formatPrice,
     logout, uid, addresses, orders, userAvatar,
-    userEmail, userBirthday
+    userEmail, userBirthday, isAdmin, isQuotaExceeded, resetQuotaExceeded
   } = useStore();
   const navigate = useNavigate();
   const [showSuccess, setShowSuccess] = useState(false);
@@ -454,18 +455,43 @@ export default function ProfilePage() {
               <ChevronRight size={16} className="text-on-surface-variant/30" />
             </div>
 
-            <div onClick={() => navigate('/admin-login')} className="flex items-center justify-between px-6 py-4 hover:bg-surface-container-low/30 transition-colors cursor-pointer">
+            <div onClick={() => navigate(isAdmin ? '/admin' : '/admin-login')} className="flex items-center justify-between px-6 py-4 hover:bg-surface-container-low/30 transition-colors cursor-pointer">
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 bg-amber-500/5 rounded-xl flex items-center justify-center text-amber-600">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isAdmin ? 'bg-primary/10 text-primary' : 'bg-amber-500/5 text-amber-600'}`}>
                   <ShieldCheck size={18} />
                 </div>
                 <div>
                   <p className="text-sm font-bold text-on-surface">{t('adminDashboard')}</p>
-                  <p className="text-[8px] font-black text-on-surface-variant/40 uppercase tracking-widest">{t('managementAccessDesc')}</p>
+                  <p className="text-[8px] font-black text-on-surface-variant/40 uppercase tracking-widest">
+                    {isAdmin ? 'You have admin access' : t('managementAccessDesc')}
+                  </p>
                 </div>
               </div>
               <ChevronRight size={16} className="text-on-surface-variant/30" />
             </div>
+
+            {isAdmin && isQuotaExceeded && (
+              <div 
+                onClick={() => {
+                  resetQuotaExceeded();
+                  toast.success("Quota status reset locally.");
+                }} 
+                className="flex items-center justify-between px-6 py-4 hover:bg-red-500/10 transition-colors cursor-pointer border-t border-red-500/10"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-red-500/10 text-red-500">
+                    <Database size={18} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-red-500">Reset Quota Status</p>
+                    <p className="text-[8px] font-black text-red-500/60 uppercase tracking-widest">
+                      Firestore limit reached. Click to retry.
+                    </p>
+                  </div>
+                </div>
+                <RefreshCw size={16} className="text-red-500/30" />
+              </div>
+            )}
           </div>
         </motion.section>
 

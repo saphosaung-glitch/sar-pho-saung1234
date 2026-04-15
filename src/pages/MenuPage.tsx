@@ -320,9 +320,9 @@ export default function MenuPage() {
                       </div>
                       
                       <AddToCartButton 
-                        onClick={() => item.isAvailable !== false ? addToCart(item) : null}
+                        onClick={() => addToCart(item)}
                         darkMode={darkMode}
-                        className={item.isAvailable === false ? 'opacity-50 cursor-not-allowed' : ''}
+                        disabled={item.isAvailable === false}
                       />
                     </div>
                   </div>

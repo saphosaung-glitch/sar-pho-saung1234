@@ -26,7 +26,7 @@ export default function FavoritesPage() {
     return () => unsubscribe();
   }, []);
 
-  const favoriteProducts = products.filter(p => favorites.includes(p.id));
+  const favoriteProducts = products.filter(p => favorites.includes(p.id) && p.isAvailable !== false);
 
   return (
     <div className={`min-h-screen pb-32 transition-colors duration-300 ${darkMode ? 'bg-surface' : 'bg-surface'}`}>
@@ -60,8 +60,20 @@ export default function FavoritesPage() {
                   <Heart size={14} fill="currentColor" />
                 </button>
 
-                <div className={`h-32 w-full ${darkMode ? 'bg-surface-container-low' : 'bg-[#FDFBF7]'}`}>
-                  <img className="w-full h-full object-cover" src={product.image} alt={product.name} referrerPolicy="no-referrer" />
+                <div className={`h-32 w-full ${darkMode ? 'bg-surface-container-low' : 'bg-[#FDFBF7]'} relative`}>
+                  <img 
+                    className={`w-full h-full object-cover ${product.isAvailable === false ? 'opacity-50' : ''}`} 
+                    src={product.image} 
+                    alt={product.name} 
+                    referrerPolicy="no-referrer" 
+                  />
+                  {product.isAvailable === false && (
+                    <div className="absolute inset-0 flex items-center justify-center z-20">
+                      <div className="bg-black/70 px-3 py-1 rounded-lg">
+                        <span className="text-white font-black text-[10px] uppercase tracking-widest">Sold Out</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="p-2 flex flex-col flex-1 justify-between gap-1">
@@ -74,6 +86,7 @@ export default function FavoritesPage() {
                     <AddToCartButton 
                       onClick={() => addToCart(product)}
                       darkMode={darkMode}
+                      disabled={product.isAvailable === false}
                     />
                   </div>
                 </div>

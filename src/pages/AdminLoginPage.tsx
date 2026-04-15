@@ -34,7 +34,7 @@ export default function AdminLoginPage() {
         </div>
 
         <h1 className="text-3xl font-black text-emerald-900 mb-2 tracking-tight">Admin Login</h1>
-        <p className="text-emerald-700 font-bold mb-10 text-sm uppercase tracking-widest">စားဖိုဆောင် (Sar Pho Saung)</p>
+        <p className="text-emerald-700 font-bold mb-10 text-sm uppercase tracking-widest">စားတော်ဆက် (Sar Taw Set)</p>
 
         {error && <p className="text-red-500 text-xs font-bold bg-red-50 py-3 rounded-xl border border-red-100 w-full mb-6">{error}</p>}
 

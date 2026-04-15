@@ -213,6 +213,7 @@ export const translations: Record<string, any> = {
     welcomeDesc: 'Order fresh vegetables, meat, and kitchen essentials all in one place.',
     getStarted: 'Get Started',
     // Checkout
+    continue: 'Continue',
     securePayment: 'SECURE PAYMENT',
     yourCartIsEmpty: 'Your cart is empty',
     emptyCartDesc: 'Looks like you haven\'t added any premium items to your cart yet.',
@@ -671,6 +672,7 @@ export const translations: Record<string, any> = {
     welcomeDesc: 'Pesan sayur-sayuran segar, daging, dan keperluan dapur semuanya di satu tempat.',
     getStarted: 'Mula Sekarang',
     // Checkout
+    continue: 'Teruskan',
     securePayment: 'PEMBAYARAN SELAMAT',
     yourCartIsEmpty: 'Bakul anda kosong',
     emptyCartDesc: 'Nampaknya anda belum menambah sebarang item premium ke dalam bakul anda.',
@@ -1088,6 +1090,7 @@ export const translations: Record<string, any> = {
     welcomeDesc: 'สั่งผักสด เนื้อสัตว์ และอุปกรณ์ครัวได้ในที่เดียว',
     getStarted: 'เริ่มต้นใช้งาน',
     // Checkout
+    continue: 'ดำเนินการต่อ',
     securePayment: 'การชำระเงินที่ปลอดภัย',
     yourCartIsEmpty: 'รถเข็นของคุณว่างเปล่า',
     emptyCartDesc: 'ดูเหมือนว่าคุณยังไม่ได้เพิ่มสินค้าพรีเมียมลงในรถเข็น',
@@ -1522,6 +1525,7 @@ export const translations: Record<string, any> = {
     welcomeDesc: '一站式订购新鲜蔬菜、肉类和厨房必需品。',
     getStarted: '开始使用',
     // Checkout
+    continue: '继续',
     securePayment: '安全支付',
     yourCartIsEmpty: '您的购物车是空的',
     emptyCartDesc: '看来您还没有添加任何优质商品到购物车。',
@@ -1959,11 +1963,12 @@ export const translations: Record<string, any> = {
     cancelOrderConfirm: 'ဤအော်ဒါကို ပယ်ဖျက်ရန် သေချာပါသလား? ဤလုပ်ဆောင်ချက်ကို ပြန်ပြင်၍မရပါ။',
     noKeep: 'မဖျက်ပါ',
     yesCancel: 'ဖျက်မည်',
-    welcomeTitle: 'စားဖိုဆောင်',
+    welcomeTitle: 'စားတော်ဆက်',
     welcomeSubtitle: 'လတ်ဆတ်သော ကုန်စုံပစ္စည်းများကို သင့်အိမ်အရောက် ပို့ဆောင်ပေးပါသည်',
     welcomeDesc: 'ဟင်းသီးဟင်းရွက်၊ အသားငါးနှင့် မီးဖိုချောင်သုံးပစ္စည်းများကို တစ်နေရာတည်းမှာ မှာယူနိုင်ပါပြီ။',
     getStarted: 'စတင်အသုံးပြုမည်',
     // Checkout
+    continue: 'ဆက်လက်လုပ်ဆောင်ရန်',
     securePayment: 'လုံခြုံသောငွေပေးချေမှု',
     yourCartIsEmpty: 'ခြင်းတောင်းထဲတွင် ပစ္စည်းမရှိပါ',
     emptyCartDesc: 'ခြင်းတောင်းထဲသို့ ပစ္စည်းများ မထည့်ရသေးပါ။',

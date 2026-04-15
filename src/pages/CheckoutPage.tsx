@@ -339,8 +339,9 @@ export default function CheckoutPage() {
                               <span className={`w-8 text-center font-black text-xs ${darkMode ? 'text-white' : 'text-on-surface'}`}>{item.quantity}</span>
                               <button 
                                 type="button"
-                                onClick={() => updateQuantity(item.id, 1)}
-                                className={`w-7 h-7 flex items-center justify-center rounded-lg transition-colors shadow-[0_2px_4px_rgba(0,0,0,0.02)] border ${darkMode ? 'bg-slate-700 text-white border-white/10 hover:bg-slate-600' : 'bg-white text-on-surface border-on-surface/5 hover:bg-surface'}`}
+                                onClick={() => item.isAvailable !== false ? updateQuantity(item.id, 1) : null}
+                                disabled={item.isAvailable === false}
+                                className={`w-7 h-7 flex items-center justify-center rounded-lg transition-colors shadow-[0_2px_4px_rgba(0,0,0,0.02)] border ${darkMode ? 'bg-slate-700 text-white border-white/10 hover:bg-slate-600' : 'bg-white text-on-surface border-on-surface/5 hover:bg-surface'} ${item.isAvailable === false ? 'opacity-50 cursor-not-allowed' : ''}`}
                               >
                                 <Plus size={16} />
                               </button>

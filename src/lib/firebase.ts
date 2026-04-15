@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword } from 'firebase/auth';
+import { getAuth, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, signInAnonymously } from 'firebase/auth';
 import { initializeFirestore, memoryLocalCache, doc, getDocFromServer } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -16,7 +16,7 @@ export const db = initializeFirestore(app, {
 export const auth = getAuth(app);
 // Explicitly pass the storage bucket to ensure it's correctly initialized
 export const storage = getStorage(app, firebaseConfig.storageBucket ? `gs://${firebaseConfig.storageBucket}` : undefined);
-export { signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword };
+export { signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, signInAnonymously };
 
 export enum OperationType {
   CREATE = 'create',
@@ -47,15 +47,29 @@ export interface FirestoreErrorInfo {
 }
 
 let isQuotaExceeded = false;
+let quotaListeners: ((exceeded: boolean) => void)[] = [];
 
 export function getIsQuotaExceeded() {
   return isQuotaExceeded;
+}
+
+export function onQuotaExceededChange(listener: (exceeded: boolean) => void) {
+  quotaListeners.push(listener);
+  return () => {
+    quotaListeners = quotaListeners.filter(l => l !== listener);
+  };
+}
+
+export function resetQuotaExceeded() {
+  isQuotaExceeded = false;
+  quotaListeners.forEach(l => l(false));
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errorMessage = error instanceof Error ? error.message : String(error);
   if (errorMessage.includes('resource-exhausted')) {
     isQuotaExceeded = true;
+    quotaListeners.forEach(l => l(true));
   }
   const errInfo: FirestoreErrorInfo = {
     error: errorMessage,

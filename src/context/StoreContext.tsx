@@ -19,7 +19,7 @@ import {
   writeBatch,
   Unsubscribe
 } from 'firebase/firestore';
-import { auth, db, handleFirestoreError, OperationType, getIsQuotaExceeded } from '../lib/firebase';
+import { auth, db, handleFirestoreError, OperationType, getIsQuotaExceeded, onQuotaExceededChange, resetQuotaExceeded as resetQuota, signInAnonymously } from '../lib/firebase';
 import { onAuthStateChanged, GoogleAuthProvider, signInWithPopup, setPersistence, browserLocalPersistence, signOut } from 'firebase/auth';
 import { Address } from '../types';
 
@@ -297,7 +297,10 @@ interface StoreContextType {
   users: any[];
   updateUserPoints: (uid: string, points: number) => Promise<void>;
   isAdmin: boolean;
+  isAuthLoading: boolean;
   isProfileLoaded: boolean;
+  isQuotaExceeded: boolean;
+  resetQuotaExceeded: () => void;
   sessions: Session[];
   revokeSession: (sessionId: string) => Promise<void>;
 }
@@ -329,11 +332,38 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
 
   const [authUid, setAuthUid] = useState<string | null>(null);
-  const [userName, setUserName] = useState(() => localStorage.getItem('sp_user_name') || '');
-  const [userPhone, setUserPhone] = useState(() => localStorage.getItem('sp_user_phone') || '');
-  const [userAvatar, setUserAvatar] = useState(() => localStorage.getItem('sp_user_avatar') || '');
-  const [userEmail, setUserEmail] = useState(() => localStorage.getItem('sp_user_email') || '');
-  const [userBirthday, setUserBirthday] = useState(() => localStorage.getItem('sp_user_birthday') || '');
+  const [userName, setUserName] = useState(() => {
+    const val = localStorage.getItem('sp_user_name');
+    return (val && val !== 'null' && val !== 'undefined') ? val : '';
+  });
+  const [userPhone, setUserPhone] = useState(() => {
+    const val = localStorage.getItem('sp_user_phone');
+    return (val && val !== 'null' && val !== 'undefined') ? val : '';
+  });
+
+  // Persist user info to localStorage
+  useEffect(() => {
+    if (userName) localStorage.setItem('sp_user_name', userName);
+    else localStorage.removeItem('sp_user_name');
+  }, [userName]);
+
+  useEffect(() => {
+    if (userPhone) localStorage.setItem('sp_user_phone', userPhone);
+    else localStorage.removeItem('sp_user_phone');
+  }, [userPhone]);
+
+  const [userAvatar, setUserAvatar] = useState(() => {
+    const val = localStorage.getItem('sp_user_avatar');
+    return (val && val !== 'null' && val !== 'undefined') ? val : '';
+  });
+  const [userEmail, setUserEmail] = useState(() => {
+    const val = localStorage.getItem('sp_user_email');
+    return (val && val !== 'null' && val !== 'undefined') ? val : '';
+  });
+  const [userBirthday, setUserBirthday] = useState(() => {
+    const val = localStorage.getItem('sp_user_birthday');
+    return (val && val !== 'null' && val !== 'undefined') ? val : '';
+  });
   const [roomNumber, setRoomNumber] = useState(() => localStorage.getItem('sp_room') || '');
   const [orders, setOrders] = useState<Order[]>(() => {
     const saved = localStorage.getItem('sp_orders');
@@ -357,7 +387,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isProfileLoaded, setIsProfileLoaded] = useState(false);
+  const [isQuotaExceeded, setIsQuotaExceeded] = useState(getIsQuotaExceeded());
+
+  const resetQuotaExceeded = () => {
+    resetQuota();
+    setIsQuotaExceeded(false);
+  };
+
+  // Listen for quota changes
+  useEffect(() => {
+    return onQuotaExceededChange((exceeded) => {
+      setIsQuotaExceeded(exceeded);
+    });
+  }, []);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionId] = useState(() => {
     let id = sessionStorage.getItem('sp_session_id');
@@ -400,15 +444,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => unsubscribe();
   }, [uid]);
 
-  // Sync Cart changes to Firestore
+  // Sync Cart changes to Firestore with debounce
   useEffect(() => {
-    if (uid && !getIsQuotaExceeded()) {
-      const cartString = JSON.stringify(cart);
-      if (cartString !== lastSyncedCartRef.current) {
+    if (!uid || getIsQuotaExceeded()) return;
+    
+    const cartString = JSON.stringify(cart);
+    if (cartString === lastSyncedCartRef.current) return;
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        await updateDoc(doc(db, 'users', uid), { 
+          cart,
+          lastUpdated: Date.now()
+        });
         lastSyncedCartRef.current = cartString;
-        updateDoc(doc(db, 'users', uid), { cart }).catch(console.error);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `users/${uid}/cart`);
       }
-    }
+    }, 2000); // 2 second debounce
+
+    return () => clearTimeout(timeoutId);
   }, [cart, uid]);
 
   const setSelectedAddressId = (id: string | null) => {
@@ -643,7 +698,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       } else {
         setAuthUid(null);
         setUserEmail('');
+        // Sign in anonymously if no user is present to ensure we have a UID for Firestore rules
+        signInAnonymously(auth).catch(err => {
+          if (err.code === 'auth/admin-restricted-operation') {
+            console.warn("Anonymous auth is disabled in Firebase Console. Please enable it to allow guest users to save data.");
+          } else {
+            console.error("Anonymous sign-in failed:", err);
+          }
+        });
       }
+      setIsAuthLoading(false);
     });
     return () => unsubscribe();
   }, []);
@@ -658,16 +722,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Hardcoded check for initial setup/dev
     const hardcodedAdmins = ['saphosaung@gmail.com', 'yelwinaung9981@gmail.com'];
     if (userEmail && hardcodedAdmins.includes(userEmail)) {
+      console.log("User email matches hardcoded admin list:", userEmail);
       setIsAdmin(true);
     }
 
+    console.log("Setting up admin snapshot listener for UID:", authUid);
     const unsub = onSnapshot(doc(db, 'admins', authUid), (snap) => {
       if (snap.exists()) {
+        console.log("Admin document found in Firestore for UID:", authUid);
         setIsAdmin(true);
       } else if (userEmail && !hardcodedAdmins.includes(userEmail)) {
+        console.log("No admin document found and email not in hardcoded list. Revoking admin status.");
         setIsAdmin(false);
       }
-    }, () => {
+    }, (error) => {
+      console.error("Error in admin snapshot listener:", error);
+      // If quota exceeded, don't necessarily revoke admin status if they were already admin
+      if (error.message.includes('resource-exhausted')) {
+        console.warn("Quota exceeded while checking admin status. Retaining current status.");
+        return;
+      }
       // If permission denied, they are likely not an admin
       if (userEmail && !hardcodedAdmins.includes(userEmail)) {
         setIsAdmin(false);
@@ -686,94 +760,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  // Session tracking
+  // Session tracking removed to prevent remote termination issues
   useEffect(() => {
     if (!uid) {
       setSessions([]);
       return;
     }
-
-    const registerSession = async () => {
-      const userAgent = navigator.userAgent;
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(userAgent);
-      const isTablet = /iPad/i.test(userAgent) || (isMobile && window.innerWidth > 768);
-      const deviceType = isTablet ? 'tablet' : isMobile ? 'mobile' : 'desktop';
-      
-      let browser = 'Unknown';
-      if (userAgent.indexOf("Firefox") > -1) browser = "Firefox";
-      else if (userAgent.indexOf("SamsungBrowser") > -1) browser = "Samsung Browser";
-      else if (userAgent.indexOf("Opera") > -1 || userAgent.indexOf("OPR") > -1) browser = "Opera";
-      else if (userAgent.indexOf("Trident") > -1) browser = "Internet Explorer";
-      else if (userAgent.indexOf("Edge") > -1) browser = "Edge";
-      else if (userAgent.indexOf("Chrome") > -1) browser = "Chrome";
-      else if (userAgent.indexOf("Safari") > -1) browser = "Safari";
-
-      let os = 'Unknown';
-      if (userAgent.indexOf("Win") != -1) os = "Windows";
-      if (userAgent.indexOf("Mac") != -1) os = "MacOS";
-      if (userAgent.indexOf("X11") != -1) os = "UNIX";
-      if (userAgent.indexOf("Linux") != -1) os = "Linux";
-      if (/Android/.test(userAgent)) os = "Android";
-      if (/iPhone|iPad|iPod/.test(userAgent)) os = "iOS";
-
-      const sessionData: Session = {
-        id: currentSessionId,
-        userId: uid,
-        deviceType,
-        browser,
-        os,
-        lastActive: Date.now(),
-        isCurrent: true,
-        userAgent
-      };
-
-      try {
-        const sessionDoc = await getDoc(doc(db, 'users', uid, 'sessions', currentSessionId));
-        if (!sessionDoc.exists()) {
-          await setDoc(doc(db, 'users', uid, 'sessions', currentSessionId), sessionData);
-        } else {
-          await updateDoc(doc(db, 'users', uid, 'sessions', currentSessionId), {
-            lastActive: Date.now()
-          });
-        }
-      } catch (error) {
-        console.error("Error registering session:", error);
-      }
-    };
-
-    registerSession();
-
-    const sessionsRef = collection(db, 'users', uid, 'sessions');
-    const unsubscribe = onSnapshot(sessionsRef, (snapshot) => {
-      const t = (key: string) => (translations[language] as any)[key] || key;
-      const sessionsData = snapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id,
-        isCurrent: doc.id === currentSessionId
-      })) as Session[];
-      
-      setSessions(sessionsData.sort((a, b) => b.lastActive - a.lastActive));
-
-      const currentSessionExists = snapshot.docs.some(doc => doc.id === currentSessionId);
-      if (!currentSessionExists && uid) {
-        toast.error(t('sessionTerminated'));
-        logout();
-      }
-    });
-
-    const interval = setInterval(() => {
-      if (!getIsQuotaExceeded()) {
-        updateDoc(doc(db, 'users', uid, 'sessions', currentSessionId), {
-          lastActive: Date.now()
-        }).catch(() => {});
-      }
-    }, 1000 * 60 * 10); // Update every 10 minutes instead of 5
-
-    return () => {
-      unsubscribe();
-      clearInterval(interval);
-    };
-  }, [uid, currentSessionId]);
+  }, [uid]);
 
   const revokeSession = async (sessionId: string) => {
     if (!uid) return;
@@ -788,30 +781,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const logout = async () => {
-    if (uid && currentSessionId) {
-      await deleteDoc(doc(db, 'users', uid, 'sessions', currentSessionId)).catch(console.error);
+    try {
+      if (authUid && currentSessionId) {
+        await deleteDoc(doc(db, 'users', authUid, 'sessions', currentSessionId)).catch(console.error);
+      }
+      await signOut(auth);
+      setAuthUid(null);
+      setUserName('');
+      setUserPhone('');
+      setRoomNumber('');
+      setPoints(0);
+      setUserAvatar('');
+      setUserEmail('');
+      setUserBirthday('');
+      setOrders([]);
+      setCart([]);
+      setIsProfileLoaded(false);
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch (error) {
+      console.error("Logout error:", error);
     }
-    await signOut(auth);
-    setUserName('');
-    setUserPhone('');
-    setRoomNumber('');
-    setPoints(0);
-    setUserAvatar('');
-    setUserEmail('');
-    setUserBirthday('');
-    setOrders([]);
-    setCart([]);
-    localStorage.removeItem('sp_user_name');
-    localStorage.removeItem('sp_user_phone');
-    localStorage.removeItem('sp_room');
-    localStorage.removeItem('sp_user_avatar');
-    localStorage.removeItem('sp_user_email');
-    localStorage.removeItem('sp_user_birthday');
-    localStorage.removeItem('sp_orders');
-    localStorage.removeItem('sp_points');
-    localStorage.removeItem('sp_cart');
-    setIsProfileLoaded(false);
-    auth.signOut();
   };
 
   const updateUserProfile = async (profile: {
@@ -853,10 +843,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Update Firestore
     const userDocRef = doc(db, 'users', uid);
     try {
-      await updateDoc(userDocRef, {
+      const updateData: any = {
         ...profile,
         lastActive: serverTimestamp()
-      });
+      };
+      if (authUid) updateData.authUid = authUid;
+      
+      await updateDoc(userDocRef, updateData);
     } catch (error) {
       console.error("Error updating profile in Firestore:", error);
       handleFirestoreError(error, OperationType.UPDATE, `users/${uid}`);
@@ -865,8 +858,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Sync User Profile with Firestore using Phone Number as ID
   useEffect(() => {
-    if (!uid) {
-      setIsProfileLoaded(false);
+    if (!uid || !authUid) {
+      if (uid && !authUid) {
+        console.warn("Profile sync waiting for authUid...");
+      }
+      setIsProfileLoaded(true);
       return;
     }
 
@@ -901,13 +897,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const mergedFavorites = Array.from(new Set([...firestoreFavorites, ...favorites]));
           
           const updateData: any = {
-            lastActive: serverTimestamp(),
             favorites: mergedFavorites,
             name: userName || data.name // Auto-update name if a new one is provided
           };
           if (authUid) updateData.authUid = authUid;
           
-          await updateDoc(userDocRef, updateData).catch(() => {});
+          // Only update if favorites or authUid changed
+          const hasChanges = JSON.stringify(mergedFavorites) !== JSON.stringify(firestoreFavorites) || (authUid && data.authUid !== authUid);
+          if (hasChanges && !getIsQuotaExceeded()) {
+            await updateDoc(userDocRef, updateData).catch(() => {});
+          }
         }
 
         unsubscribe = onSnapshot(userDocRef, (snap) => {
@@ -1193,6 +1192,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const updateQuantity = (id: string, delta: number) => {
+    const product = products.find(p => p.id === id);
+    if (delta > 0 && product && product.isAvailable === false) {
+      return;
+    }
     setCart(prev => prev.map(i => i.id === id ? { ...i, quantity: Math.max(0, i.quantity + delta) } : i).filter(i => i.quantity > 0));
   };
 
@@ -1352,6 +1355,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           stock: increment(-item.quantity)
         });
       });
+
+      // Check quota before committing
+      if (getIsQuotaExceeded()) {
+        throw new Error("Firebase Quota Exceeded: The daily limit for orders has been reached. Please try again later or contact support.");
+      }
 
       // Commit the batch - this is a single network request
       await batch.commit();
@@ -1633,19 +1641,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const logAudit = async (action: string, target: string, details: string) => {
-    try {
-      await addDoc(collection(db, 'auditLogs'), {
-        adminId: auth.currentUser?.uid || 'system',
-        adminName: auth.currentUser?.displayName || auth.currentUser?.email || 'System',
-        action,
-        target,
-        details,
-        createdAt: serverTimestamp(),
-        timestamp: Date.now()
-      });
-    } catch (error) {
-      console.error("Error logging audit:", error);
-    }
+    // Audit logging disabled to save Firestore quota
+    return;
   };
 
   const sendBroadcast = async (notification: Omit<BroadcastNotification, 'id' | 'createdAt'>) => {
@@ -1687,7 +1684,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       await deleteDoc(doc(db, 'admins', uid));
       await logAudit('remove_admin', 'admin', `Removed admin ${uid}`);
     } catch (error) {
-      console.error("Error removing admin:", error);
+      handleFirestoreError(error, OperationType.DELETE, `admins/${uid}`);
     }
   };
 
@@ -1696,7 +1693,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       await updateDoc(doc(db, 'users', uid), { points });
       await logAudit('update_user_points', 'user', `Updated points for user ${uid} to ${points}`);
     } catch (error) {
-      console.error("Error updating user points:", error);
+      handleFirestoreError(error, OperationType.UPDATE, `users/${uid}`);
     }
   };
 
@@ -1711,7 +1708,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       await setDoc(doc(db, 'products', productId), newProduct);
       await logAudit('add_product', 'product', `Added product ${product.name}`);
     } catch (error) {
-      console.error("Error adding product:", error);
+      handleFirestoreError(error, OperationType.WRITE, `products/${productId}`);
     }
   };
 
@@ -1720,7 +1717,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       await updateDoc(doc(db, 'products', id), updates);
       await logAudit('update_product', 'product', `Updated product ${id}`);
     } catch (error) {
-      console.error("Error updating product:", error);
+      handleFirestoreError(error, OperationType.UPDATE, `products/${id}`);
     }
   };
 
@@ -1728,7 +1725,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       await addDoc(collection(db, 'promotionBanners'), banner);
     } catch (error) {
-      console.error("Error adding promotion banner:", error);
+      handleFirestoreError(error, OperationType.CREATE, 'promotionBanners');
     }
   };
 
@@ -1736,7 +1733,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       await updateDoc(doc(db, 'promotionBanners', id), banner);
     } catch (error) {
-      console.error("Error updating promotion banner:", error);
+      handleFirestoreError(error, OperationType.UPDATE, `promotionBanners/${id}`);
     }
   };
 
@@ -1744,7 +1741,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       await deleteDoc(doc(db, 'promotionBanners', id));
     } catch (error) {
-      console.error("Error deleting promotion banner:", error);
+      handleFirestoreError(error, OperationType.DELETE, `promotionBanners/${id}`);
     }
   };
 
@@ -1752,7 +1749,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       await addDoc(collection(db, 'deals'), deal);
     } catch (error) {
-      console.error("Error adding deal:", error);
+      handleFirestoreError(error, OperationType.CREATE, 'deals');
     }
   };
 
@@ -1760,7 +1757,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       await updateDoc(doc(db, 'deals', id), deal);
     } catch (error) {
-      console.error("Error updating deal:", error);
+      handleFirestoreError(error, OperationType.UPDATE, `deals/${id}`);
     }
   };
 
@@ -1768,7 +1765,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       await deleteDoc(doc(db, 'deals', id));
     } catch (error) {
-      console.error("Error deleting deal:", error);
+      handleFirestoreError(error, OperationType.DELETE, `deals/${id}`);
     }
   };
 
@@ -1776,7 +1773,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       await addDoc(collection(db, 'bundles'), bundle);
     } catch (error) {
-      console.error("Error adding bundle:", error);
+      handleFirestoreError(error, OperationType.CREATE, 'bundles');
     }
   };
 
@@ -2085,7 +2082,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       users,
       updateUserPoints,
       isAdmin,
+      isAuthLoading,
       isProfileLoaded,
+      isQuotaExceeded,
+      resetQuotaExceeded,
       sessions,
       revokeSession
     }}>

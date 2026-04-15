@@ -34,7 +34,16 @@ import DealsPage from './pages/DealsPage';
 import DealDetailPage from './pages/DealDetailPage';
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { isAdmin } = useStore();
+  const { isAdmin, isAuthLoading } = useStore();
+  
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-emerald-50">
+        <div className="w-10 h-10 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+  
   return isAdmin ? children : <Navigate to="/admin-login" replace />;
 }
 

@@ -74,7 +74,15 @@ export default function WelcomePage() {
           </button>
           
           {/* Version Footer */}
-          <p className="text-[10px] text-on-surface-variant opacity-50">v1.0.0 | © 2026 Sar Taw Set</p>
+          <div className="flex flex-col items-center gap-2">
+            <p className="text-[10px] text-on-surface-variant opacity-50">v1.0.0 | © 2026 Sar Taw Set</p>
+            <button 
+              onClick={() => navigate('/admin-login')}
+              className="text-[8px] text-on-surface-variant opacity-20 hover:opacity-100 transition-opacity uppercase tracking-tighter"
+            >
+              Admin Portal
+            </button>
+          </div>
         </div>
       </motion.div>
     </div>

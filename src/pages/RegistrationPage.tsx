@@ -1,35 +1,57 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { useStore } from '../context/StoreContext';
 import { User, Phone, Sparkles, ChevronRight } from 'lucide-react';
 
 export default function RegistrationPage() {
   const navigate = useNavigate();
-  const { setUserName, setUserPhone, isProfileLoaded, darkMode, t } = useStore();
+  const { userName, userPhone, setUserName, setUserPhone, isProfileLoaded, darkMode, t } = useStore();
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const location = useLocation();
+
+  // Redirect if already registered
+  React.useEffect(() => {
+    console.log("RegistrationPage: Checking registration status", { userName, userPhone });
+    if (userName && userPhone) {
+      const from = location.state?.from?.pathname || '/menu';
+      console.log("RegistrationPage: User already registered, redirecting to", from);
+      navigate(from, { replace: true });
+    }
+  }, [userName, userPhone, navigate, location.state]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !phone) return;
+    console.log("RegistrationPage: Submitting form", { name, phone });
+    if (!name || !phone) {
+      console.warn("RegistrationPage: Name or phone missing");
+      return;
+    }
     
     setIsSubmitting(true);
     
-    // Set phone first to trigger sync in StoreContext
-    const sanitizedPhone = phone.replace(/[^0-9]/g, '');
-    setUserPhone(sanitizedPhone);
-    setUserName(name);
-    
-    // We don't necessarily need to wait for isProfileLoaded here because 
-    // the Menu page will also wait for it or show data as it arrives.
-    // But for a better UX, we can wait a bit or just navigate.
-    
-    setTimeout(() => {
-      navigate('/menu');
-    }, 800);
+    try {
+      // Set phone first to trigger sync in StoreContext
+      const sanitizedPhone = phone.replace(/[^0-9]/g, '');
+      console.log("RegistrationPage: Sanitized phone", sanitizedPhone);
+      setUserPhone(sanitizedPhone);
+      setUserName(name);
+      
+      console.log("RegistrationPage: States set, waiting for redirect...");
+      // Small delay to ensure state updates and persistence
+      setTimeout(() => {
+        console.log("RegistrationPage: Navigating to /menu");
+        navigate('/menu', { replace: true });
+      }, 500);
+    } catch (error) {
+      console.error("Registration error:", error);
+      setIsSubmitting(false);
+    }
   };
+
+  const isRedirected = location.state?.from;
 
   return (
     <div className={`h-screen w-screen overflow-hidden ${darkMode ? 'bg-black' : 'bg-gray-50'} relative flex items-center justify-center p-6`}>
@@ -57,6 +79,11 @@ export default function RegistrationPage() {
             <h2 className={`text-xl font-black tracking-tight mb-1 ${darkMode ? 'text-on-surface' : 'text-emerald-900'}`}>
               {t('joinSaphoSaung')}
             </h2>
+            {isRedirected && (
+              <p className="text-rose-500 text-[9px] font-bold mb-2 animate-bounce">
+                Please register to continue
+              </p>
+            )}
             <p className={`text-[10px] font-bold ${darkMode ? 'text-on-surface-variant/60' : 'text-gray-500'}`}>
               {t('letsGetToKnowYou')}
             </p>
@@ -112,6 +139,14 @@ export default function RegistrationPage() {
                   <ChevronRight size={16} />
                 </>
               )}
+            </button>
+
+            <button 
+              type="button"
+              onClick={() => navigate('/')}
+              className={`w-full text-[9px] font-bold mt-4 opacity-40 hover:opacity-100 transition-opacity ${darkMode ? 'text-white' : 'text-gray-500'}`}
+            >
+              Back to Welcome Page
             </button>
           </form>
         </motion.div>

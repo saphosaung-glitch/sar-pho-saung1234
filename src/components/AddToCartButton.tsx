@@ -6,13 +6,15 @@ interface AddToCartButtonProps {
   onClick: () => void;
   darkMode?: boolean;
   className?: string;
+  disabled?: boolean;
 }
 
-export const AddToCartButton: React.FC<AddToCartButtonProps> = ({ onClick, darkMode, className }) => {
+export const AddToCartButton: React.FC<AddToCartButtonProps> = ({ onClick, darkMode, className, disabled }) => {
   const [isAdded, setIsAdded] = useState(false);
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (disabled) return;
     onClick();
     setIsAdded(true);
     setTimeout(() => setIsAdded(false), 800);
@@ -20,14 +22,17 @@ export const AddToCartButton: React.FC<AddToCartButtonProps> = ({ onClick, darkM
 
   return (
     <motion.button
-      whileTap={{ scale: 0.9 }}
+      whileTap={!disabled ? { scale: 0.9 } : {}}
       onClick={handleClick}
+      disabled={disabled}
       className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200 shadow-sm relative overflow-hidden ${
-        isAdded 
-          ? 'bg-primary text-white' 
-          : (darkMode 
-              ? 'bg-surface-container-low text-primary hover:bg-primary hover:text-white' 
-              : 'bg-surface-container-low text-primary hover:bg-primary hover:text-white')
+        disabled 
+          ? 'bg-surface-container-low text-on-surface-variant/30 cursor-not-allowed'
+          : (isAdded 
+              ? 'bg-primary text-white' 
+              : (darkMode 
+                  ? 'bg-surface-container-low text-primary hover:bg-primary hover:text-white' 
+                  : 'bg-surface-container-low text-primary hover:bg-primary hover:text-white'))
       } ${className || ''}`}
     >
       <AnimatePresence mode="wait">

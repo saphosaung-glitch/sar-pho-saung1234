@@ -360,11 +360,18 @@ export default function SearchPage() {
                     <Heart size={14} fill={favorites.includes(product.id) ? "currentColor" : "none"} />
                   </button>
                   <img 
-                    className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110" 
+                    className={`w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 ${product.isAvailable === false ? 'opacity-50' : ''}`} 
                     src={product.image} 
                     alt={product.name}
                     referrerPolicy="no-referrer"
                   />
+                  {product.isAvailable === false && (
+                    <div className="absolute inset-0 flex items-center justify-center z-20">
+                      <div className="bg-black/70 px-3 py-1 rounded-lg">
+                        <span className="text-white font-black text-[10px] uppercase tracking-widest">Sold Out</span>
+                      </div>
+                    </div>
+                  )}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                 </div>
 
@@ -392,6 +399,7 @@ export default function SearchPage() {
                     <AddToCartButton 
                       onClick={() => addToCart(product)}
                       darkMode={darkMode}
+                      disabled={product.isAvailable === false}
                     />
                   </div>
                 </div>

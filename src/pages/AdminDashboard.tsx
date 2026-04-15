@@ -2547,7 +2547,8 @@ export default function AdminDashboard() {
     broadcastNotifications, sendBroadcast,
     admins, addAdmin, updateAdminRole, removeAdmin,
     isAdmin, categories, updateCategory, addCategory, deleteCategory,
-    products, addProduct, updateProduct, deleteProduct
+    products, addProduct, updateProduct, deleteProduct,
+    isQuotaExceeded, resetQuotaExceeded
   } = useStore();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'orders' | 'market' | 'products' | 'banners' | 'special-offers' | 'categories' | 'settings' | 'analytics' | 'users' | 'coupons' | 'notifications' | 'audit' | 'admins'>('analytics');
@@ -2911,15 +2912,46 @@ export default function AdminDashboard() {
           
           <div className="flex items-center gap-4 ml-8">
             {/* Real-time Status Indicator */}
-            <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border ${
-              darkMode ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-emerald-50 border-emerald-100 text-emerald-600'
-            }`}>
-              <div className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            {isQuotaExceeded ? (
+              <div className="flex items-center gap-3">
+                <div className={`flex flex-col items-end px-4 py-2 rounded-xl border shadow-sm ${
+                  darkMode ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-red-50 border-red-200 text-red-600'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle size={16} className="animate-pulse" />
+                    <span className="text-[11px] font-black uppercase tracking-widest">Quota Exceeded</span>
+                  </div>
+                  <div className="flex flex-col items-end mt-1">
+                    <span className="text-[9px] font-medium opacity-80">Daily Firestore Write Limit Reached</span>
+                    <span className="text-[8px] opacity-60">Resets at 1:30 PM Myanmar Time (Midnight Pacific)</span>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => {
+                    resetQuotaExceeded();
+                    toast.success("Quota status reset locally. You can try saving again.");
+                  }}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all shadow-sm ${
+                    darkMode 
+                      ? 'bg-white/10 hover:bg-white/20 text-white border border-white/10' 
+                      : 'bg-white hover:bg-gray-50 text-gray-900 border border-gray-200'
+                  }`}
+                >
+                  <RefreshCw size={14} />
+                  <span>Force Retry</span>
+                </button>
               </div>
-              <span className="text-[10px] font-black uppercase tracking-widest">Live</span>
-            </div>
+            ) : (
+              <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border ${
+                darkMode ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-emerald-50 border-emerald-100 text-emerald-600'
+              }`}>
+                <div className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-widest">Live</span>
+              </div>
+            )}
 
             <button className={`relative p-2.5 rounded-xl transition-all ${
               darkMode ? 'hover:bg-white/5 text-on-surface-variant/60' : 'hover:bg-gray-100 text-gray-500'
@@ -3624,7 +3656,7 @@ export default function AdminDashboard() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 gap-4">
                         <button 
                           onClick={handleSeed}
                           disabled={isSeeding}
@@ -3633,7 +3665,27 @@ export default function AdminDashboard() {
                           } ${darkMode ? 'bg-amber-600 text-white shadow-amber-900/20 hover:bg-amber-500' : 'bg-amber-500 text-white shadow-amber-100 hover:bg-amber-600'}`}
                         >
                           <Database size={16} className={isSeeding ? 'animate-bounce' : ''} />
-                          {isSeeding ? 'Seeding...' : 'Seed Data'}
+                          {isSeeding ? 'Seeding...' : 'Seed Products & Categories'}
+                        </button>
+                        <button 
+                          onClick={async () => {
+                            setIsSeeding(true);
+                            try {
+                              await seedSampleOrders();
+                              toast.success("Sample orders seeded!");
+                            } catch (e) {
+                              toast.error("Failed to seed sample orders.");
+                            } finally {
+                              setIsSeeding(false);
+                            }
+                          }}
+                          disabled={isSeeding}
+                          className={`py-5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl transition-all flex items-center justify-center gap-3 ${
+                            isSeeding ? 'opacity-50 cursor-not-allowed' : ''
+                          } ${darkMode ? 'bg-emerald-600 text-white shadow-emerald-900/20 hover:bg-emerald-500' : 'bg-emerald-500 text-white shadow-emerald-100 hover:bg-emerald-600'}`}
+                        >
+                          <ShoppingBag size={16} className={isSeeding ? 'animate-bounce' : ''} />
+                          {isSeeding ? 'Seeding Orders...' : 'Seed Sample Orders'}
                         </button>
                         <button 
                           onClick={handleMigrate}
