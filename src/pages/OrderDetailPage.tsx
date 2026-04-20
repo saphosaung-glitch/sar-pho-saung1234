@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useStore } from '../context/StoreContext';
-import { ChevronLeft, Receipt, Clock, CheckCircle2, Package, MapPin, Phone, User, Home, Wallet, Calendar, ArrowRight, MessageCircle, RotateCcw } from 'lucide-react';
+import { ChevronLeft, Receipt, Clock, CheckCircle2, Package, MapPin, Phone, User, Home, Wallet, Calendar, ArrowRight, MessageCircle, RotateCcw, FileText } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 
@@ -222,6 +222,18 @@ export default function OrderDetailPage() {
                 </div>
               </div>
             </div>
+
+            {order.note && (
+              <div className={`mt-3 flex items-start gap-3 p-3 rounded-xl border ${darkMode ? 'bg-amber-500/10 border-amber-500/20 text-amber-500/80' : 'bg-amber-50 border-amber-100 text-amber-700'}`}>
+                <div className={`w-7 h-7 shrink-0 rounded-lg flex items-center justify-center border ${darkMode ? 'bg-amber-500/20 border-amber-500/20 text-amber-500' : 'bg-white border-amber-100 text-amber-600'}`}>
+                  <FileText size={14} />
+                </div>
+                <div>
+                  <p className="text-[8px] font-black uppercase tracking-widest opacity-60 mb-0.5">{t('orderNote') || 'Order Note'}</p>
+                  <p className="text-xs font-bold leading-relaxed">{order.note}</p>
+                </div>
+              </div>
+            )}
           </div>
         </section>
 

@@ -10,6 +10,8 @@
         "email": { "type": "string", "format": "email" },
         "phone": { "type": "string" },
         "points": { "type": "number" },
+        "lastDeviceId": { "type": "string" },
+        "authCode": { "type": "string" },
         "role": { "type": "string", "enum": ["user", "admin"] }
       },
       "required": ["uid", "name"]

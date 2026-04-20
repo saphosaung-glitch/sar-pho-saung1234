@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useMemo, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { translations } from '../lib/translations';
 import { 
   collection, 
@@ -20,7 +20,7 @@ import {
   Unsubscribe
 } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType, getIsQuotaExceeded, onQuotaExceededChange, resetQuotaExceeded as resetQuota, signInAnonymously } from '../lib/firebase';
-import { onAuthStateChanged, GoogleAuthProvider, signInWithPopup, setPersistence, browserLocalPersistence, signOut } from 'firebase/auth';
+import { onAuthStateChanged, setPersistence, browserLocalPersistence, signOut } from 'firebase/auth';
 import { Address } from '../types';
 
 import { toast } from 'sonner';
@@ -76,6 +76,7 @@ export interface Order {
   address?: string;
   deliveryDate?: string;
   deliveryDay?: string;
+  note?: string;
   timestamp: number;
   createdAt: number;
   uid?: string;
@@ -184,6 +185,7 @@ interface StoreContextType {
   estimatedDeliveryTime: string;
   setEstimatedDeliveryTime: (time: string) => Promise<void>;
   orders: Order[];
+  adminOrders: Order[];
   supportNumber: string;
   setSupportNumber: (num: string) => void;
   bankName: string;
@@ -245,13 +247,17 @@ interface StoreContextType {
   setDarkMode: (enabled: boolean) => void;
   isDeliveryEnabled: boolean;
   setIsDeliveryEnabled: (enabled: boolean) => Promise<void>;
+  deliveryFee: number;
+  setDeliveryFee: (fee: number) => Promise<void>;
   isLowStockAlertEnabled: boolean;
   setIsLowStockAlertEnabled: (enabled: boolean) => Promise<void>;
   cutoffTime: string;
   setCutoffTime: (time: string) => Promise<void>;
   getDeliveryDate: () => { date: string; isToday: boolean };
-  signInWithGoogle: () => Promise<void>;
   logout: () => void;
+  forceSync: () => Promise<void>;
+  isSyncing: boolean;
+  isProfileLoaded: boolean;
   uid: string | null;
   authUid: string | null;
   products: Product[];
@@ -298,9 +304,9 @@ interface StoreContextType {
   updateUserPoints: (uid: string, points: number) => Promise<void>;
   isAdmin: boolean;
   isAuthLoading: boolean;
-  isProfileLoaded: boolean;
   isQuotaExceeded: boolean;
   resetQuotaExceeded: () => void;
+  deviceId: string;
   sessions: Session[];
   revokeSession: (sessionId: string) => Promise<void>;
 }
@@ -369,6 +375,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const saved = localStorage.getItem('sp_orders');
     return saved ? JSON.parse(saved) : [];
   });
+  const [adminOrders, setAdminOrders] = useState<Order[]>([]);
   const [estimatedDeliveryTime, setEstimatedDeliveryTimeState] = useState('8:00 AM - 10:00 AM');
   const [points, setPoints] = useState(() => {
     const saved = localStorage.getItem('sp_points');
@@ -399,7 +406,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isAdmin, setIsAdmin] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isProfileLoaded, setIsProfileLoaded] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isMappingSynced, setIsMappingSynced] = useState(false);
   const [isQuotaExceeded, setIsQuotaExceeded] = useState(getIsQuotaExceeded());
+  const [deviceId] = useState(() => {
+    let id = localStorage.getItem('sp_device_id');
+    if (!id) {
+      id = 'dev_' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+      localStorage.setItem('sp_device_id', id);
+    }
+    return id;
+  });
 
   const resetQuotaExceeded = () => {
     resetQuota();
@@ -429,94 +446,402 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [userPhone]);
 
   const lastSyncedCartRef = useRef<string>('');
+  const lastSyncedFavoritesRef = useRef<string>('');
   const lastSyncedUidRef = useRef<string | null>(null);
+  const lookupPhoneMappingRef = useRef<string | null>(null);
   const lastSyncedUserDataRef = useRef<string>('');
+  const shouldMergeGuestDataRef = useRef(true);
   const isInitialMount = useRef(true);
+  const isProfileLoadedRef = useRef(false);
+
+  // Keep ref in sync for closure access
+  useEffect(() => {
+    isProfileLoadedRef.current = isProfileLoaded;
+  }, [isProfileLoaded]);
+
+  // Helper to reset all user-related state and storage
+  const clearUserData = useCallback((options?: { skipPhoneReset?: boolean }) => {
+    console.log("StoreContext: Clearing all local user data", options);
+    
+    // Clear storage
+    const keysToClear = [
+      'sp_addresses', 'sp_orders', 'sp_points', 'sp_favorites', 
+      'sp_user_name', 'sp_room', 'sp_cart',
+      'sp_user_avatar', 'sp_user_email', 'sp_user_birthday',
+      'sp_notifications', 'sp_payment_methods', 'sp_recent_searches'
+    ];
+    if (!options?.skipPhoneReset) {
+      keysToClear.push('sp_user_phone');
+    }
+    
+    keysToClear.forEach(key => localStorage.removeItem(key));
+    
+    // Reset state
+    setUserName('');
+    if (!options?.skipPhoneReset) {
+      setUserPhone('');
+    }
+    setUserEmail('');
+    setUserBirthday('');
+    setUserAvatar('');
+    setRoomNumber('');
+    setPoints(0);
+    setAddresses([]);
+    setOrders([]);
+    setFavorites([]);
+    setCart([]);
+    setNotifications([]);
+    setPaymentMethods([]);
+
+    // Invalidate sync refs to ensure proper initial merge from cloud
+    lastSyncedCartRef.current = '[]';
+    lastSyncedFavoritesRef.current = '[]';
+    lastSyncedUserDataRef.current = '';
+  }, []);
 
   // Sync User Data with Firestore
   useEffect(() => {
+    // BACKWARD LOOKUP: If we have an Auth UID but no Phone UID (e.g. after reload), 
+    // try to find the mapping in Firestore to restore the phone-based session
+    if (authUid && !uid && !isAuthLoading && !getIsQuotaExceeded()) {
+      // Prevent multiple lookups for the same auth session
+      if (lookupPhoneMappingRef.current === authUid) {
+        // If we already tried and didn't find anything, we can mark as loaded if not already
+        if (!isProfileLoaded && !uid) {
+           setIsProfileLoaded(true);
+        }
+        return;
+      }
+      
+      const lookupMapping = async () => {
+        try {
+          console.log("StoreContext: Attempting auth mapping restoration for:", authUid);
+          const mappingSnap = await getDoc(doc(db, 'authToPhone', authUid));
+          if (mappingSnap.exists()) {
+            const mappedPhone = mappingSnap.data().phone;
+            if (mappedPhone) {
+              console.log("StoreContext: Restored phone from mapping:", mappedPhone);
+              setUserPhone(mappedPhone);
+              // Note: setUserPhone will update uid via useMemo, triggering this effect again
+              return;
+            }
+          }
+        } catch (err) {
+          console.warn("StoreContext: Auth mapping restoration failed:", err);
+        } finally {
+          setIsProfileLoaded(true);
+        }
+      };
+      lookupPhoneMappingRef.current = authUid;
+      lookupMapping();
+      return;
+    }
+
     if (!uid) {
-      console.log("StoreContext: No UID available, skipping user data sync");
+      if (isAuthLoading) return;
+      
+      console.log("StoreContext: No UID available (Not logged in), marking profile as loaded");
       setIsProfileLoaded(true);
       lastSyncedUidRef.current = null;
       return;
     }
+
+    // Wait for authUid only if we actually need it for secure writes, 
+    // but we can start the profile listener as soon as we have a phone UID
+    if (!authUid) {
+      console.log("StoreContext: Waiting for authUid before syncing secure mappings for UID:", uid);
+      // We don't return here if we want to show points/name immediately from basic doc
+      // setIsProfileLoaded(false); // keep loading
+    }
+
+    // SECURITY & ISOLATION: Check for User Switch
+    const isNewUserSwitch = lastSyncedUidRef.current !== uid;
     
-    // Reset user-specific state when switching users to avoid data leakage
-    // But only if it's a different UID than before
-    if (lastSyncedUidRef.current !== uid) {
-      console.log("StoreContext: UID changed or initial load with UID", { old: lastSyncedUidRef.current, new: uid });
-      
-      // If it's not the initial mount, we reset the state for the new user
-      // On initial mount, we keep the localStorage data until Firestore syncs
-      if (!isInitialMount.current) {
-        console.log("StoreContext: Not initial mount, resetting user state for new UID");
-        const resetUserState = () => {
-          setUserName('');
-          setUserEmail('');
-          setUserBirthday('');
-          setUserAvatar('');
-          setRoomNumber('');
-          setPoints(0);
-          // We don't clear the cart here to allow guest cart to be synced to the new account
-          // If the new account already has a cart in Firestore, it will be overwritten in onSnapshot
-          setAddresses([]);
-          setOrders([]);
-          setFavorites([]);
-        };
-        resetUserState();
+    if (isNewUserSwitch) {
+      const wasGuest = lastSyncedUidRef.current === null;
+      // ONLY clear data if we are switching from a valid User A to a valid User B
+      // This prevents clearing during temporary null flips
+      if (!wasGuest && uid !== null) {
+        console.log("StoreContext: Real user switch detected, clearing data.");
+        clearUserData({ skipPhoneReset: true });
+        lastSyncedUidRef.current = uid;
+        shouldMergeGuestDataRef.current = false;
+        return; 
       }
       
-      lastSyncedUidRef.current = uid;
-      setIsProfileLoaded(false);
+      if (uid !== null) {
+        lastSyncedUidRef.current = uid;
+        shouldMergeGuestDataRef.current = wasGuest;
+      }
     }
     
-    isInitialMount.current = false;
-    
+    lastSyncedUidRef.current = uid;
+
+    setIsProfileLoaded(false);
     const userDocRef = doc(db, 'users', uid);
-    console.log("StoreContext: Setting up user data sync for UID:", uid);
+    const authMappingRef = authUid ? doc(db, 'authToPhone', authUid) : null;
     
-    const unsubscribe = onSnapshot(userDocRef, (snap) => {
-      console.log("StoreContext: User data snapshot received. Exists:", snap.exists());
-      if (snap.exists()) {
-        const data = snap.data();
-        console.log("StoreContext: User data snapshot data:", data);
-        console.log("StoreContext: User data found in Firestore", data);
+    // 1. One-time Setup/Merge logic (Async)
+    const runInitialMerge = async () => {
+      // Only run mapping sync if we have both
+      if (uid && authUid && authMappingRef && !getIsQuotaExceeded()) {
+        try {
+          await setDoc(authMappingRef, { phone: uid, lastActive: serverTimestamp() }, { merge: true });
+        } catch (e) {
+          console.warn("Auth mapping update skipped or failed:", e);
+        }
+      }
+
+      try {
+        console.log("StoreContext: Syncing profile for UID:", uid);
+        const docSnap = await getDoc(userDocRef);
+        const shouldMerge = shouldMergeGuestDataRef.current;
         
-        // Sync Profile - only update if different to avoid unnecessary re-renders
-        if (data.name !== undefined) setUserName(data.name || '');
-        if (data.email !== undefined) setUserEmail(data.email || '');
-        if (data.birthday !== undefined) setUserBirthday(data.birthday || '');
-        if (data.avatar !== undefined) setUserAvatar(data.avatar || '');
-        if (data.room !== undefined) setRoomNumber(data.room || '');
-        
-        // Sync Points
-        if (typeof data.points === 'number') setPoints(data.points);
-        
-        // Sync Cart
-        if (data.cart) {
-          const cartString = JSON.stringify(data.cart);
-          if (cartString !== lastSyncedCartRef.current) {
-            console.log("StoreContext: Syncing cart from Firestore", data.cart);
-            lastSyncedCartRef.current = cartString;
-            setCart(data.cart);
+        if (!docSnap.exists()) {
+          console.log("StoreContext: Initializing new account doc", { shouldMerge });
+          if (getIsQuotaExceeded()) {
+            setIsProfileLoaded(true);
+            return;
+          }
+          const initialCart = (shouldMerge && cart.length > 0) ? cart : [];
+          const initialFavorites = (shouldMerge && favorites.length > 0) ? favorites : [];
+          
+          lastSyncedCartRef.current = JSON.stringify(initialCart);
+          lastSyncedFavoritesRef.current = JSON.stringify(initialFavorites);
+          setCart(initialCart);
+          setFavorites(initialFavorites);
+
+          const initialData: any = {
+            uid,
+            authUid: authUid || null,
+            name: userName, 
+            phone: userPhone,
+            room: '',
+            avatar: '',
+            email: '',
+            birthday: '',
+            points: 0,
+            cart: initialCart,
+            favorites: initialFavorites,
+            lastActive: serverTimestamp()
+          };
+          await setDoc(userDocRef, initialData, { merge: true });
+
+          // Also sync any local addresses to the new account with DEDUPLICATION
+          if (shouldMerge && addresses.length > 0) {
+            console.log("StoreContext: Syncing local addresses to new account doc (with deduplication)");
+            const addressesRef = collection(db, 'users', uid, 'addresses');
+            const batch = writeBatch(db);
+            
+            // To prevent duplicates during initial sync, we'll keep track of normalized addresses
+            const addedAddressKeys = new Set<string>();
+
+            addresses.forEach(addr => {
+              // Create a unique key for this address to detect duplicates
+              const addressKey = `${addr.building || ''}-${addr.street || ''}-${addr.room || ''}`.toLowerCase().replace(/\s/g, '');
+              
+              if (!addedAddressKeys.has(addressKey)) {
+                const newDocRef = doc(addressesRef); // Generate new ID in Firestore
+                batch.set(newDocRef, { ...addr, id: newDocRef.id });
+                addedAddressKeys.add(addressKey);
+              }
+            });
+            await batch.commit().catch(err => console.error("Initial address sync failed:", err));
+          }
+        } else {
+          console.log("StoreContext: Merging existing account doc", { shouldMerge });
+          const data = docSnap.data();
+          
+          // Merge logic
+          const firestoreFavorites = data.favorites || [];
+          console.log("StoreContext: Merging favorites", { firestore: firestoreFavorites.length, local: favorites.length, shouldMerge });
+          const mergedFavorites = shouldMerge 
+            ? Array.from(new Set([...firestoreFavorites, ...favorites]))
+            : firestoreFavorites;
+          
+          const firestoreCart = data.cart || [];
+          const mergedCart = [...firestoreCart];
+          if (shouldMerge) {
+            console.log("StoreContext: Merging cart", { firestore: firestoreCart.length, local: cart.length });
+            cart.forEach(localItem => {
+              const existingIndex = mergedCart.findIndex(i => i.id === localItem.id);
+              if (existingIndex > -1) {
+                mergedCart[existingIndex].quantity = Math.max(mergedCart[existingIndex].quantity, localItem.quantity);
+              } else {
+                mergedCart.push(localItem);
+              }
+            });
+          }
+
+          const updateData: any = {
+            favorites: mergedFavorites,
+            cart: mergedCart,
+            // Prioritize server name if it exists, otherwise use local name
+            name: data.name || userName || '',
+            // Ensure points are restored correctly from server
+            points: data.points !== undefined ? data.points : (points || 0),
+            lastActive: serverTimestamp()
+          };
+          if (authUid) updateData.authUid = authUid;
+          
+          if (!getIsQuotaExceeded()) {
+            console.log("StoreContext: Pushing merged data to Firestore", { favorites: mergedFavorites.length, cart: mergedCart.length });
+            await updateDoc(userDocRef, updateData).catch(err => console.error("Initial sync update failed:", err));
+          }
+          
+          lastSyncedCartRef.current = JSON.stringify(mergedCart);
+          lastSyncedFavoritesRef.current = JSON.stringify(mergedFavorites);
+          setCart(mergedCart);
+          setFavorites(mergedFavorites);
+
+          if (data.points !== undefined) setPoints(data.points);
+          else if (points > 0) {
+            // If server has no points but local has, we effectively just "pushed" them in the updateDoc above
+            // So we don't need to do anything here, local state is already correct
+          }
+
+          // Sync addresses for existing doc with DEDUPLICATION
+          if (shouldMerge && addresses.length > 0) {
+             const addressesRef = collection(db, 'users', uid, 'addresses');
+             const existingAddrsSnap = await getDocs(addressesRef);
+             
+             // Build a set of existing address keys to prevent duplicates
+             const existingAddressKeys = new Set<string>();
+             existingAddrsSnap.docs.forEach(doc => {
+               const addr = doc.data();
+               const key = `${addr.building || ''}-${addr.street || ''}-${addr.room || ''}`.toLowerCase().replace(/\s/g, '');
+               existingAddressKeys.add(key);
+             });
+
+             console.log("StoreContext: Merging local addresses with cloud (deduplicating)");
+             const batch = writeBatch(db);
+             let addedCount = 0;
+
+             addresses.forEach(addr => {
+               const key = `${addr.building || ''}-${addr.street || ''}-${addr.room || ''}`.toLowerCase().replace(/\s/g, '');
+               if (!existingAddressKeys.has(key)) {
+                 const newDocRef = doc(addressesRef);
+                 batch.set(newDocRef, { ...addr, id: newDocRef.id });
+                 existingAddressKeys.add(key);
+                 addedCount++;
+               }
+             });
+
+             if (addedCount > 0) {
+               await batch.commit().catch(err => console.error("Initial address merge failed:", err));
+             }
           }
         }
-        
-        // Sync Favorites
-        if (data.favorites) setFavorites(data.favorites);
-      } else {
-        console.log("StoreContext: No user data found in Firestore for UID:", uid);
-        // This is a new user
+        // Reset flag after first sync run for this UID
+        shouldMergeGuestDataRef.current = true;
+        // Mark as loaded ONLY after initial merge/check is fully done
+        setIsProfileLoaded(true);
+      } catch (err) {
+        console.error("StoreContext: Error during profile sync:", err);
+        setIsProfileLoaded(true); // Don't block UI on error
       }
-      setIsProfileLoaded(true);
+    };
+
+    runInitialMerge();
+
+    // 2. Continuous Listeners (Synchronous setup)
+    const unsubscribeProfile = onSnapshot(userDocRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.points !== undefined) setPoints(data.points || 0);
+        
+        // Sync Profile details - Only override if server has data
+        if (data.name && data.name !== userName) {
+          setUserName(data.name);
+          localStorage.setItem('sp_user_name', data.name);
+        }
+        if (data.room) setRoomNumber(data.room);
+        if (data.avatar) setUserAvatar(data.avatar);
+        if (data.email) setUserEmail(data.email);
+
+        // Sync Cart - with stability check and PROTECTION against accidental wipes
+        if (data.cart) {
+          const cartString = JSON.stringify(data.cart);
+          
+          setCart(currentCart => {
+            const isServerCartPopulated = data.cart.length > 0;
+            const isSafeToOverwrite = isProfileLoadedRef.current && (isServerCartPopulated || currentCart.length === 0);
+            
+            if (isServerCartPopulated || isSafeToOverwrite) {
+              if (cartString !== lastSyncedCartRef.current) {
+                lastSyncedCartRef.current = cartString;
+                return data.cart;
+              }
+            }
+            return currentCart;
+          });
+        }
+
+        if (data.favorites) {
+           const favString = JSON.stringify(data.favorites);
+           
+           setFavorites(currentFavorites => {
+             const isServerFavPopulated = data.favorites.length > 0;
+             const isSafeToOverwriteFav = isProfileLoadedRef.current && (isServerFavPopulated || currentFavorites.length === 0);
+             
+             if (isServerFavPopulated || isSafeToOverwriteFav) {
+               if (favString !== lastSyncedFavoritesRef.current) {
+                 lastSyncedFavoritesRef.current = favString;
+                 return data.favorites;
+               }
+             }
+             return currentFavorites;
+           });
+        }
+      }
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${uid}`);
-      setIsProfileLoaded(true);
+      handleFirestoreError(error, OperationType.GET, `users/${uid}`);
     });
 
-    return () => unsubscribe();
-  }, [uid]);
+    return () => {
+      unsubscribeProfile();
+    };
+  }, [uid, authUid]);
+
+  // Handle Addresses Listener in a separate effect to avoid loop with isProfileLoaded
+  useEffect(() => {
+    if (!uid || !isProfileLoaded || (!isMappingSynced && !isAdmin)) {
+      return;
+    }
+
+    console.log("StoreContext: Starting addresses listener for UID:", uid);
+    const addressesRef = collection(db, 'users', uid, 'addresses');
+    const unsubscribeAddresses = onSnapshot(addressesRef, (snapshot) => {
+      const fetchedAddresses = snapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id
+      })) as Address[];
+
+      // DEDUPLICATION: Ensure no identical addresses are displayed
+      const uniqueItems = new Map<string, Address>();
+      fetchedAddresses.forEach(addr => {
+        // Create a unique fingerprint based on building/street/room
+        const key = `${addr.building || ''}-${addr.street || ''}-${addr.room || ''}`.toLowerCase().replace(/\s/g, '');
+        // If we don't have this address yet, or this one is set as default, keep it
+        if (!uniqueItems.has(key) || addr.isDefault) {
+          uniqueItems.set(key, addr);
+        }
+      });
+      const deduplicated = Array.from(uniqueItems.values());
+
+      // PROTECTION: Only override if cloud has data OR we are sure Firestore has been synced
+      if (deduplicated.length > 0 || isProfileLoaded) {
+        setAddresses(deduplicated);
+      }
+    }, (error) => {
+      // Only log if it's not a quota issue (handled globally)
+      if (!error.message.includes('resource-exhausted')) {
+        handleFirestoreError(error, OperationType.LIST, `users/${uid}/addresses`);
+      }
+    });
+
+    return () => unsubscribeAddresses();
+  }, [uid, isProfileLoaded, isMappingSynced, isAdmin]);
 
   const setSelectedAddressId = (id: string | null) => {
     setSelectedAddressIdState(id);
@@ -544,10 +869,50 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.setItem('sp_orders', JSON.stringify(orders));
   }, [orders]);
 
-  // Persist points to localStorage
+  // Dedicated Effect to sync Favorites to Firestore
   useEffect(() => {
-    localStorage.setItem('sp_points', points.toString());
-  }, [points]);
+    // SECURITY: Never push favorites to Firestore if profile isn't fully loaded
+    // This prevents empty guest state from wiping server state during transitions
+    if (!uid || !isProfileLoaded || getIsQuotaExceeded()) return;
+    
+    const favString = JSON.stringify(favorites);
+    if (favString !== lastSyncedFavoritesRef.current) {
+      // Protection against empty wipe: 
+      // If server document was just loaded and was non-empty, but we have [] locally 
+      // and we haven't confirmed a manual "un-favourite all" action, don't sync.
+      // For now, we assume if isProfileLoaded is true, local state is the truth.
+      
+      console.log("StoreContext: Pushed favorites update to cloud", favorites.length, { prev: lastSyncedFavoritesRef.current, current: favString });
+      lastSyncedFavoritesRef.current = favString;
+      updateDoc(doc(db, 'users', uid), {
+        favorites: favorites,
+        lastActive: serverTimestamp()
+      }).catch(err => {
+        if (!err.message.includes('resource-exhausted')) {
+          console.error("Favorites sync to Firestore failed:", err);
+        }
+      });
+    }
+  }, [favorites, uid, isProfileLoaded]);
+
+  // Dedicated Effect to sync Cart to Firestore
+  useEffect(() => {
+    if (!uid || !isProfileLoaded || getIsQuotaExceeded()) return;
+    
+    const cartString = JSON.stringify(cart);
+    if (cartString !== lastSyncedCartRef.current) {
+      console.log("StoreContext: Syncing cart to Firestore", cart.length);
+      lastSyncedCartRef.current = cartString;
+      updateDoc(doc(db, 'users', uid), {
+        cart: cart,
+        lastActive: serverTimestamp()
+      }).catch(err => {
+        if (!err.message.includes('resource-exhausted')) {
+          console.error("Cart sync to Firestore failed:", err);
+        }
+      });
+    }
+  }, [cart, uid, isProfileLoaded]);
 
   // Persist banners, deals, bundles to localStorage
   useEffect(() => {
@@ -578,12 +943,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'categories'), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Category[];
-      setCategories(data.sort((a, b) => a.order - b.order));
+      // Stability Guard: Don't clear if snapshot is empty but we have data from cache/local
+      if (data.length > 0 || !snapshot.metadata.fromCache) {
+        setCategories(data.sort((a, b) => a.order - b.order));
+      }
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'categories');
     });
     return () => unsubscribe();
-  }, [isAdmin]);
+  }, []);
 
   const updateCategory = async (id: string, updates: Partial<Category>) => {
     if (getIsQuotaExceeded()) {
@@ -628,45 +996,32 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  // Sync products from Firestore with caching
+  // Sync products from Firestore with real-time updates
   useEffect(() => {
-    const CACHE_KEY = 'cached_menu';
-    const CACHE_DURATION = 60 * 60 * 1000; // 1 hour
-
-    const fetchProducts = async () => {
-      const cachedData = localStorage.getItem(CACHE_KEY);
-      if (cachedData) {
-        const { timestamp, data } = JSON.parse(cachedData);
-        if (Date.now() - timestamp < CACHE_DURATION) {
-          console.log("StoreContext: Using cached products.");
-          setProducts(data);
-          return;
-        }
-      }
-
-      console.log("StoreContext: Fetching products from Firestore...");
-      try {
-        const querySnapshot = await getDocs(collection(db, 'products'));
-        const productsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const unsubscribe = onSnapshot(collection(db, 'products'), (snapshot) => {
+      const productsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Stability Guard: Only update if we have actual data or it's a confirmed empty cloud state
+      if (productsData.length > 0 || !snapshot.metadata.fromCache) {
+        console.log("StoreContext: Products sync update received (size:", productsData.length, ")");
         setProducts(productsData);
-        localStorage.setItem(CACHE_KEY, JSON.stringify({ timestamp: Date.now(), data: productsData }));
-
-        // Auto-seed only if the collection is completely empty
-        if (querySnapshot.empty && !getIsQuotaExceeded()) {
-          console.log("StoreContext: Products collection is empty, seeding database...");
-          import('../lib/seed').then(({ seedDatabase }) => {
-            seedDatabase().catch(err => {
-              handleFirestoreError(err, OperationType.WRITE, 'seedDatabase');
-            });
-          });
-        }
-      } catch (error) {
-        handleFirestoreError(error, OperationType.LIST, 'products');
       }
-    };
+      
+      // Auto-seed only if the collection is completely empty and confirmed by server
+      if (snapshot.empty && !getIsQuotaExceeded() && !snapshot.metadata.fromCache) {
+        console.log("StoreContext: Products collection is empty, seeding database...");
+        import('../lib/seed').then(({ seedDatabase }) => {
+          seedDatabase().catch(err => {
+            handleFirestoreError(err, OperationType.WRITE, 'seedDatabase');
+          });
+        });
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'products');
+    });
 
-    fetchProducts();
-  }, []); // Only run once on mount
+    return () => unsubscribe();
+  }, []);
 
   // Sync Coupons from Firestore
   useEffect(() => {
@@ -735,7 +1090,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'promotionBanners'), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as PromotionBanner[];
-      setPromotionBanners(data);
+      if (data.length > 0 || !snapshot.metadata.fromCache) {
+        setPromotionBanners(data);
+      }
     }, (error) => {
       console.error('Firestore promotionBanners sync error:', error);
     });
@@ -746,7 +1103,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'deals'), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Deal[];
-      setDeals(data);
+      if (data.length > 0 || !snapshot.metadata.fromCache) {
+        setDeals(data);
+      }
     }, (error) => {
       console.error('Firestore deals sync error:', error);
     });
@@ -757,7 +1116,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'bundles'), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Bundle[];
-      setBundles(data);
+      if (data.length > 0 || !snapshot.metadata.fromCache) {
+        setBundles(data);
+      }
     }, (error) => {
       console.error('Firestore bundles sync error:', error);
     });
@@ -770,25 +1131,108 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setPersistence(auth, browserLocalPersistence).catch(err => handleFirestoreError(err, OperationType.WRITE, 'auth/persistence'));
 
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      console.log("StoreContext: Auth state changed", user ? user.uid : 'null');
       if (user) {
         setAuthUid(user.uid);
         if (user.email) setUserEmail(user.email);
+        setIsAuthLoading(false);
       } else {
         setAuthUid(null);
         setUserEmail('');
-        // Sign in anonymously if no user is present to ensure we have a UID for Firestore rules
-        signInAnonymously(auth).catch(err => {
-          if (err.code === 'auth/admin-restricted-operation') {
-            console.warn("Anonymous auth is disabled in Firebase Console. Please enable it to allow guest users to save data.");
-          } else {
-            handleFirestoreError(err, OperationType.WRITE, 'auth/anonymous-signin');
-          }
-        });
+        // Sign in anonymously if no user is present with retries
+        let retryCount = 0;
+        const maxRetries = 5;
+        
+        const attemptSignIn = () => {
+          signInAnonymously(auth).then(() => {
+            setIsAuthLoading(false);
+          }).catch(err => {
+            if (err.code === 'auth/network-request-failed' && retryCount < maxRetries) {
+              retryCount++;
+              const delay = Math.pow(2, retryCount) * 1000;
+              console.warn(`Anonymous auth failed (network-error). Retrying in ${delay}ms... (Attempt ${retryCount}/${maxRetries})`);
+              setTimeout(attemptSignIn, delay);
+            } else {
+              setIsAuthLoading(false);
+              if (err.code === 'auth/admin-restricted-operation') {
+                console.warn("[Firebase] Anonymous authentication is currently disabled in your Firebase/Google Cloud project. Please go to the Firebase Console -> Authentication -> Sign-in method and enable 'Anonymous' to support guest user features with unique identifiers.");
+              } else {
+                console.error("Anonymous auth failed:", err);
+              }
+            }
+          });
+        };
+        
+        attemptSignIn();
       }
-      setIsAuthLoading(false);
     });
-    return () => unsubscribe();
-  }, []);
+
+    // Safety timeout: Ensure loading always clears even if Auth is slow/blocked
+    const timer = setTimeout(() => {
+      setIsAuthLoading(prev => {
+        if (prev) {
+          console.warn("Auth loading timed out. Unblocking UI.");
+          return false;
+        }
+        return prev;
+      });
+    }, 5000);
+
+    return () => {
+      unsubscribe();
+      clearTimeout(timer);
+    };
+  }, [uid]);
+
+  // AUTOMATED SYNC: Keep authToPhone mapping and User document linked to the current Auth UID
+  useEffect(() => {
+    if (!uid) {
+      setIsMappingSynced(true); // Don't block guest listeners if no phone
+      return;
+    }
+    
+    if (!authUid) {
+      // If auth is finished loading but we still have no UID, ensure we don't block mappings
+      if (!isAuthLoading) {
+        setIsMappingSynced(true);
+      } else {
+        setIsMappingSynced(false);
+      }
+      return;
+    }
+
+    const performSync = async () => {
+      try {
+        console.log("StoreContext: Syncing Auth Mapping", { authUid, uid });
+        
+        // 1. Sync the primary mapping collection
+        await setDoc(doc(db, 'authToPhone', authUid), { 
+          phone: uid, 
+          updatedAt: serverTimestamp() 
+        }, { merge: true });
+
+        // 2. Ensure the user document has the current authUid link
+        const userRef = doc(db, 'users', uid);
+        const userSnap = await getDoc(userRef);
+        
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          if (userData.authUid !== authUid) {
+            await updateDoc(userRef, { 
+              authUid: authUid,
+              lastActive: serverTimestamp()
+            });
+          }
+        }
+        setIsMappingSynced(true);
+      } catch (err) {
+        console.warn("StoreContext: Sync failed, but proceeding to allow listener attempts:", err);
+        setIsMappingSynced(true); // Proceed anyway to avoid blocking UI forever
+      }
+    };
+
+    performSync();
+  }, [authUid, uid]);
 
   // Verify Admin Status
   useEffect(() => {
@@ -829,15 +1273,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => unsub();
   }, [authUid, userEmail]);
 
-  const signInWithGoogle = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'auth/google-signin');
-    }
-  };
-
   // Session tracking removed to prevent remote termination issues
   useEffect(() => {
     if (!uid) {
@@ -864,27 +1299,79 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const logout = async () => {
     try {
-      if (authUid && currentSessionId && !getIsQuotaExceeded()) {
-        await deleteDoc(doc(db, 'users', authUid, 'sessions', currentSessionId)).catch(err => handleFirestoreError(err, OperationType.DELETE, `users/${authUid}/sessions/${currentSessionId}`));
-      }
+      console.log("StoreContext: Logout initiated");
+      // Clear data and state immediately for instant feedback
+      const currentUid = uid;
+      const sid = currentSessionId;
+      
+      // Perform signOut - this will trigger onAuthStateChanged(null)
       await signOut(auth);
+      
+      // Background session deletion to avoid blocking UI
+      if (currentUid && sid && !getIsQuotaExceeded()) {
+        deleteDoc(doc(db, 'users', currentUid, 'sessions', sid)).catch(() => {
+          // Ignore background errors
+        });
+      }
+      
+      localStorage.removeItem('isAdmin');
+      localStorage.removeItem('sp_user_phone');
+      localStorage.removeItem('sp_favorites');
+      localStorage.removeItem('sp_cart');
+      
       setAuthUid(null);
-      setUserName('');
-      setUserPhone('');
-      setRoomNumber('');
-      setPoints(0);
-      setUserAvatar('');
-      setUserEmail('');
-      setUserBirthday('');
-      setOrders([]);
-      setCart([]);
+      clearUserData();
       setIsProfileLoaded(false);
-      localStorage.clear();
+      lastSyncedUidRef.current = null;
+      lookupPhoneMappingRef.current = null;
       sessionStorage.clear();
+      
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `users/${authUid}/sessions/${currentSessionId}`);
+      console.error("Logout error:", error);
+      clearUserData();
+      setAuthUid(null);
+      lastSyncedUidRef.current = null;
+      throw error;
     }
   };
+
+  const forceSync = useCallback(async () => {
+    if (!uid || getIsQuotaExceeded()) return;
+    console.log("StoreContext: Force sync initiated for UID:", uid);
+    setIsSyncing(true);
+    try {
+      const userDocRef = doc(db, 'users', uid);
+      const snap = await getDoc(userDocRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.favorites) {
+          const merged = Array.from(new Set([...(data.favorites || []), ...favorites]));
+          setFavorites(merged);
+          lastSyncedFavoritesRef.current = JSON.stringify(merged);
+          localStorage.setItem('sp_favorites', JSON.stringify(merged));
+        }
+        if (data.cart) {
+           // Basic merge
+           const mergedCart = [...(data.cart || [])];
+           cart.forEach(li => {
+             if (!mergedCart.find(mi => mi.id === li.id)) mergedCart.push(li);
+           });
+           setCart(mergedCart);
+           lastSyncedCartRef.current = JSON.stringify(mergedCart);
+           localStorage.setItem('sp_cart', JSON.stringify(mergedCart));
+        }
+        if (data.points !== undefined) setPoints(data.points);
+        if (data.name) setUserName(data.name);
+        toast.success("Account data synced!");
+      }
+    } catch (err) {
+      console.error("Force sync failed:", err);
+      toast.error("Sync failed. Please check network.");
+    } finally {
+      setIsSyncing(false);
+      setIsProfileLoaded(true);
+    }
+  }, [uid, favorites, cart]);
 
   const updateUserProfile = async (profile: {
     name?: string;
@@ -942,178 +1429,62 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  // Sync User Profile with Firestore using Phone Number as ID
-  useEffect(() => {
-    if (!uid || !authUid) {
-      if (uid && !authUid) {
-        console.warn("Profile sync waiting for authUid...");
-      }
-      setIsProfileLoaded(true);
-      return;
-    }
-
-    setIsProfileLoaded(false);
-    const userDocRef = doc(db, 'users', uid);
-    let unsubscribe: Unsubscribe | null = null;
-
-    const setupSync = async () => {
-      try {
-        const docSnap = await getDoc(userDocRef);
-        if (!docSnap.exists()) {
-          if (getIsQuotaExceeded()) return;
-          // Create initial profile if it doesn't exist
-          await setDoc(userDocRef, {
-            uid: uid, // Use phone-based UID
-            authUid: authUid || null, // Link to Firebase Auth UID if available
-            name: userName,
-            phone: userPhone,
-            room: roomNumber,
-            avatar: userAvatar,
-            email: userEmail,
-            birthday: userBirthday,
-            points: 0,
-            tier: 'Bronze',
-            favorites: favorites,
-            lastActive: serverTimestamp()
-          }, { merge: true });
-        } else {
-          // Update last active and ensure authUid is linked if available
-          const data = docSnap.data();
-          const firestoreFavorites = data.favorites || [];
-          // Merge local favorites with firestore favorites
-          const mergedFavorites = Array.from(new Set([...firestoreFavorites, ...favorites]));
-          
-          const updateData: any = {
-            favorites: mergedFavorites,
-            name: userName || data.name // Auto-update name if a new one is provided
-          };
-          if (authUid) updateData.authUid = authUid;
-          
-          // Only update if favorites or authUid changed
-          const hasChanges = JSON.stringify(mergedFavorites) !== JSON.stringify(firestoreFavorites) || (authUid && data.authUid !== authUid);
-          if (hasChanges && !getIsQuotaExceeded()) {
-            await updateDoc(userDocRef, updateData).catch(() => {});
-          }
-        }
-
-        unsubscribe = onSnapshot(userDocRef, (snap) => {
-          if (snap.exists()) {
-            const data = snap.data();
-            setPoints(data.points || 0);
-            // Sync back to local state from Firestore
-            if (data.name) {
-              setUserName(data.name);
-              localStorage.setItem('sp_user_name', data.name);
-            }
-            if (data.phone) {
-              setUserPhone(data.phone);
-              localStorage.setItem('sp_user_phone', data.phone);
-            }
-            if (data.room) {
-              setRoomNumber(data.room);
-              localStorage.setItem('sp_room', data.room);
-            }
-            if (data.avatar) {
-              setUserAvatar(data.avatar);
-              localStorage.setItem('sp_user_avatar', data.avatar);
-            }
-            if (data.email) {
-              setUserEmail(data.email);
-              localStorage.setItem('sp_user_email', data.email);
-            }
-            if (data.birthday) {
-              setUserBirthday(data.birthday);
-              localStorage.setItem('sp_user_birthday', data.birthday);
-            }
-            if (data.favorites) {
-              setFavorites(data.favorites);
-            }
-          }
-          setIsProfileLoaded(true);
-        }, (error) => {
-          handleFirestoreError(error, OperationType.GET, `users/${uid}`);
-          setIsProfileLoaded(true);
-        });
-      } catch (error) {
-        handleFirestoreError(error, OperationType.GET, `users/${uid}`);
-      }
-    };
-
-    setupSync();
-
-    // Sync Addresses from Firestore
-    const addressesRef = collection(db, 'users', uid, 'addresses');
-    const unsubscribeAddresses = onSnapshot(addressesRef, (snapshot) => {
-      const fetchedAddresses = snapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id
-      })) as Address[];
-      setAddresses(fetchedAddresses);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${uid}/addresses`);
-    });
-
-    return () => {
-      if (unsubscribe) unsubscribe();
-      unsubscribeAddresses();
-    };
-  }, [uid, authUid]);
-
   // Sync Orders from Firestore
   useEffect(() => {
     if (!uid) return;
+    
+    // Always fetch user's personal orders regardless of admin status
+    // if mapping isn't fully ready yet, we will just fetch what matches the phone UID
+    const userOrdersQuery = query(
+      collection(db, 'orders'), 
+      where('uid', '==', uid)
+    );
 
-    // If admin, show all orders. If user, show only their orders based on phone UID.
-    let ordersQuery;
-    if (isAdmin) {
-      ordersQuery = query(collection(db, 'orders'));
-    } else {
-      ordersQuery = query(
-        collection(db, 'orders'), 
-        where('uid', '==', uid)
-      );
-    }
-
-    const unsubscribe = onSnapshot(ordersQuery, (snapshot) => {
+    const unsubUserOrders = onSnapshot(userOrdersQuery, (snapshot) => {
       const fetchedOrders = snapshot.docs.map(doc => {
         const data = doc.data();
         let createdAtMillis = Date.now();
-        
         if (data.createdAt) {
-          if (typeof data.createdAt.toMillis === 'function') {
-            createdAtMillis = data.createdAt.toMillis();
-          } else if (typeof data.createdAt === 'number') {
-            createdAtMillis = data.createdAt;
-          } else if (typeof data.createdAt === 'string') {
-            createdAtMillis = new Date(data.createdAt).getTime();
-          }
-        } else if (data.timestamp) {
-          createdAtMillis = data.timestamp;
-        }
+          if (typeof data.createdAt.toMillis === 'function') createdAtMillis = data.createdAt.toMillis();
+          else if (typeof data.createdAt === 'number') createdAtMillis = data.createdAt;
+          else if (typeof data.createdAt === 'string') createdAtMillis = new Date(data.createdAt).getTime();
+        } else if (data.timestamp) createdAtMillis = data.timestamp;
 
-        return {
-          ...data,
-          id: doc.id,
-          createdAt: createdAtMillis,
-          timestamp: createdAtMillis
-        };
+        return { ...data, id: doc.id, createdAt: createdAtMillis, timestamp: createdAtMillis };
       }) as Order[];
       
-      setOrders(prevOrders => {
-        // Keep local orders that don't have an authUid (guest orders)
-        const guestOrders = prevOrders.filter(o => !o.authUid);
-        // Merge and remove duplicates by ID
-        const allOrders = [...fetchedOrders, ...guestOrders];
-        const uniqueOrders = Array.from(new Map(allOrders.map(o => [o.id, o])).values());
-        // Sort by timestamp descending (newest first) for the state
-        return uniqueOrders.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      });
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'orders');
-    });
+      const validOrders = fetchedOrders.filter(o => o.uid === uid).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      setOrders(validOrders);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'orders'));
 
-    return () => unsubscribe();
-  }, [uid, authUid, isAdmin]);
+    // Admin specific fetch: fetch all orders separately to `adminOrders`
+    let unsubAdminOrders = () => {};
+    if (isAdmin && isProfileLoaded) {
+      const adminOrdersQuery = query(collection(db, 'orders'), orderBy('timestamp', 'desc'), limit(100));
+      unsubAdminOrders = onSnapshot(adminOrdersQuery, (snapshot) => {
+        const fetchedOrders = snapshot.docs.map(doc => {
+          const data = doc.data();
+          let createdAtMillis = Date.now();
+          if (data.createdAt) {
+            if (typeof data.createdAt.toMillis === 'function') createdAtMillis = data.createdAt.toMillis();
+            else if (typeof data.createdAt === 'number') createdAtMillis = data.createdAt;
+            else if (typeof data.createdAt === 'string') createdAtMillis = new Date(data.createdAt).getTime();
+          } else if (data.timestamp) createdAtMillis = data.timestamp;
+
+          return { ...data, id: doc.id, createdAt: createdAtMillis, timestamp: createdAtMillis };
+        }) as Order[];
+        
+        setAdminOrders(fetchedOrders);
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'admin_orders'));
+    } else {
+      setAdminOrders([]);
+    }
+
+    return () => {
+      unsubUserOrders();
+      unsubAdminOrders();
+    };
+  }, [uid, isAdmin, isProfileLoaded]);
 
   const [supportNumber, setSupportNumber] = useState(() => {
     return localStorage.getItem('sp_support_number') || '601128096366';
@@ -1153,11 +1524,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return localStorage.getItem('sp_dark_mode') === 'true';
   });
 
-  // Persist favorites to localStorage
-  useEffect(() => {
-    localStorage.setItem('sp_favorites', JSON.stringify(favorites));
-  }, [favorites]);
-
   // Persist notifications to localStorage
   useEffect(() => {
     localStorage.setItem('sp_notifications', JSON.stringify(notifications));
@@ -1184,6 +1550,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.setItem('sp_dark_mode', darkMode.toString());
   }, [darkMode]);
   const [isDeliveryEnabled, setIsDeliveryEnabledState] = useState(true);
+  const [deliveryFee, setDeliveryFeeState] = useState(0);
   const [isLowStockAlertEnabled, setIsLowStockAlertEnabledState] = useState(true);
   const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
   const [cutoffTime, setCutoffTimeState] = useState('06:00');
@@ -1194,6 +1561,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (snap.exists()) {
         const data = snap.data();
         setIsDeliveryEnabledState(data.enabled ?? true);
+        setDeliveryFeeState(data.deliveryFee ?? 0);
         setIsLowStockAlertEnabledState(data.lowStockAlertsEnabled ?? true);
         setCutoffTimeState(data.cutoffTime ?? '06:00');
         setEstimatedDeliveryTimeState(data.estimatedDeliveryTime ?? '8:00 AM - 10:00 AM');
@@ -1227,6 +1595,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     try {
       await setDoc(doc(db, 'settings', 'delivery'), { enabled }, { merge: true });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'settings/delivery');
+    }
+  };
+
+  const setDeliveryFee = async (fee: number) => {
+    if (!authUid) return;
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot update settings.');
+      return;
+    }
+    try {
+      await setDoc(doc(db, 'settings', 'delivery'), { deliveryFee: fee }, { merge: true });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'settings/delivery');
     }
@@ -1329,14 +1710,35 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.removeItem('sp_cart');
   };
 
-  // Persist cart to localStorage
+  // Persist cart to localStorage and Firestore
   useEffect(() => {
+    const cartString = JSON.stringify(cart);
+    
+    // 1. Local Persistence
     if (cart.length > 0) {
-      localStorage.setItem('sp_cart', JSON.stringify(cart));
+      localStorage.setItem('sp_cart', cartString);
     } else {
       localStorage.removeItem('sp_cart');
     }
-  }, [cart]);
+
+    // 2. Cloud Persistence (Sync up)
+    // Only sync if we have a user, profile is fully loaded (to avoid nuking with empty local cart), 
+    // and the cart has actually changed since the last sync.
+    if (uid && isProfileLoaded && !getIsQuotaExceeded()) {
+      if (cartString !== lastSyncedCartRef.current) {
+        console.log("StoreContext: Syncing cart UP to Firestore");
+        lastSyncedCartRef.current = cartString;
+        updateDoc(doc(db, 'users', uid), {
+          cart: cart,
+          lastActive: serverTimestamp()
+        }).catch(err => {
+          if (!err.message.includes('resource-exhausted')) {
+            console.error("Cart sync up failed:", err);
+          }
+        });
+      }
+    }
+  }, [cart, uid, isProfileLoaded]);
 
   const cartTotal = useMemo(() => cart.reduce((acc, item) => acc + (item.price * item.quantity), 0), [cart]);
 
@@ -1396,7 +1798,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     address?: string;
     paymentMethod: string; 
     pointDiscount: number; 
-    pointsUsed: number 
+    pointsUsed: number;
+    deliveryFee?: number;
+    note?: string;
   }) => {
     const orderPhoneId = details.phone.replace(/[^0-9]/g, '');
     if (!orderPhoneId) return null;
@@ -1406,6 +1810,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const earnedPoints = Math.floor(cartTotal * 10);
     const { date: deliveryDate, isToday } = getDeliveryDate();
     
+    const deliveryCost = details.deliveryFee || 0;
+
     const orderData = {
       id: orderId,
       uid: orderPhoneId,
@@ -1413,9 +1819,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       roomNumber: details.room,
       address: details.address || null,
       items: [...cart],
-      total: cartTotal - details.pointDiscount,
+      total: cartTotal - details.pointDiscount + deliveryCost,
       pointDiscount: details.pointDiscount,
       pointsUsed: details.pointsUsed,
+      deliveryFee: deliveryCost,
       earnedPoints: earnedPoints,
       status: 'pending',
       customerName: details.name,
@@ -1423,6 +1830,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       paymentMethod: details.paymentMethod,
       deliveryDate,
       deliveryDay: isToday ? 'Today' : 'Tomorrow',
+      note: details.note || null,
       createdAt: serverTimestamp(),
       timestamp: Date.now()
     };
@@ -1465,7 +1873,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
       
       if (authUid) userUpdate.authUid = authUid;
-      if (details.pointsUsed > 0) userUpdate.points = increment(-details.pointsUsed);
+      if (details.pointsUsed > 0) {
+        userUpdate.points = increment(-details.pointsUsed);
+      }
       
       batch.set(userDocRef, userUpdate, { merge: true });
 
@@ -1490,14 +1900,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
       });
 
-      // Commit the batch - this is a single network request
-      try {
-        await batch.commit();
-      } catch (error) {
-        handleFirestoreError(error, OperationType.WRITE, 'batch-order');
-      }
+      // 5. BACKGROUND SYNC: We don't 'await' the commit to make the UI instant
+      // Firestore will handle this write in the background/offline queue
+      console.log("StoreContext: Committing order in background for instant UI response");
+      batch.commit().catch(error => {
+        console.error("Background Order Commit Failed:", error);
+        handleFirestoreError(error, OperationType.WRITE, 'batch-order-bg');
+        // We might want to notify the user if it's a critical error
+        toast.error('Warning: Cloud sync delay. Please ensure you have a stable connection.');
+      });
 
-      // 5. Post-success UI updates
+      // 6. IMMEDIATE UI UPDATES
       setCart([]);
       const newOrderForState: Order = {
         ...orderData,
@@ -1557,9 +1970,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
 
       // Points logic: Add earned points only when marked as 'delivered'
-      if (status === 'delivered' && oldStatus !== 'delivered' && order.uid) {
+      const earnedPts = order.earnedPoints || 0;
+      if (status === 'delivered' && oldStatus !== 'delivered' && order.uid && earnedPts > 0) {
         await updateDoc(doc(db, 'users', order.uid), {
-          points: increment(order.earnedPoints)
+          points: increment(earnedPts)
         });
         
         // Add point transaction record
@@ -1567,9 +1981,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await setDoc(doc(db, 'users', order.uid, 'pointTransactions', transactionId), {
           id: transactionId,
           uid: order.uid,
+          authUid: authUid,
           type: 'earn',
-          amount: order.earnedPoints,
+          amount: earnedPts,
           description: `Order ${id} delivered`,
+          createdAt: serverTimestamp()
+        });
+      } 
+      // Revert points if order status changes FROM delivered to something else
+      else if (oldStatus === 'delivered' && status !== 'delivered' && order.uid && earnedPts > 0) {
+        await updateDoc(doc(db, 'users', order.uid), {
+          points: increment(-earnedPts)
+        });
+        
+        const transactionId = `TX-${Date.now()}`;
+        await setDoc(doc(db, 'users', order.uid, 'pointTransactions', transactionId), {
+          id: transactionId,
+          uid: order.uid,
+          authUid: authUid,
+          type: 'deduct',
+          amount: earnedPts,
+          description: `Order ${id} points reverted`,
           createdAt: serverTimestamp()
         });
       }
@@ -1597,6 +2029,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             id: notificationId,
             title,
             message,
+            authUid: authUid,
             type: 'order',
             status: 'unread',
             createdAt: serverTimestamp(),
@@ -1633,7 +2066,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       // 1. Refund points used
       if (order.pointsUsed > 0 && order.uid) {
         await updateDoc(doc(db, 'users', order.uid), {
-          points: increment(order.pointsUsed)
+          points: increment(order.pointsUsed),
+          lastActive: serverTimestamp()
         });
 
         // Add refund transaction record
@@ -1713,24 +2147,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  // Persist points to localStorage
+  useEffect(() => {
+    localStorage.setItem('sp_points', points.toString());
+  }, [points]);
+
   const toggleFavorite = async (id: string) => {
-    const newFavorites = favorites.includes(id) 
-      ? favorites.filter(fid => fid !== id) 
-      : [...favorites, id];
-    
-    setFavorites(newFavorites);
-    
-    if (uid) {
-      if (getIsQuotaExceeded()) return;
-      try {
-        await updateDoc(doc(db, 'users', uid), {
-          favorites: newFavorites
-        });
-      } catch (error) {
-        handleFirestoreError(error, OperationType.UPDATE, `users/${uid}`);
-        // Optional: Rollback if critical, but for favorites local is usually fine
-      }
-    }
+    setFavorites(prev => {
+      const nextFavorites = prev.includes(id) 
+        ? prev.filter(fid => fid !== id) 
+        : [...prev, id];
+        
+      const favString = JSON.stringify(nextFavorites);
+      localStorage.setItem('sp_favorites', favString);
+      return nextFavorites;
+    });
   };
 
   const deleteProduct = async (id: string) => {
@@ -1999,7 +2430,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return;
     }
     const addressId = `addr-${Date.now()}`;
-    const newAddress = { ...address, id: addressId } as Address;
+    const newAddress = { ...address, id: addressId, authUid: authUid } as Address;
     
     // Optimistic Update
     const previousAddresses = [...addresses];
@@ -2154,7 +2585,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setUserPhone,
       roomNumber, 
       setRoomNumber, 
-      orders, 
+      orders,
+      adminOrders,
       supportNumber,
       setSupportNumber,
       bankName,
@@ -2240,6 +2672,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setDarkMode,
       isDeliveryEnabled,
       setIsDeliveryEnabled,
+      deliveryFee,
+      setDeliveryFee,
       isLowStockAlertEnabled,
       setIsLowStockAlertEnabled,
       isMaintenanceMode,
@@ -2249,8 +2683,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       estimatedDeliveryTime,
       setEstimatedDeliveryTime,
       getDeliveryDate,
-      signInWithGoogle,
       logout,
+      forceSync,
+      isSyncing,
+      isProfileLoaded,
       uid,
       authUid,
       products,
@@ -2297,9 +2733,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       updateUserPoints,
       isAdmin,
       isAuthLoading,
-      isProfileLoaded,
       isQuotaExceeded,
       resetQuotaExceeded,
+      deviceId,
       sessions,
       revokeSession
     }}>

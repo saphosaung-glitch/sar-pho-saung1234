@@ -20,7 +20,7 @@ export default function CheckoutPage() {
     points, setPoints,
     addresses,
     selectedAddressId, setSelectedAddressId,
-    isDeliveryEnabled, getDeliveryDate, estimatedDeliveryTime,
+    isDeliveryEnabled, getDeliveryDate, estimatedDeliveryTime, deliveryFee,
     t, darkMode, formatPrice, getMainName, getSecondaryName
   } = useStore();
 
@@ -40,11 +40,13 @@ export default function CheckoutPage() {
   const [pointsToUse, setPointsToUse] = useState<number>(0);
   const [usePoints, setUsePoints] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<string>('COD');
+  const [note, setNote] = useState<string>('');
   
   // Redemption Logic: 500 Points = RM 1.00 discount. Max 750 Points (RM 1.50) per order.
   const maxPointsAllowed = Math.min(points, 750);
   const pointsDiscount = usePoints ? (pointsToUse / 500) : 0;
-  const finalTotal = cartTotal - pointsDiscount;
+  const deliveryCost = deliveryFee || 0;
+  const finalTotal = cartTotal - pointsDiscount + deliveryCost;
   const [isUploading, setIsUploading] = useState(false);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
@@ -90,6 +92,7 @@ export default function CheckoutPage() {
     const handlePlaceOrder = async () => {
       setIsPlacingOrder(true);
       try {
+        // We now trigger placeOrder which runs the sync in background
         const order = await placeOrder({ 
           name: selectedAddress?.name || userName, 
           phone: selectedAddress?.phone || userPhone, 
@@ -97,14 +100,19 @@ export default function CheckoutPage() {
           address: selectedAddress ? `${selectedAddress.street}, ${selectedAddress.township}, ${selectedAddress.city}, ${selectedAddress.region}` : undefined,
           paymentMethod: paymentDisplay,
           pointDiscount: pointsDiscount,
-          pointsUsed: usePoints ? pointsToUse : 0
+          pointsUsed: usePoints ? pointsToUse : 0,
+          deliveryFee: deliveryCost,
+          note: note.trim() || undefined
         });
+
         if (order && typeof order === 'object') {
+          // Immediately show success
           setShowSuccessOverlay(true);
-          // Faster transition to success page
+          
+          // Small delay just for the animation to look nice, but much faster than before
           setTimeout(() => {
             navigate(`/success?id=${order.id}`, { state: { order }, replace: true });
-          }, 800);
+          }, 600);
         } else {
           toast.error(t('orderFailed') + ' (Please check your connection or login status)');
         }
@@ -440,6 +448,26 @@ export default function CheckoutPage() {
                   </AnimatePresence>
                 </div>
 
+                {/* Optional Order Note */}
+                <div className={`rounded-[1.5rem] p-4 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-white/5' : 'bg-white border-on-surface/5'}`}>
+                  <label htmlFor="order-note" className="flex items-center gap-2 mb-3">
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? 'text-white/60' : 'text-on-surface-variant'}`}>{t('orderNote')}</span>
+                    <span className={`text-[8px] font-bold px-2 py-0.5 rounded-md ${darkMode ? 'bg-white/10 text-white/40' : 'bg-gray-100 text-gray-500'}`}>{t('optional')}</span>
+                  </label>
+                  <textarea
+                    id="order-note"
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder={t('orderNotePlaceholder')}
+                    rows={2}
+                    className={`w-full py-2.5 px-4 rounded-xl font-medium text-xs outline-none border-2 transition-all resize-none placeholder:text-[10px] placeholder:font-light placeholder:italic placeholder:tracking-wider placeholder:opacity-70 ${
+                        darkMode 
+                          ? 'bg-slate-900/50 border-white/5 focus:border-primary/50 text-white placeholder:text-white/30' 
+                          : 'bg-gray-50 border-gray-100 focus:border-primary/30 text-on-surface placeholder:text-slate-400'
+                      }`}
+                  />
+                </div>
+
                 {/* Subtotal Area */}
                 <div className={`rounded-[1.5rem] p-5 mt-2 transition-colors ${darkMode ? 'bg-slate-800/50' : 'bg-surface-container-low'}`}>
                   <div className="flex justify-between items-center mb-2">
@@ -460,7 +488,9 @@ export default function CheckoutPage() {
                   )}
                   <div className="flex justify-between items-center mb-4">
                     <p className={`text-xs font-bold ${darkMode ? 'text-white/40' : 'text-on-surface-variant'}`}>{t('deliveryFee')}</p>
-                    <p className="text-xs font-black text-primary uppercase tracking-widest">{t('free')}</p>
+                    <p className={`text-xs font-black ${deliveryCost === 0 ? 'text-primary uppercase tracking-widest' : (darkMode ? 'text-white' : 'text-on-surface')}`}>
+                      {deliveryCost === 0 ? t('free') : formatPrice(deliveryCost)}
+                    </p>
                   </div>
                   <div className={`h-px w-full mb-4 ${darkMode ? 'bg-white/10' : 'bg-on-surface/5'}`}></div>
                   <div className="flex justify-between items-center">

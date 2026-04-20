@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore, Product, Order } from '../context/StoreContext';
-import { LogOut, Package, Clock, CheckCircle2, LayoutDashboard, ShoppingBag, ListChecks, ChevronRight, MapPin, Settings, Phone, Save, CreditCard, DollarSign, Database, RefreshCw, Plus, Trash2, Sparkles, Image as ImageIcon, Tag, Hash, ShieldCheck, Menu, X, Search, SlidersHorizontal, Eye, Printer, User, Users, Calendar, BarChart3, TrendingUp, PieChart as PieChartIcon, AlertTriangle, Download, Bell, Ticket, History, MessageSquare, ToggleLeft, ToggleRight } from 'lucide-react';
+import { LogOut, Package, Clock, CheckCircle2, LayoutDashboard, ShoppingBag, ListChecks, ChevronRight, MapPin, Settings, Phone, Save, CreditCard, DollarSign, Database, RefreshCw, Plus, Trash2, Sparkles, Image as ImageIcon, Tag, Hash, ShieldCheck, Menu, X, Search, SlidersHorizontal, Eye, Printer, User, Users, Calendar, BarChart3, TrendingUp, PieChart as PieChartIcon, AlertTriangle, Download, Bell, Ticket, History, MessageSquare, ToggleLeft, ToggleRight, FileText, KeyRound } from 'lucide-react';
 import * as Popover from '@radix-ui/react-popover';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
@@ -561,6 +561,16 @@ function OrderDetailModal({ order, isOpen, onClose, darkMode, formatPrice, updat
                         </div>
                       </div>
                     </div>
+
+                    {order.note && (
+                      <div className={`mt-5 p-4 rounded-xl border flex items-start gap-3 ${darkMode ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' : 'bg-amber-50 border-amber-100 text-amber-700'}`}>
+                        <FileText size={16} className="shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-[9px] font-black uppercase tracking-widest opacity-60 mb-1">Customer Note</p>
+                          <p className="text-sm font-bold leading-relaxed">{order.note}</p>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-2 mt-5">
                       <a 
@@ -1784,13 +1794,32 @@ function UsersTab({ users, darkMode, updateUserPoints }: { users: any[], darkMod
                       {user.tier || 'Bronze'}
                     </span>
                   </td>
-                  <td className="px-8 py-5 text-right">
+                  <td className="px-8 py-5 text-right flex items-center justify-end gap-2">
+                    <button 
+                      onClick={async () => {
+                        const code = Math.floor(100000 + Math.random() * 900000).toString();
+                        if (confirm(`Generate reset code for ${user.phone}?`)) {
+                          try {
+                            // uid is the sanitized phone number here, but let's double check it. Wait, uid is the doc id
+                            await updateDoc(doc(db, 'users', user.uid), { resetCode: code });
+                            prompt(`Reset Code Generated. Copy and send this to the user:`, code);
+                          } catch (e) {
+                            alert("Failed to generate code.");
+                          }
+                        }
+                      }}
+                      className={`p-2 rounded-xl transition-colors ${darkMode ? 'hover:bg-amber-500/10 text-amber-500' : 'hover:bg-amber-100 text-amber-600'}`}
+                      title="Generate Reset Password Code"
+                    >
+                      <KeyRound size={18} />
+                    </button>
                     <button 
                       onClick={() => {
                         const newPoints = prompt('Enter new points:', user.points);
                         if (newPoints !== null) updateUserPoints(user.uid, parseInt(newPoints));
                       }}
                       className="p-2 rounded-xl hover:bg-primary/10 text-primary transition-colors"
+                      title="Edit Points"
                     >
                       <Plus size={18} />
                     </button>
@@ -2529,7 +2558,7 @@ function AdminsTab({ admins, addAdmin, updateAdminRole, removeAdmin, darkMode }:
 
 export default function AdminDashboard() {
   const { 
-    orders, updateOrderStatus, 
+    adminOrders: orders, updateOrderStatus, 
     supportNumber, setSupportNumber,
     bankName, setBankName,
     bankAccountNumber, setBankAccountNumber,
@@ -2537,6 +2566,7 @@ export default function AdminDashboard() {
     currency, setCurrency, formatPrice,
     darkMode, t,
     isDeliveryEnabled, setIsDeliveryEnabled,
+    deliveryFee, setDeliveryFee,
     isLowStockAlertEnabled, setIsLowStockAlertEnabled,
     isMaintenanceMode, updateMaintenanceMode,
     cutoffTime, setCutoffTime,
@@ -2557,6 +2587,7 @@ export default function AdminDashboard() {
   const [tempSupportNumber, setTempSupportNumber] = useState(supportNumber);
   const [tempCutoffTime, setTempCutoffTime] = useState(cutoffTime);
   const [tempEstimatedDeliveryTime, setTempEstimatedDeliveryTime] = useState(estimatedDeliveryTime);
+  const [tempDeliveryFee, setTempDeliveryFee] = useState(deliveryFee || 0);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -2602,7 +2633,7 @@ export default function AdminDashboard() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [isAdmin]);
   
   const handleLogout = () => {
     localStorage.removeItem('isAdmin');
@@ -3438,6 +3469,32 @@ export default function AdminDashboard() {
                       {/* Cutoff Time and Estimated Delivery Time Settings */}
                       {authUid && (
                         <div className="space-y-6 mb-8">
+                          <div className="flex flex-col gap-2">
+                            <label className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? 'text-on-surface-variant/60' : 'text-gray-500'}`}>
+                              Delivery Fee
+                            </label>
+                            <div className="flex gap-3">
+                              <input 
+                                type="number"
+                                min="0"
+                                step="100"
+                                value={tempDeliveryFee}
+                                onChange={(e) => setTempDeliveryFee(Number(e.target.value))}
+                                className={`flex-grow border rounded-2xl px-5 py-4 transition-all outline-none font-bold text-sm ${darkMode ? 'bg-white/5 border-white/10 text-on-surface focus:border-primary/50' : 'bg-white border-gray-100 text-emerald-950 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-50'}`}
+                              />
+                              <button 
+                                onClick={() => {
+                                  setDeliveryFee(tempDeliveryFee);
+                                  alert('Delivery fee updated successfully!');
+                                }}
+                                className={`px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl transition-all flex items-center gap-2 ${darkMode ? 'bg-primary text-surface shadow-primary/20 hover:bg-primary/90' : 'bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700'}`}
+                              >
+                                <Save size={16} />
+                                {t('save')}
+                              </button>
+                            </div>
+                          </div>
+
                           <div className="flex flex-col gap-2">
                             <label className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? 'text-on-surface-variant/60' : 'text-gray-500'}`}>
                               Order Cut-off Time

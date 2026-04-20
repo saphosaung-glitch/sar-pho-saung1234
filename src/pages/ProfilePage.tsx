@@ -19,7 +19,7 @@ export default function ProfilePage() {
     emailNotificationsEnabled, setEmailNotificationsEnabled,
     points, language, setLanguage, t,
     darkMode, setDarkMode, formatPrice,
-    logout, uid, addresses, orders, userAvatar,
+    logout, forceSync, isSyncing, uid, addresses, orders, userAvatar,
     userEmail, userBirthday, isAdmin, isQuotaExceeded, resetQuotaExceeded
   } = useStore();
   const navigate = useNavigate();
@@ -49,9 +49,16 @@ export default function ProfilePage() {
   };
 
   const handleLogout = async () => {
-    await logout();
-    setShowLogoutConfirm(false);
-    navigate('/');
+    try {
+      // Set confirm to false first to avoid UI lock
+      setShowLogoutConfirm(false);
+      await logout();
+      navigate('/', { replace: true });
+    } catch (error) {
+      console.error("Logout failed:", error);
+      toast.error("Logout encountered a problem, but your session is clearing.");
+      navigate('/', { replace: true });
+    }
   };
 
   const handleResetData = () => {
@@ -293,6 +300,24 @@ export default function ProfilePage() {
               </div>
               <ChevronRight size={16} className="text-on-surface-variant/30" />
             </div>
+
+            {uid && (
+              <div 
+                onClick={forceSync}
+                className="flex items-center justify-between px-6 py-4 hover:bg-surface-container-low/30 transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-4">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isSyncing ? 'bg-primary/20 text-primary' : 'bg-primary/5 text-primary'}`}>
+                    <RefreshCw size={18} className={isSyncing ? 'animate-spin' : ''} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-on-surface">{t('syncAccountData') || 'Sync Account Data'}</p>
+                    <p className="text-[8px] font-black text-on-surface-variant/40 uppercase tracking-widest">{isSyncing ? 'Syncing...' : 'Restore Likes & History'}</p>
+                  </div>
+                </div>
+                <RefreshCw size={14} className={`text-on-surface-variant/30 ${isSyncing ? 'animate-spin' : ''}`} />
+              </div>
+            )}
           </div>
         </motion.section>
 
@@ -500,11 +525,15 @@ export default function ProfilePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
-          className="pb-12 flex justify-center"
+          className="pb-24 pt-6 flex justify-center relative z-20"
         >
           <button 
-            onClick={() => setShowLogoutConfirm(true)}
-            className={`flex items-center justify-center gap-2 px-6 py-3 rounded-2xl font-black text-xs transition-all active:scale-95 border ${darkMode ? 'bg-red-500/10 text-red-500 border-red-500/20' : 'bg-red-50 text-red-600 border-red-100'}`}
+            type="button"
+            onClick={() => {
+              console.log("Logout triggered");
+              setShowLogoutConfirm(true);
+            }}
+            className={`flex items-center justify-center gap-2 px-10 py-4 rounded-[2rem] font-black text-xs transition-all active:scale-95 border shadow-lg ${darkMode ? 'bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20' : 'bg-red-50 text-red-600 border-red-100 hover:bg-red-100 shadow-red-500/5'}`}
           >
             <LogOut size={16} />
             {t('logout')}

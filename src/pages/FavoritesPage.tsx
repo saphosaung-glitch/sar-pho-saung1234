@@ -8,9 +8,10 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
 export default function FavoritesPage() {
-  const { favorites, toggleFavorite, addToCart, cart, cartTotal, clearCart, t, darkMode, formatPrice, getMainName, getSecondaryName } = useStore();
+  const { favorites, toggleFavorite, addToCart, cart, cartTotal, clearCart, t, darkMode, formatPrice, getMainName, getSecondaryName, isProfileLoaded } = useStore();
   const navigate = useNavigate();
   const [products, setProducts] = useState<any[]>([]);
+  const [isProductsLoading, setIsProductsLoading] = useState(true);
 
   const handleBack = () => {
     navigate(-1);
@@ -20,13 +21,16 @@ export default function FavoritesPage() {
     const unsubscribe = onSnapshot(collection(db, 'products'), (querySnapshot) => {
       const productsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setProducts(productsData);
+      setIsProductsLoading(false);
     }, (error) => {
       console.error("Error fetching products:", error);
+      setIsProductsLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
   const favoriteProducts = products.filter(p => favorites.includes(p.id) && p.isAvailable !== false);
+  const isLoading = isProductsLoading || !isProfileLoaded;
 
   return (
     <div className={`min-h-screen pb-32 transition-colors duration-300 ${darkMode ? 'bg-surface' : 'bg-surface'}`}>
@@ -43,7 +47,18 @@ export default function FavoritesPage() {
       </header>
 
       <main className="pt-24 px-4 max-w-2xl mx-auto">
-        {favoriteProducts.length > 0 ? (
+        {isLoading ? (
+          <div className="py-24 text-center space-y-6">
+            <div className="flex justify-center">
+              <motion.div 
+                animate={{ rotate: 360 }}
+                transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full"
+              />
+            </div>
+            <p className="text-on-surface-variant font-black text-xs uppercase tracking-widest animate-pulse">Restoring Favorites...</p>
+          </div>
+        ) : favoriteProducts.length > 0 ? (
           <div className="grid grid-cols-2 gap-3">
             {favoriteProducts.map(product => (
               <motion.div 

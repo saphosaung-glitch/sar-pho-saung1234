@@ -1,6 +1,8 @@
 export const translations: Record<string, any> = {
   en: {
     profile: 'Profile',
+    syncAccountData: 'Sync Account Data',
+    restoringFavorites: 'Restoring Favorites...',
     language: 'Language',
     editProfile: 'Edit Profile',
     personalInfo: 'Personal Information',
@@ -92,6 +94,8 @@ export const translations: Record<string, any> = {
     orderPackingMsg: 'Your order #{{id}} is being packed.',
     orderDeliveredTitle: 'Order Delivered',
     orderDeliveredMsg: 'Your order #{{id}} has been delivered. Enjoy!',
+    orderNote: 'Order Note',
+    orderNotePlaceholder: 'Notes about your order, e.g. delivery notes, special requests',
     call: 'Call',
     whatsapp: 'WhatsApp',
     printReceipt: 'Print Receipt',
@@ -468,6 +472,8 @@ export const translations: Record<string, any> = {
   },
   ms: {
     profile: 'Profil',
+    syncAccountData: 'Penyamaan Data Akaun',
+    restoringFavorites: 'Memulihkan Kegemaran...',
     language: 'Bahasa',
     editProfile: 'Edit Profil',
     personalInfo: 'Maklumat Peribadi',
@@ -901,6 +907,8 @@ export const translations: Record<string, any> = {
   },
   th: {
     profile: 'โปรไฟล์',
+    syncAccountData: 'ซิงค์ข้อมูลบัญชี',
+    restoringFavorites: 'กำลังกู้คืนรายการโปรဒ...',
     language: 'ภาษา',
     editProfile: 'แก้ไขโปรไฟล์',
     personalInfo: 'ข้อมูลส่วนตัว',
@@ -1327,6 +1335,8 @@ export const translations: Record<string, any> = {
   },
   zh: {
     profile: '个人资料',
+    syncAccountData: '同步账户数据',
+    restoringFavorites: '正在恢复收藏夹...',
     language: '语言',
     editProfile: '编辑资料',
     personalInfo: '个人信息',
@@ -1762,6 +1772,8 @@ export const translations: Record<string, any> = {
   },
   my: {
     profile: 'ပရိုဖိုင်',
+    syncAccountData: 'အကောင့်အချက်အလက်များ ပြန်လည်ရယူရန်',
+    restoringFavorites: 'နှစ်သက်ရာပစ္စည်းများ ပြန်လည်ရယူနေပါသည်...',
     language: 'ဘာသာစကား',
     editProfile: 'ပရိုဖိုင်ပြင်ဆင်ရန်',
     personalInfo: 'ကိုယ်ရေးအချက်အလက်',
@@ -1866,6 +1878,8 @@ export const translations: Record<string, any> = {
     orderPackingMsg: 'သင်၏ မှာယူမှုအမှတ် #{{id}} ကို ထုပ်ပိုးပြင်ဆင်နေပါပြီ။',
     orderDeliveredTitle: 'ပို့ဆောင်ပြီးပါပြီ',
     orderDeliveredMsg: 'သင်၏ မှာယူမှုအမှတ် #{{id}} ကို ပို့ဆောင်ပြီးပါပြီ။ ကျေးဇူးတင်ပါသည်။',
+    orderNote: 'မှာယူမှု မှတ်ချက်',
+    orderNotePlaceholder: 'ပို့ဆောင်ရေးအတွက် မှတ်ချက်၊ အခြားလိုအပ်ချက်များ',
     call: 'ဖုန်းခေါ်ဆိုရန်',
     whatsapp: 'WhatsApp',
     printReceipt: 'ပြေစာထုတ်ရန်',

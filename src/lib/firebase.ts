@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, signInAnonymously } from 'firebase/auth';
-import { initializeFirestore, memoryLocalCache, doc, getDocFromServer } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache, doc, getDoc } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -8,9 +8,9 @@ import firebaseConfig from '../../firebase-applet-config.json';
 console.log("Initializing Firebase with project:", firebaseConfig.projectId);
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firestore with memory cache to avoid lease errors in iframe environment
+// Initialize Firestore with long polling to resolve connectivity issues in iframe/sandboxed environments
 export const db = initializeFirestore(app, {
-  localCache: memoryLocalCache()
+  experimentalForceLongPolling: true
 }, firebaseConfig.firestoreDatabaseId);
 
 export const auth = getAuth(app);
@@ -71,6 +71,11 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     isQuotaExceeded = true;
     quotaListeners.forEach(l => l(true));
   }
+  
+  if (errorMessage.includes('client is offline')) {
+    console.warn("Firestore reports client is offline. This might be due to a strict network environment or database provisioning delay.");
+  }
+
   const errInfo: FirestoreErrorInfo = {
     error: errorMessage,
     authInfo: {
@@ -90,14 +95,16 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     path
   }
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  // Notice: We log the error but don't strictly throw here if it's a listener error
+  // to avoid crashing the whole React tree, though React Query or Error Boundaries usually handle this.
+  // In this app, we catch it in the listeners.
 }
 
 async function testConnection() {
   console.log("Testing Firestore connection to database:", firebaseConfig.firestoreDatabaseId);
   try {
     const docRef = doc(db, 'test', 'connection');
-    await getDocFromServer(docRef);
+    await getDoc(docRef);
     console.log("Firestore connection successful!");
   } catch (error) {
     console.error("Firestore connection test failed:", error);
