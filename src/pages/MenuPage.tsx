@@ -296,10 +296,10 @@ export default function MenuPage() {
                     <div className="space-y-1">
                       <div className="flex flex-col">
                         <h4 className="text-on-surface font-black text-xs leading-tight line-clamp-1 tracking-tight group-hover:text-primary transition-colors duration-300">
-                          {item.name || item.title}
+                          {getMainName(item)}
                         </h4>
                         <p className="text-on-surface-variant/60 text-[10px] font-medium leading-tight mt-0.5">
-                          {item.mmName || item.titleMm}
+                          {getSecondaryName(item)}
                         </p>
                       </div>
                       <p className="text-on-surface-variant/40 text-[8px] font-bold uppercase tracking-[0.1em]">

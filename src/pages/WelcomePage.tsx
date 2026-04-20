@@ -8,14 +8,6 @@ export default function WelcomePage() {
   const navigate = useNavigate();
   const { darkMode, userPhone, userName, t, isDeliveryEnabled } = useStore();
 
-  // Auto-redirect if already registered
-  React.useEffect(() => {
-    if (userName && userPhone) {
-      console.log("WelcomePage: User already registered, auto-redirecting to menu");
-      navigate('/menu', { replace: true });
-    }
-  }, [userName, userPhone, navigate]);
-
   const handleGetStarted = () => {
     // Check if user is registered (has name and phone)
     const isRegistered = userName && userPhone;

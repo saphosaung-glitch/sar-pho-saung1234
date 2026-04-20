@@ -239,9 +239,9 @@ interface StoreContextType {
   currency: 'RM' | 'MMK';
   setCurrency: (currency: 'RM' | 'MMK') => void;
   formatPrice: (price: number) => string;
-  getMainName: (item: { name: string; mmName: string; msName?: string; thName?: string; zhName?: string }) => string;
-  getSecondaryName: (item: { name: string; mmName: string; msName?: string; thName?: string; zhName?: string }) => string;
-  getLocalizedName: (item: { mmName: string; msName?: string; thName?: string; zhName?: string }) => string;
+  getMainName: (item: any) => string;
+  getSecondaryName: (item: any) => string;
+  getLocalizedName: (item: any) => string;
   t: (key: string) => string;
   darkMode: boolean;
   setDarkMode: (enabled: boolean) => void;
@@ -2630,24 +2630,28 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
         return `${price.toLocaleString()} Ks`;
       },
-      getMainName: (item: { name: string; mmName: string; msName?: string; thName?: string; zhName?: string }) => {
-        return item.name; // Always English as requested
+      getMainName: (item: any) => {
+        return item.name || item.title || '';
       },
-      getSecondaryName: (item: { name: string; mmName: string; msName?: string; thName?: string; zhName?: string }) => {
-        // console.log('Current language:', language, 'Item:', item.name);
+      getSecondaryName: (item: any) => {
+        const mm = item.mmName || item.titleMm || '';
+        const ms = item.msName || mm;
+        const th = item.thName || mm;
+        const zh = item.zhName || mm;
+
         switch (language) {
           case 'en':
-            return item.mmName; // English selected -> Second is Myanmar
+            return mm; // English selected -> Second is Myanmar
           case 'my':
-            return item.mmName; // Myanmar selected -> Second is Myanmar (as per latest request)
+            return mm; // Myanmar selected -> Second is Myanmar
           case 'th':
-            return item.thName || item.mmName;
+            return th;
           case 'zh':
-            return item.zhName || item.mmName;
+            return zh;
           case 'ms':
-            return item.msName || item.mmName;
+            return ms;
           default:
-            return item.mmName;
+            return mm;
         }
       },
       getLocalizedName: (item: { mmName: string; msName?: string; thName?: string; zhName?: string }) => {
