@@ -9,7 +9,7 @@ export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [isReordering, setIsReordering] = useState(false);
-  const { orders, supportNumber, cancelOrder, reorder, t, darkMode, formatPrice, getMainName, getSecondaryName } = useStore();
+  const { orders, estimatedDeliveryTime, supportNumber, cancelOrder, reorder, t, darkMode, formatPrice, getMainName, getSecondaryName } = useStore();
   const navigate = useNavigate();
   
   const order = orders.find(o => o.id === id);
@@ -122,13 +122,13 @@ export default function OrderDetailPage() {
       <header className={`sticky top-0 z-50 backdrop-blur-xl border-b border-on-surface/5 px-4 h-[72px] flex items-center gap-4 ${darkMode ? 'bg-surface/80' : 'bg-white/80'}`}>
         <button 
           onClick={() => navigate(-1)}
-          className={`flex-none w-10 h-10 border border-on-surface/10 shadow-sm rounded-full flex items-center justify-center transition-all active:scale-90 ${darkMode ? 'bg-surface-container-high hover:bg-surface-container-highest' : 'bg-white hover:bg-slate-50'}`}
+          className={`flex-none w-10 h-10 border border-on-surface/10 shadow-sm rounded-full flex items-center justify-center transition-all active:scale-90 touch-manipulation ${darkMode ? 'bg-surface-container-high hover:bg-surface-container-highest' : 'bg-white hover:bg-slate-50'}`}
         >
           <ChevronLeft size={20} className="text-on-surface" />
         </button>
         <div className="flex flex-col">
           <h2 className="text-lg font-black text-on-surface tracking-tight leading-tight">{t('orderDetails')}</h2>
-          <p className="text-[10px] font-black text-on-surface-variant/60 uppercase tracking-widest">#{order.id}</p>
+          <p className="text-[10px] font-black text-on-surface-variant/60 uppercase tracking-widest">#{order.id.slice(-6).toUpperCase().padStart(6, '0')}</p>
         </div>
       </header>
 
@@ -219,6 +219,31 @@ export default function OrderDetailPage() {
                   <p className="text-[10px] font-black text-on-surface">
                     {new Date(order.timestamp).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
                   </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className={`flex items-center gap-2 p-2 rounded-xl border ${darkMode ? 'bg-surface-container-highest border-on-surface/5' : 'bg-slate-50 border-slate-100'}`}>
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant/40 border ${darkMode ? 'bg-surface-container-high border-on-surface/10' : 'bg-white border-slate-100'}`}>
+                  <Calendar size={14} className="text-primary" />
+                </div>
+                <div>
+                  <p className="text-[8px] font-black text-on-surface-variant/40 uppercase tracking-widest">{t('deliveryDate')}</p>
+                  <p className="text-[10px] font-black text-on-surface">
+                    {order.deliveryDate || t('pending')}
+                    {order.deliveryDay && <span className="ml-1 opacity-60 text-[8px]">({t(order.deliveryDay.toLowerCase())})</span>}
+                  </p>
+                </div>
+              </div>
+
+              <div className={`flex items-center gap-2 p-2 rounded-xl border ${darkMode ? 'bg-surface-container-highest border-on-surface/5' : 'bg-slate-50 border-slate-100'}`}>
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant/40 border ${darkMode ? 'bg-surface-container-high border-on-surface/10' : 'bg-white border-slate-100'}`}>
+                  <Clock size={14} className="text-primary" />
+                </div>
+                <div>
+                  <p className="text-[8px] font-black text-on-surface-variant/40 uppercase tracking-widest">{t('estimatedDelivery')}</p>
+                  <p className="text-[10px] font-black text-on-surface">{estimatedDeliveryTime}</p>
                 </div>
               </div>
             </div>

@@ -217,7 +217,7 @@ export default function ProfilePage() {
                       </div>
                       <div>
                         <p className="text-[8px] font-black text-on-surface-variant/40 uppercase tracking-widest">{t('recentOrder')}</p>
-                        <p className="text-[10px] font-bold text-on-surface">#{recentOrder.id.slice(-6).toUpperCase()}</p>
+                        <p className="text-[10px] font-bold text-on-surface">#{recentOrder.id.slice(-6).toUpperCase().padStart(6, '0')}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">

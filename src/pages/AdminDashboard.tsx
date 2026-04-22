@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore, Product, Order } from '../context/StoreContext';
-import { LogOut, Package, Clock, CheckCircle2, LayoutDashboard, ShoppingBag, ListChecks, ChevronRight, MapPin, Settings, Phone, Save, CreditCard, DollarSign, Database, RefreshCw, Plus, Trash2, Sparkles, Image as ImageIcon, Tag, Hash, ShieldCheck, Menu, X, Search, SlidersHorizontal, Eye, Printer, User, Users, Calendar, BarChart3, TrendingUp, PieChart as PieChartIcon, AlertTriangle, Download, Bell, Ticket, History, MessageSquare, ToggleLeft, ToggleRight, FileText, KeyRound } from 'lucide-react';
+import OrdersTab from '../components/admin/OrdersTab';
+import { LogOut, Package, Clock, CheckCircle2, LayoutDashboard, ShoppingBag, ListChecks, ChevronRight, MapPin, Settings, Phone, Save, CreditCard, DollarSign, Database, RefreshCw, Plus, Trash2, Sparkles, Image as ImageIcon, Tag, Hash, ShieldCheck, Menu, X, Search, SlidersHorizontal, Eye, Printer, User, Users, Calendar, BarChart3, TrendingUp, PieChart as PieChartIcon, AlertTriangle, Download, Bell, Ticket, History, MessageSquare, ToggleLeft, ToggleRight, FileText, KeyRound, Moon, Sun, Truck } from 'lucide-react';
 import * as Popover from '@radix-ui/react-popover';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
@@ -12,6 +13,8 @@ import { CATEGORIES } from '../constants';
 import { collection, getDocs, doc, updateDoc, setDoc, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { translateProductName } from '../services/translationService';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   BarChart, Bar, PieChart, Pie, Cell, Legend 
@@ -354,104 +357,315 @@ function OrderDetailModal({ order, isOpen, onClose, darkMode, formatPrice, updat
   onClose: () => void, 
   darkMode: boolean, 
   formatPrice: (p: number) => string,
-  updateStatus: (id: string, s: any) => void,
+  updateStatus: (id: string, s: any) => Promise<void>,
   t: any 
 }) {
+  const [isUpdating, setIsUpdating] = useState<string | null>(null);
+  const [isPrintMenuOpen, setIsPrintMenuOpen] = useState(false);
   if (!order) return null;
 
-  const handlePrint = () => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
+  const handleStatusUpdate = async (id: string, status: any) => {
+    setIsUpdating(status);
+    try {
+      await updateStatus(id, status);
+    } catch (e) {
+      console.error("Status update error:", e);
+    } finally {
+      setIsUpdating(null);
+    }
+  };
 
-    const itemsHtml = order.items.map(item => `
-      <tr>
-        <td style="padding: 12px; border-bottom: 1px solid #eee; font-size: 14px;">${item.name}</td>
-        <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center; font-size: 14px;">${item.quantity} ${item.unit}</td>
-        <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right; font-size: 14px; font-weight: bold;">${formatPrice(item.price * item.quantity)}</td>
-      </tr>
-    `).join('');
+  const handlePrint = (format: 'a4' | 'thermal') => {
+    console.log('handlePrint called with format:', format);
+    // To bypass sandbox restrictions where iframes and window.open are blocked or have cross-origin errors,
+    // we inject the print layout directly into the DOM, hide everything else via print CSS, trigger print, then clean up.
+    const itemsSubtotal = order.items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+    const invoiceDate = new Date(order.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Receipt - ${order.id}</title>
-          <style>
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
-            body { font-family: 'Inter', sans-serif; padding: 40px; color: #1a1a1a; line-height: 1.6; }
-            .header { text-align: center; margin-bottom: 40px; border-bottom: 2px solid #f0f0f0; padding-bottom: 20px; }
-            .header h1 { margin: 0; font-size: 28px; letter-spacing: -1px; }
-            .header p { margin: 5px 0; color: #666; font-size: 14px; }
-            .details { display: grid; grid-template-cols: 1fr 1fr; gap: 20px; margin-bottom: 30px; font-size: 13px; }
-            .details p { margin: 4px 0; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th { text-align: left; padding: 12px; background: #f8f8f8; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
-            .total-box { margin-top: 30px; padding: 20px; background: #f8f8f8; border-radius: 12px; text-align: right; }
-            .total-label { font-size: 14px; color: #666; }
-            .total-amount { font-size: 24px; font-weight: 700; color: #0d631b; display: block; }
-            .footer { text-align: center; margin-top: 60px; font-size: 11px; color: #999; border-top: 1px solid #eee; padding-top: 20px; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
+    const printContainer = document.createElement('div');
+    printContainer.id = 'print-container';
+    
+    // Add print-specific styles
+    const styleEl = document.createElement('style');
+    styleEl.id = 'print-style';
+
+    let printHtml = '';
+
+    if (format === 'thermal') {
+      const itemsHtml = order.items.map(item => `
+        <tr>
+          <td style="padding: 4px 0; font-size: 11px;">
+            ${item.name}<br>
+            <span style="font-size: 9px; color: #555;">${item.quantity} x ${formatPrice(item.price)}</span>
+          </td>
+          <td style="padding: 4px 0; text-align: right; font-size: 11px; vertical-align: top;">${formatPrice(item.price * item.quantity)}</td>
+        </tr>
+      `).join('');
+
+      styleEl.innerHTML = `
+        @media print {
+          body > *:not(#print-container) { display: none !important; }
+          #print-container { display: block !important; position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; }
+          @page { size: 58mm auto; margin: 0; }
+          .thermal-print-body { font-family: monospace; margin: 0 auto; padding: 2mm; width: 54mm; max-width: 58mm; color: #000; -webkit-font-smoothing: antialiased; }
+          .thermal-header { text-align: center; margin-bottom: 12px; }
+          .thermal-header h1 { margin: 0; font-size: 18px; font-weight: bold; text-transform: uppercase; }
+          .thermal-header p { margin: 2px 0; font-size: 10px; color: #333; }
+          .thermal-divider { border-bottom: 1px dashed #000; margin: 8px 0; }
+          .thermal-details { font-size: 10px; margin-bottom: 12px; }
+          .thermal-details p { margin: 3px 0; display: flex; justify-content: space-between; }
+          .thermal-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+          .thermal-table th { text-align: left; padding-bottom: 6px; border-bottom: 1px dashed #000; font-size: 10px; text-transform: uppercase; }
+          .thermal-table th.right { text-align: right; }
+          .thermal-totals-row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 11px; font-weight: bold; }
+          .thermal-total-final { font-size: 15px; font-weight: bold; padding-top: 6px; border-top: 1px dashed #000; margin-top: 6px; }
+          .thermal-footer { text-align: center; margin-top: 20px; font-size: 10px; color: #333; }
+        }
+        @media screen {
+          #print-container { display: none !important; }
+        }
+      `;
+
+      printHtml = `
+        <div class="thermal-print-body">
+          <div class="thermal-header">
             <h1>Sar Taw Set</h1>
-            <p>Royal Caterer & Grocery</p>
-            <p>Order Receipt</p>
+            <p>Fresh Grocery & Meat</p>
+            <p>Mandalay, Myanmar</p>
           </div>
-          <div class="details">
-            <div>
-              <p><strong>Order ID:</strong> #${order.id.slice(-8).toUpperCase()}</p>
-              <p><strong>Date:</strong> ${new Date(order.createdAt).toLocaleString()}</p>
-              <p><strong>Payment:</strong> ${order.paymentMethod}</p>
-            </div>
-            <div style="text-align: right;">
-              <p><strong>Customer:</strong> ${order.customerName}</p>
-              <p><strong>Phone:</strong> ${order.customerPhone}</p>
-              <p><strong>Room:</strong> ${order.roomNumber}</p>
-            </div>
+          <div class="thermal-details">
+            <p><span>Order:</span><span>#${order.id.slice(-8).toUpperCase()}</span></p>
+            <p><span>Date:</span><span>${new Date(order.createdAt).toLocaleDateString()}</span></p>
+            <p><span>Customer:</span><span>${order.customerName}</span></p>
+            <p><span>Room:</span><span>${order.roomNumber}</span></p>
+            ${order.paymentMethod ? `<p><span>Pay:</span><span style="text-transform: uppercase;">${order.paymentMethod}</span></p>` : ''}
+            ${order.address ? `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px dotted #ccc;">
+              <strong style="display:block; margin-bottom: 2px;">Address:</strong>
+              <span style="line-height: 1.3;">${order.address}</span>
+            </div>` : ''}
+            ${order.note ? `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px dotted #ccc;">
+              <strong style="display:block; margin-bottom: 2px;">Note:</strong>
+              <span style="line-height: 1.3;">${order.note}</span>
+            </div>` : ''}
           </div>
-          <table>
+          <div class="thermal-divider"></div>
+          <table class="thermal-table">
             <thead>
               <tr>
-                <th>Item Description</th>
-                <th style="text-align: center;">Qty</th>
-                <th style="text-align: right;">Amount</th>
+                <th>Item</th>
+                <th class="right">Total</th>
               </tr>
             </thead>
             <tbody>
               ${itemsHtml}
             </tbody>
           </table>
-          <div class="total-box">
-            <span class="total-label">Total Amount</span>
-            <span class="total-amount">${formatPrice(order.total)}</span>
+          <div class="thermal-divider"></div>
+          <div class="thermal-totals-row">
+            <span>Subtotal</span>
+            <span>${formatPrice(itemsSubtotal)}</span>
           </div>
-          <div class="footer">
-            <p>Thank you for your patronage!</p>
-            <p>This is a computer generated receipt.</p>
+          ${order.pointDiscount > 0 ? `
+            <div class="thermal-totals-row" style="font-weight: normal;">
+              <span>Points Disc.</span>
+              <span>-${formatPrice(order.pointDiscount)}</span>
+            </div>
+          ` : ''}
+          ${order.deliveryFee > 0 ? `
+            <div class="thermal-totals-row" style="font-weight: normal;">
+              <span>Delivery Fee</span>
+              <span>+${formatPrice(order.deliveryFee)}</span>
+            </div>
+          ` : ''}
+          <div class="thermal-totals-row thermal-total-final">
+            <span>Total</span>
+            <span>${formatPrice(order.total)}</span>
           </div>
-          <script>
-            window.onload = () => {
-              window.print();
-              setTimeout(() => window.close(), 500);
-            };
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+          <div class="thermal-footer">
+            <p>Thank you for shopping with us!</p>
+          </div>
+        </div>
+      `;
+    } else {
+      const itemsHtml = order.items.map(item => `
+        <tr>
+          <td style="padding: 16px 0; border-bottom: 1px solid #f3f4f6;">
+            <div style="font-weight: 600; font-size: 13px; color: #111827;">${item.name}</div>
+          </td>
+          <td style="padding: 16px 0; border-bottom: 1px solid #f3f4f6; text-align: right; color: #6b7280; font-size: 13px;">${formatPrice(item.price)}</td>
+          <td style="padding: 16px 0; border-bottom: 1px solid #f3f4f6; text-align: right; color: #6b7280; font-size: 13px;">${item.quantity}</td>
+          <td style="padding: 16px 0; border-bottom: 1px solid #f3f4f6; text-align: right; font-weight: 600; color: #111827; font-size: 13px;">${formatPrice(item.price * item.quantity)}</td>
+        </tr>
+      `).join('');
+
+      styleEl.innerHTML = `
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        @media print {
+          body > *:not(#print-container) { display: none !important; }
+          #print-container { display: block !important; position: absolute; left: 0; top: 0; width: 100%; }
+          @page { size: A4; margin: 15mm; }
+          body { background: white; margin: 0; padding: 0; width: 100%; font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
+          
+          .a4-print-body { padding: 0; margin: 0; color: #374151; }
+          .invoice-box { width: 100%; max-width: 100%; }
+          .invoice-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #f3f4f6; padding-bottom: 40px; margin-bottom: 40px; }
+          .brand h1 { margin: 0; font-size: 28px; font-weight: 700; color: #000; letter-spacing: -0.5px; }
+          .brand p { margin: 4px 0 0; color: #6b7280; font-size: 13px; }
+          .invoice-title { text-align: right; }
+          .invoice-title h2 { margin: 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: #666; }
+          .invoice-title p { margin: 8px 0 0; font-size: 20px; font-weight: 600; color: #000; font-family: monospace; }
+          .meta-grid { display: flex; justify-content: space-between; margin-bottom: 50px; }
+          .meta-section { width: 45%; }
+          .meta-section h3 { margin: 0 0 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #666; }
+          .meta-section p { margin: 0 0 4px; font-size: 14px; color: #000; font-weight: 500; }
+          .meta-section .sub-text { font-size: 13px; color: #6b7280; font-weight: 400; margin-top: 4px; }
+          .a4-table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
+          .a4-table th { text-align: left; padding: 0 0 16px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #666; border-bottom: 2px solid #ccc; }
+          .a4-table th.right { text-align: right; }
+          
+          .totals-container { display: flex; justify-content: flex-end; }
+          .totals-table { width: 320px; }
+          .a4-totals-row { display: flex; justify-content: space-between; padding: 12px 0; font-size: 13px; color: #4b5563; border-bottom: 1px solid #f3f4f6; }
+          .a4-totals-row.discount { color: #000; }
+          .a4-totals-row.delivery { color: #000; }
+          .a4-totals-row.final { border-bottom: none; border-top: 2px solid #000; padding-top: 20px; margin-top: 8px; color: #000; font-size: 16px; font-weight: 700; align-items: center; }
+          .final-amount { font-size: 28px; letter-spacing: -1px; }
+          
+          .a4-footer { margin-top: 80px; padding-top: 30px; border-top: 1px solid #f3f4f6; color: #666; font-size: 12px; text-align: center; }
+        }
+        @media screen {
+          #print-container { display: none !important; }
+        }
+      `;
+
+      printHtml = `
+        <div class="a4-print-body">
+          <div class="invoice-box">
+            <div class="invoice-header">
+              <div class="brand">
+                <h1>Sar Taw Set</h1>
+                <p>Fresh Grocery & Meat Delivery</p>
+                <p>Mandalay, Myanmar</p>
+              </div>
+              <div class="invoice-title">
+                <h2>Invoice</h2>
+                <p>#${order.id.slice(-8).toUpperCase()}</p>
+              </div>
+            </div>
+            
+            <div class="meta-grid">
+              <div class="meta-section">
+                <h3>Billed To</h3>
+                <p>${order.customerName}</p>
+                <div class="sub-text">Room ${order.roomNumber}</div>
+                ${order.address ? `<div class="sub-text" style="line-height: 1.4;">${order.address}</div>` : ''}
+              </div>
+              <div class="meta-section" style="text-align: right;">
+                <h3>Invoice Details</h3>
+                <div style="display: flex; justify-content: space-between; max-width: 250px; margin-left: auto; margin-bottom: 8px;">
+                  <span class="sub-text">Date Of Issue:</span>
+                  <span style="font-weight: 500; font-size: 13px;">${invoiceDate}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; max-width: 250px; margin-left: auto; margin-bottom: 8px;">
+                  <span class="sub-text">Phone:</span>
+                  <span style="font-weight: 500; font-size: 13px;">${order.customerPhone}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; max-width: 250px; margin-left: auto;">
+                  <span class="sub-text">Payment Method:</span>
+                  <span style="font-weight: 500; font-size: 13px; text-transform: uppercase;">${order.paymentMethod}</span>
+                </div>
+              </div>
+            </div>
+
+            ${order.note ? `
+            <div style="margin-top: -10px; margin-bottom: 40px;">
+              <h3 style="margin: 0 0 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #666;">Customer Note</h3>
+              <div style="padding: 16px; border: 1px dashed #ccc; font-size: 13px; color: #000; font-style: italic;">
+                "${order.note}"
+              </div>
+            </div>
+            ` : ''}
+
+            <table class="a4-table">
+              <thead>
+                <tr>
+                  <th>Description</th>
+                  <th class="right">Unit Price</th>
+                  <th class="right">Qty</th>
+                  <th class="right">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${itemsHtml}
+              </tbody>
+            </table>
+
+            <div class="totals-container">
+              <div class="totals-table">
+                <div class="a4-totals-row">
+                  <span>Subtotal</span>
+                  <span style="font-weight: 600; color: #000;">${formatPrice(itemsSubtotal)}</span>
+                </div>
+                ${order.pointDiscount > 0 ? `
+                  <div class="a4-totals-row discount">
+                    <span>Points Discount</span>
+                    <span style="font-weight: 600;">-${formatPrice(order.pointDiscount)}</span>
+                  </div>
+                ` : ''}
+                ${order.deliveryFee > 0 ? `
+                  <div class="a4-totals-row delivery">
+                    <span>Delivery Fee</span>
+                    <span style="font-weight: 600;">+${formatPrice(order.deliveryFee)}</span>
+                  </div>
+                ` : ''}
+                <div class="a4-totals-row final">
+                  <span>Amount Due</span>
+                  <span class="final-amount">${formatPrice(order.total)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="a4-footer">
+              <p>Thank you for your business. For any inquiries, please contact our support.</p>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    printContainer.innerHTML = printHtml;
+    document.head.appendChild(styleEl);
+    document.body.appendChild(printContainer);
+
+    // Call print immediately
+    window.print();
+
+    // Clean up after print dialog has captured the page
+    setTimeout(() => {
+      try {
+        if (styleEl && document.head.contains(styleEl)) {
+          document.head.removeChild(styleEl);
+        }
+        if (printContainer && document.body.contains(printContainer)) {
+          document.body.removeChild(printContainer);
+        }
+      } catch (err) {
+        console.error("Cleanup error:", err);
+      }
+    }, 1000);
   };
 
   const statusConfig = {
-    pending: { color: 'amber', icon: Clock, label: t('statusPending') },
-    packing: { color: 'blue', icon: Package, label: t('statusPacking') },
-    delivered: { color: 'emerald', icon: CheckCircle2, label: t('statusDelivered') },
-    cancelled: { color: 'rose', icon: X, label: t('statusCancelled') }
+    pending: { color: 'amber', icon: Clock, label: t('statusPending'), bg: 'bg-amber-500', text: 'text-amber-500', light: 'bg-amber-50', border: 'border-amber-100', dark: 'bg-amber-500/10' },
+    packing: { color: 'blue', icon: Package, label: t('statusPacking'), bg: 'bg-blue-500', text: 'text-blue-500', light: 'bg-blue-50', border: 'border-blue-100', dark: 'bg-blue-500/10' },
+    delivered: { color: 'emerald', icon: CheckCircle2, label: t('statusDelivered'), bg: 'bg-emerald-500', text: 'text-emerald-500', light: 'bg-emerald-50', border: 'border-emerald-100', dark: 'bg-emerald-500/10' },
+    cancelled: { color: 'rose', icon: X, label: t('statusCancelled'), bg: 'bg-rose-500', text: 'text-rose-500', light: 'bg-rose-50', border: 'border-rose-100', dark: 'bg-rose-500/10' }
   };
 
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 lg:p-6">
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -460,214 +674,361 @@ function OrderDetailModal({ order, isOpen, onClose, darkMode, formatPrice, updat
             className="absolute inset-0 bg-black/80 backdrop-blur-md"
           />
           <motion.div 
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            initial={{ opacity: 0, scale: 0.9, y: 40 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className={`relative w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-[2.5rem] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)] flex flex-col ${
-              darkMode ? 'bg-[#121414] border border-white/10' : 'bg-white'
+            exit={{ opacity: 0, scale: 0.9, y: 40 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            onClick={(e) => e.stopPropagation()}
+            className={`relative w-full max-w-5xl max-h-[92vh] overflow-hidden rounded-[2.5rem] shadow-[0_50px_100px_-20px_rgba(0,0,0,0.5)] flex flex-col lg:flex-row ${
+              darkMode ? 'bg-[#0f1111] border border-white/5' : 'bg-[#fdfdfd]'
             }`}
           >
-            {/* Header Section (Compacted) */}
-            <div className={`px-8 py-5 border-b ${darkMode ? 'border-white/5 bg-white/2' : 'border-gray-100 bg-gray-50/50'}`}>
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-4">
-                  <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-[0.15em] shadow-sm ${
-                    order.status === 'pending' ? 'bg-amber-500/20 text-amber-500' : 
-                    order.status === 'packing' ? 'bg-blue-500/20 text-blue-500' : 
-                    order.status === 'cancelled' ? 'bg-rose-500/20 text-rose-500' : 'bg-emerald-500/20 text-emerald-500'
-                  }`}>
-                    {statusConfig[order.status].label}
-                  </div>
-                  <h2 className={`text-xl font-black tracking-tight ${darkMode ? 'text-on-surface' : 'text-emerald-950'}`}>
-                    Order #{order.id.slice(-8).toUpperCase()}
-                  </h2>
+            {/* Left Side: Order Info & Status (Compact vertical bar) */}
+            <div className={`lg:w-[280px] shrink-0 flex flex-col border-r ${darkMode ? 'border-white/5 bg-white/[0.02]' : 'border-gray-100 bg-gray-50/50'}`}>
+              {/* Top Banner with ID */}
+              <div className="px-6 py-3 pb-0.5">
+                <div className={`inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-[0.2em] mb-1.5 ${
+                  order.status === 'pending' ? 'bg-amber-500/10 text-amber-500' : 
+                  order.status === 'packing' ? 'bg-blue-500/10 text-blue-500' : 
+                  order.status === 'cancelled' ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${order.status === 'pending' ? 'bg-amber-500' : order.status === 'packing' ? 'bg-blue-500' : order.status === 'cancelled' ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                  {statusConfig[order.status].label}
                 </div>
-                <div className="flex items-center gap-2">
-                  <button 
-                    onClick={handlePrint}
-                    className={`group flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all duration-300 ${
-                      darkMode 
-                        ? 'bg-white/5 hover:bg-primary/20 text-primary border border-white/10' 
-                        : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-100'
+                <h2 className={`text-2xl font-black tracking-tighter mb-1 ${darkMode ? 'text-on-surface' : 'text-emerald-950'}`}>
+                  #{order.id.slice(-6).toUpperCase()}
+                </h2>
+                <div className="flex items-center gap-2 opacity-40">
+                  <Calendar size={10} />
+                  <span className="text-[9px] font-bold uppercase tracking-widest">
+                    {new Date(order.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </span>
+                </div>
+              </div>
+
+              {/* Scrollable Details */}
+              <div className="flex-grow overflow-y-auto no-scrollbar p-4 pt-1 space-y-2.5">
+                {/* Customer Section */}
+                <section>
+                  <p className="text-[8px] font-black uppercase tracking-[0.3em] opacity-30 mb-1.5 ml-1">Customer</p>
+                  <div className="space-y-2">
+                    <div className="flex items-start gap-3">
+                      <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${darkMode ? 'bg-white/5 text-primary' : 'bg-white shadow-sm text-emerald-700'}`}>
+                        <User size={14} />
+                      </div>
+                      <div>
+                        <p className="font-black text-sm tracking-tight leading-tight mb-0.5">{order.customerName}</p>
+                        <p className={`text-[9px] font-bold font-mono opacity-50`}>{order.customerPhone}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-start gap-3">
+                      <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${darkMode ? 'bg-white/5 text-primary' : 'bg-white shadow-sm text-emerald-700'}`}>
+                        <MapPin size={14} />
+                      </div>
+                      <div>
+                        <p className="text-[8px] font-black uppercase tracking-widest opacity-30 mb-0.5 leading-none">Location</p>
+                        <p className="font-bold text-xs tracking-tight">Room {order.roomNumber}</p>
+                        {order.address && (
+                          <p className={`text-[9px] font-medium mt-0.5 leading-relaxed opacity-60`}>{order.address}</p>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-start gap-3">
+                      <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${darkMode ? 'bg-white/5 text-primary' : 'bg-white shadow-sm text-emerald-700'}`}>
+                        <CreditCard size={14} />
+                      </div>
+                      <div>
+                        <p className="text-[8px] font-black uppercase tracking-widest opacity-30 mb-0.5 leading-none">Payment</p>
+                        <p className="font-bold text-xs tracking-tight uppercase">{order.paymentMethod}</p>
+                      </div>
+                    </div>
+
+                    {order.paymentMethod.toLowerCase().includes('bank') && (
+                      <div className="flex items-start gap-3">
+                        <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${darkMode ? 'bg-white/5 text-primary' : 'bg-white shadow-sm text-emerald-700'}`}>
+                          <ImageIcon size={14} />
+                        </div>
+                        <div className="flex-grow">
+                          <p className="text-[8px] font-black uppercase tracking-widest opacity-30 mb-1 leading-none">Screenshot</p>
+                          {order.paymentScreenshot ? (
+                            <button 
+                              onClick={() => window.open(order.paymentScreenshot, '_blank')}
+                              className="group relative w-full h-20 rounded-xl overflow-hidden border border-dashed border-inherit bg-black/5 hover:bg-black/10 transition-all"
+                            >
+                              <img 
+                                src={order.paymentScreenshot} 
+                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" 
+                                alt="Payment Screenshot"
+                              />
+                            </button>
+                          ) : (
+                            <div className={`w-full py-2 px-2 rounded-xl border border-dashed text-center ${darkMode ? 'border-white/10 bg-white/5' : 'border-gray-200 bg-gray-50'}`}>
+                              <p className="text-[8px] font-bold opacity-30 italic">No upload</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                {/* Delivery schedule */}
+                <section>
+                  <p className="text-[8px] font-black uppercase tracking-[0.3em] opacity-30 mb-1.5 ml-1">Schedule</p>
+                  <div className={`px-3 py-2.5 rounded-xl border border-dashed ${darkMode ? 'bg-primary/5 border-primary/20' : 'bg-emerald-50/50 border-emerald-100'}`}>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <Clock size={12} className="text-primary" />
+                      <span className="text-[9px] font-black uppercase tracking-widest text-primary">{order.deliveryDay}</span>
+                    </div>
+                    <p className="text-[10px] font-bold opacity-80">{order.deliveryDate}</p>
+                  </div>
+                </section>
+
+                {/* Quick Comms */}
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <a 
+                    href={`tel:${order.customerPhone}`}
+                    className={`flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl transition-all hover:scale-[1.02] ${
+                      darkMode ? 'bg-white/5 hover:bg-white/10 text-on-surface' : 'bg-white text-emerald-950 shadow-sm border border-gray-100'
                     }`}
                   >
-                    <Printer size={16} className="group-hover:scale-110 transition-transform" />
-                    <span>Print</span>
+                    <Phone size={12} />
+                    <span className="text-[7px] font-black uppercase tracking-widest">Call</span>
+                  </a>
+                  <a 
+                    href={`https://wa.me/${order.customerPhone.replace(/[^0-9]/g, '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl transition-all hover:scale-[1.02] ${
+                      darkMode ? 'bg-[#25D366]/10 text-[#25D366]' : 'bg-[#e7f9ee] text-[#128C7E] shadow-sm border border-[#25D366]/20'
+                    }`}
+                  >
+                    <MessageSquare size={12} />
+                    <span className="text-[7px] font-black uppercase tracking-widest">WhatsApp</span>
+                  </a>
+                </div>
+              </div>
+
+              {/* Status Actions at bottom of sidebar */}
+              <div className={`p-3 border-t ${darkMode ? 'border-white/5' : 'border-gray-100'}`}>
+                <div className="grid grid-cols-2 gap-2">
+                  <button 
+                    onClick={() => handleStatusUpdate(order.id, 'packing')}
+                    disabled={isUpdating !== null}
+                    className={`h-10 rounded-xl flex items-center justify-center gap-2 transition-all font-black text-[9px] uppercase tracking-widest ${
+                      order.status === 'packing' 
+                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
+                        : darkMode 
+                          ? 'bg-white/5 text-white/40 hover:bg-white/10' 
+                          : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                    } ${isUpdating === 'packing' ? 'opacity-50' : ''}`}
+                  >
+                    {isUpdating === 'packing' ? (
+                      <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <Package size={12} />
+                    )}
+                    Ready
                   </button>
                   <button 
-                    onClick={onClose} 
-                    className={`p-2 rounded-xl transition-all duration-300 ${
-                      darkMode ? 'hover:bg-white/10 text-white/40 hover:text-white' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-900'
-                    }`}
+                    onClick={() => handleStatusUpdate(order.id, 'delivered')}
+                    disabled={isUpdating !== null}
+                    className={`h-10 rounded-xl flex items-center justify-center gap-2 transition-all font-black text-[9px] uppercase tracking-widest ${
+                      order.status === 'delivered' 
+                        ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20' 
+                        : darkMode 
+                          ? 'bg-white/5 text-white/40 hover:bg-white/10' 
+                          : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                    } ${isUpdating === 'delivered' ? 'opacity-50' : ''}`}
                   >
-                    <X size={20} />
+                    {isUpdating === 'delivered' ? (
+                      <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <CheckCircle2 size={12} />
+                    )}
+                    Done
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* Content Section - Scrollable */}
-            <div className="flex-grow overflow-y-auto no-scrollbar p-5 sm:p-6">
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-                
-                {/* Left Side: Info Summary (Compact) */}
-                <div className="lg:col-span-4 space-y-4">
-                  {/* Customer & Address Card */}
-                  <div className={`p-5 rounded-[2rem] border transition-all duration-300 ${
-                    darkMode ? 'bg-white/5 border-white/5' : 'bg-gray-50 border-gray-100'
-                  }`}>
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${darkMode ? 'bg-primary/20 text-primary' : 'bg-emerald-100 text-emerald-700'}`}>
-                        <User size={16} />
+            {/* Right Side: Items List & Total Summary */}
+            <div className={`flex-grow flex flex-col min-w-0 ${darkMode ? 'bg-transparent' : 'bg-white'}`}>
+              {/* Header Content */}
+              <div className="px-6 py-2.5 flex items-center justify-between relative border-b border-inherit">
+                <div>
+                  <h3 className="text-[9px] font-black uppercase tracking-[0.3em] opacity-30 mb-0.5">Invoice Details</h3>
+                  <p className="text-base font-black truncate max-w-md">Order Summary • {order.customerName}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <button 
+                      onClick={() => setIsPrintMenuOpen(!isPrintMenuOpen)}
+                      className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all ${
+                        darkMode ? 'bg-white shadow-xl text-black hover:bg-gray-200' : 'bg-emerald-950 text-white shadow-xl hover:bg-emerald-900'
+                      }`}
+                    >
+                      <Printer size={14} />
+                      Print
+                      <ChevronRight size={10} className={`${isPrintMenuOpen ? '-rotate-90' : 'rotate-90'} opacity-50`} />
+                    </button>
+                    {isPrintMenuOpen && (
+                      <div className={`absolute right-0 mt-2 w-44 p-1.5 rounded-xl shadow-2xl z-[150] border ${
+                        darkMode ? 'bg-[#18181b] border-white/10' : 'bg-white border-gray-100'
+                      }`}>
+                        <button
+                          onClick={() => { console.log('A4 button clicked'); setIsPrintMenuOpen(false); handlePrint('a4'); }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors ${
+                            darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-emerald-50 text-emerald-950'
+                          }`}
+                        >
+                          <FileText size={14} className={darkMode ? 'text-white/50' : 'text-emerald-700/50'} />
+                          A4 Invoice
+                        </button>
+                        <button
+                          onClick={() => { console.log('Thermal button clicked'); setIsPrintMenuOpen(false); handlePrint('thermal'); }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors ${
+                            darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-emerald-50 text-emerald-950'
+                          }`}
+                        >
+                          <Ticket size={14} className={darkMode ? 'text-white/50' : 'text-emerald-700/50'} />
+                          Thermal Receipt
+                        </button>
                       </div>
-                      <span className="text-[9px] font-black uppercase tracking-[0.2em] opacity-40">Customer & Delivery</span>
-                    </div>
-                    
-                    <div className="mb-4">
-                      <p className="text-lg font-black tracking-tight leading-tight">{order.customerName}</p>
-                      <p className="text-xs font-bold opacity-50">{order.customerPhone}</p>
-                    </div>
+                    )}
+                  </div>
+                  
+                  <button 
+                    onClick={onClose}
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+                      darkMode ? 'bg-white/5 text-white/40 hover:bg-white/10' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                    }`}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
 
-                    <div className="space-y-3 pt-4 border-t border-inherit">
-                      <div className="flex gap-3">
-                        <MapPin size={14} className="text-primary mt-0.5 shrink-0" />
-                        <div>
-                          <p className="text-[10px] font-black uppercase tracking-widest opacity-30 mb-0.5">Delivery Address</p>
-                          <p className="text-xs font-bold leading-relaxed">
-                            Room {order.roomNumber}
-                            {(order as any).address && <span className="block opacity-70 font-medium mt-1">{(order as any).address}</span>}
-                          </p>
+              {/* Items List (Scrollable) */}
+              <div className="flex-grow overflow-y-auto px-6 no-scrollbar py-3">
+                <div className="space-y-2 pb-4">
+                  {order.items.map((item, idx) => (
+                    <motion.div 
+                      key={idx}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.05 }}
+                      className={`group flex items-center gap-2.5 p-2 rounded-xl border transition-all duration-300 ${
+                        darkMode ? 'bg-white/2 border-white/5 hover:bg-white/5' : 'bg-white border-gray-100 hover:border-emerald-100 shadow-sm'
+                      }`}
+                    >
+                      <div className="relative shrink-0">
+                        <div className="w-10 h-10 rounded-lg overflow-hidden shadow-md group-hover:scale-105 transition-transform duration-500">
+                          <img src={item.image} className="w-full h-full object-cover" />
+                        </div>
+                        <div className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-primary text-white rounded-full flex items-center justify-center text-[7px] font-black shadow-lg border-2 border-surface">
+                          {item.quantity}
                         </div>
                       </div>
                       
-                      <div className="flex gap-3">
-                        <Clock size={14} className="text-primary mt-0.5 shrink-0" />
-                        <div>
-                          <p className="text-[10px] font-black uppercase tracking-widest opacity-30 mb-0.5">Order & Delivery</p>
-                          <p className="text-xs font-bold">
-                            {new Date(order.createdAt).toLocaleDateString()} • {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                          <p className="text-[10px] font-bold text-primary mt-1">
-                            Scheduled: {order.deliveryDay}, {order.deliveryDate}
-                          </p>
+                      <div className="flex-grow min-w-0">
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className={`px-1.5 py-0.5 rounded-md text-[7px] font-black uppercase tracking-widest ${darkMode ? 'bg-white/10 text-on-surface-variant' : 'bg-emerald-100/50 text-emerald-800'}`}>
+                            {item.unit || 'Unit'}
+                          </span>
+                        </div>
+                        <h4 className="text-sm font-black tracking-tight truncate leading-none mb-1">{item.name}</h4>
+                        <div className="flex items-center gap-1 opacity-50">
+                          <Tag size={10} />
+                          <span className="text-[9px] font-bold">{formatPrice(item.price)} each</span>
                         </div>
                       </div>
 
-                      <div className="flex gap-3">
-                        <CreditCard size={14} className="text-primary mt-0.5 shrink-0" />
-                        <div>
-                          <p className="text-[10px] font-black uppercase tracking-widest opacity-30 mb-0.5">Payment</p>
-                          <p className="text-xs font-bold uppercase">{order.paymentMethod}</p>
-                        </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-[8px] font-black uppercase tracking-widest opacity-20 mb-0.5 leading-none">Subtotal</p>
+                        <p className="text-base font-black tracking-tighter leading-none">{formatPrice(item.price * item.quantity)}</p>
                       </div>
-                    </div>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
 
+              {/* Order total footer */}
+              <div className={`px-6 py-2 border-t mt-auto ${darkMode ? 'border-white/5 bg-white/[0.01]' : 'border-gray-100 bg-gray-50/30'}`}>
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                  <div className="space-y-2">
                     {order.note && (
-                      <div className={`mt-5 p-4 rounded-xl border flex items-start gap-3 ${darkMode ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' : 'bg-amber-50 border-amber-100 text-amber-700'}`}>
-                        <FileText size={16} className="shrink-0 mt-0.5" />
-                        <div>
-                          <p className="text-[9px] font-black uppercase tracking-widest opacity-60 mb-1">Customer Note</p>
-                          <p className="text-sm font-bold leading-relaxed">{order.note}</p>
-                        </div>
+                      <div className="max-w-md">
+                        <p className="text-[8px] font-black uppercase tracking-[0.3em] opacity-30 mb-1">Note from Customer</p>
+                        <p className="text-xs font-bold opacity-70 leading-relaxed italic line-clamp-1">"{order.note}"</p>
                       </div>
                     )}
-
-                    <div className="grid grid-cols-2 gap-2 mt-5">
-                      <a 
-                        href={`tel:${order.customerPhone}`}
-                        className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
-                          darkMode ? 'bg-white/5 hover:bg-white/10' : 'bg-white border border-gray-100 hover:bg-gray-50 shadow-sm'
-                        }`}
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => handleStatusUpdate(order.id, 'pending')}
+                        disabled={isUpdating !== null}
+                        className={`h-10 px-5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                          order.status === 'pending' ? 'bg-amber-500 text-white shadow-lg' : darkMode ? 'bg-white/5 text-white/30 hover:text-white' : 'bg-gray-100 text-gray-400 hover:text-gray-900'
+                        } ${isUpdating === 'pending' ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
-                        Call
-                      </a>
-                      <a 
-                        href={`https://wa.me/${order.customerPhone.replace(/[^0-9]/g, '')}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
-                          darkMode ? 'bg-white/5 hover:bg-white/10' : 'bg-white border border-gray-100 hover:bg-gray-50 shadow-sm'
-                        }`}
+                        {isUpdating === 'pending' && <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                        Keep on Hold
+                      </button>
+                      <button 
+                        onClick={() => handleStatusUpdate(order.id, 'cancelled')}
+                        disabled={isUpdating !== null}
+                        className={`h-10 px-5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border border-transparent flex items-center gap-2 ${
+                          order.status === 'cancelled' ? 'bg-rose-600 text-white shadow-lg' : 'text-rose-500/40 hover:text-rose-500 border-rose-500/10 hover:bg-rose-500/5'
+                        } ${isUpdating === 'cancelled' ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
-                        WhatsApp
-                      </a>
+                        {isUpdating === 'cancelled' && <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                        Cancel
+                      </button>
                     </div>
-                  </div>
-                </div>
+                  </div>                  <div className="text-right min-w-[200px]">
+                    <div className="space-y-1 mb-2">
+                      <div className="flex items-center justify-between gap-4 opacity-40">
+                        <span className="text-[9px] font-black uppercase tracking-[0.2em]">Subtotal</span>
+                        <span className="text-[10px] font-bold font-mono">{formatPrice(order.items.reduce((acc, item) => acc + (item.price * item.quantity), 0))}</span>
+                      </div>
+                      
+                      {order.deliveryFee > 0 && (
+                        <div className={`flex items-center justify-between gap-4 px-2 py-1 rounded-lg border border-dashed ${darkMode ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-500' : 'bg-emerald-50 border-emerald-100 text-emerald-700'}`}>
+                          <div className="flex items-center gap-1">
+                            <Truck size={10} />
+                            <span className="text-[8px] font-black uppercase tracking-widest">Delivery Fee</span>
+                          </div>
+                          <span className="text-[10px] font-black">+{formatPrice(order.deliveryFee)}</span>
+                        </div>
+                      )}
+                      
+                      {order.pointDiscount > 0 && (
+                        <div className={`flex items-center justify-between gap-4 px-2 py-1 rounded-lg border border-dashed ${darkMode ? 'bg-rose-500/5 border-rose-500/20 text-rose-500' : 'bg-rose-50 border-rose-100 text-rose-700'}`}>
+                          <div className="flex items-center gap-1">
+                            <Sparkles size={10} />
+                            <span className="text-[8px] font-black uppercase tracking-widest">Points Disc.</span>
+                          </div>
+                          <span className="text-[10px] font-black">-{formatPrice(order.pointDiscount)}</span>
+                        </div>
+                      )}
+                    </div>
 
-                {/* Right Side: Items & Actions (Spacious) */}
-                <div className="lg:col-span-8 space-y-5">
-                  {/* Items List */}
-                  <div className={`rounded-[2rem] border overflow-hidden ${darkMode ? 'bg-white/2 border-white/5' : 'bg-white border-gray-100'}`}>
-                    <div className="px-6 py-4 border-b border-inherit bg-inherit flex items-center justify-between">
-                      <h3 className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40">Order Items ({order.items.length})</h3>
-                    </div>
-                    <div className="max-h-[280px] overflow-y-auto no-scrollbar divide-y divide-inherit">
-                      {order.items.map((item, i) => (
-                        <motion.div 
-                          key={i}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: i * 0.03 }}
-                          className="flex items-center gap-4 p-4 group hover:bg-primary/5 transition-colors"
-                        >
-                          <div className="relative shrink-0">
-                            <img src={item.image} className="w-12 h-12 rounded-xl object-cover shadow-sm group-hover:scale-105 transition-transform duration-500" />
-                            <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-primary text-white rounded-lg flex items-center justify-center text-[9px] font-black shadow-lg border-2 border-inherit">
-                              {item.quantity}
-                            </div>
-                          </div>
-                          <div className="flex-grow min-w-0">
-                            <p className="font-black text-sm mb-0.5 truncate">{item.name}</p>
-                            <p className="text-[10px] font-bold opacity-40 uppercase tracking-widest">{item.unit} • {formatPrice(item.price)}</p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <p className="font-black text-sm">{formatPrice(item.price * item.quantity)}</p>
-                          </div>
-                        </motion.div>
-                      ))}
-                    </div>
-                    {/* Summary Footer (Now below items) */}
-                    <div className={`p-6 bg-inherit border-t border-inherit`}>
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <p className="text-[9px] font-black uppercase tracking-[0.2em] opacity-30 mb-1">Total Payable</p>
-                          <h4 className={`text-2xl font-black tracking-tighter ${darkMode ? 'text-primary' : 'text-emerald-700'}`}>
-                            {formatPrice(order.total)}
-                          </h4>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[9px] font-black uppercase tracking-[0.2em] opacity-30 mb-1">Points Earned</p>
-                          <p className="text-sm font-black text-amber-500">+{order.earnedPoints || 0} PTS</p>
-                        </div>
+                    <div className="flex items-end justify-between border-t border-dashed pt-2 mt-2 gap-4">
+                      <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${darkMode ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' : 'bg-amber-50 border-amber-100 text-amber-700'}`}>
+                        <Sparkles size={9} className="animate-pulse" />
+                        <span className="text-[7px] font-black uppercase tracking-widest">+{order.earnedPoints || 0} PTS</span>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[8px] font-black uppercase tracking-[0.4em] opacity-30 mb-0.5">Final Amount</p>
+                        <h4 className={`text-2xl font-black tracking-tighter leading-none ${darkMode ? 'text-primary' : 'text-emerald-950'}`}>
+                          {formatPrice(order.total)}
+                        </h4>
                       </div>
                     </div>
                   </div>
-
-                  {/* Status Actions (Compact Grid) */}
-                  <div className="space-y-3">
-                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 px-4">Update Status</h3>
-                    <div className="grid grid-cols-4 gap-3">
-                      {Object.entries(statusConfig).map(([id, cfg]) => (
-                        <button 
-                          key={id}
-                          onClick={() => updateStatus(order.id, id as any)}
-                          className={`flex flex-col items-center gap-2 p-3 rounded-2xl transition-all duration-300 relative overflow-hidden group ${
-                            order.status === id 
-                              ? `bg-${cfg.color}-500 text-white shadow-lg shadow-${cfg.color}-500/20` 
-                              : darkMode 
-                                ? 'bg-white/5 hover:bg-white/10 border border-white/5' 
-                                : 'bg-gray-50 hover:bg-gray-100 border border-gray-100'
-                          }`}
-                        >
-                          <cfg.icon size={16} className={order.status === id ? 'text-white' : `text-${cfg.color}-500`} />
-                          <span className="text-[8px] font-black uppercase tracking-widest">{cfg.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
                 </div>
-
               </div>
             </div>
           </motion.div>
@@ -677,7 +1038,12 @@ function OrderDetailModal({ order, isOpen, onClose, darkMode, formatPrice, updat
   );
 }
 
-function BannerManagement({ banners, add, update, remove, darkMode }: any) {
+function BannerManagement({ banners, add, update, remove, darkMode, globalSearch }: any) {
+  const filteredBanners = banners.filter((b: any) => {
+    const s = globalSearch?.toLowerCase() || '';
+    return (b.title?.toLowerCase().includes(s) || b.description?.toLowerCase().includes(s));
+  });
+
   const [showAdd, setShowAdd] = useState(false);
   const [formData, setFormData] = useState({
     title: '',
@@ -744,7 +1110,7 @@ function BannerManagement({ banners, add, update, remove, darkMode }: any) {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {banners.map((banner: any) => (
+        {filteredBanners.map((banner: any) => (
           <div key={banner.id} className={`p-0 rounded-[2rem] border relative overflow-hidden h-[150px] ${darkMode ? 'bg-white/5 border-white/10' : 'bg-white border-gray-100 shadow-sm'}`}>
             <img src={banner.image} className="absolute inset-0 w-full h-full object-cover" referrerPolicy="no-referrer" />
             <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-4 z-20">
@@ -768,7 +1134,12 @@ function BannerManagement({ banners, add, update, remove, darkMode }: any) {
   );
 }
 
-function DealManagement({ deals, add, update, remove, darkMode, formatPrice }: any) {
+function DealManagement({ deals, add, update, remove, darkMode, formatPrice, globalSearch }: any) {
+  const filteredDeals = deals.filter((d: any) => {
+    const s = globalSearch?.toLowerCase() || '';
+    return (d.title?.toLowerCase().includes(s) || d.titleMm?.toLowerCase().includes(s) || d.discount?.toLowerCase().includes(s));
+  });
+
   const [showAdd, setShowAdd] = useState(false);
   const [formData, setFormData] = useState({
     type: 'daily-deal',
@@ -845,7 +1216,7 @@ function DealManagement({ deals, add, update, remove, darkMode, formatPrice }: a
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {deals.map((deal: any) => (
+        {filteredDeals.map((deal: any) => (
           <div key={deal.id} className={`p-5 rounded-[2rem] border flex gap-4 items-center ${darkMode ? 'bg-white/5 border-white/10' : 'bg-white border-gray-100 shadow-sm'}`}>
             <img src={deal.image} className="w-20 h-20 rounded-2xl object-cover shadow-sm" />
             <div className="flex-grow min-w-0">
@@ -873,7 +1244,12 @@ function DealManagement({ deals, add, update, remove, darkMode, formatPrice }: a
   );
 }
 
-function BundleManagement({ bundles, add, update, remove, darkMode, formatPrice }: any) {
+function BundleManagement({ bundles, add, update, remove, darkMode, formatPrice, globalSearch }: any) {
+  const filteredBundles = bundles.filter((b: any) => {
+    const s = globalSearch?.toLowerCase() || '';
+    return (b.title?.toLowerCase().includes(s) || b.titleMm?.toLowerCase().includes(s) || b.description?.toLowerCase().includes(s));
+  });
+
   const [showAdd, setShowAdd] = useState(false);
   const [formData, setFormData] = useState({
     title: '',
@@ -947,7 +1323,7 @@ function BundleManagement({ bundles, add, update, remove, darkMode, formatPrice 
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {bundles.map((bundle: any) => (
+        {filteredBundles.map((bundle: any) => (
           <div key={bundle.id} className={`p-5 rounded-[2rem] border flex gap-4 items-center ${darkMode ? 'bg-white/5 border-white/10' : 'bg-white border-gray-100 shadow-sm'}`}>
             <img src={bundle.image} className="w-20 h-20 rounded-2xl object-cover shadow-sm" />
             <div className="flex-grow min-w-0">
@@ -972,9 +1348,14 @@ function BundleManagement({ bundles, add, update, remove, darkMode, formatPrice 
   );
 }
 
-function CategoriesTab({ categories, updateCategory, addCategory, deleteCategory, darkMode, t }: { categories: any[], updateCategory: any, addCategory: any, deleteCategory: any, darkMode: boolean, t: any }) {
+function CategoriesTab({ categories, updateCategory, addCategory, deleteCategory, darkMode, t, globalSearch }: { categories: any[], updateCategory: any, addCategory: any, deleteCategory: any, darkMode: boolean, t: any, globalSearch?: string }) {
   const [showAdd, setShowAdd] = useState(false);
   const [newCategory, setNewCategory] = useState({ key: '', order: categories.length });
+
+  const filteredCategories = categories.filter(c => {
+    const s = globalSearch?.toLowerCase() || '';
+    return c.key.toLowerCase().includes(s) || t(c.key).toLowerCase().includes(s);
+  });
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1052,7 +1433,7 @@ function CategoriesTab({ categories, updateCategory, addCategory, deleteCategory
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {categories.filter(c => c.id !== 'all').sort((a, b) => a.order - b.order).map((cat) => (
+        {filteredCategories.filter(c => c.id !== 'all').sort((a, b) => a.order - b.order).map((cat) => (
           <div key={cat.id} className={`p-6 rounded-[2rem] border flex items-center justify-between ${darkMode ? 'bg-white/5 border-white/10' : 'bg-white border-gray-100 shadow-sm'}`}>
             <div className="flex items-center gap-4">
               <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${darkMode ? 'bg-white/5 text-primary' : 'bg-emerald-50 text-emerald-600'}`}>
@@ -1102,7 +1483,7 @@ function CategoriesTab({ categories, updateCategory, addCategory, deleteCategory
   );
 }
 
-function SpecialOffersTab({ darkMode, t }: { darkMode: boolean, t: any }) {
+function SpecialOffersTab({ darkMode, t, globalSearch }: { darkMode: boolean, t: any, globalSearch?: string }) {
   const { 
     deals, addDeal, updateDeal, deleteDeal,
     bundles, addBundle, updateBundle, deleteBundle,
@@ -1149,6 +1530,7 @@ function SpecialOffersTab({ darkMode, t }: { darkMode: boolean, t: any }) {
               remove={deleteDeal}
               darkMode={darkMode}
               formatPrice={formatPrice}
+              globalSearch={globalSearch}
             />
           )}
           {activeSubTab === 'bundles' && (
@@ -1159,6 +1541,7 @@ function SpecialOffersTab({ darkMode, t }: { darkMode: boolean, t: any }) {
               remove={deleteBundle}
               darkMode={darkMode}
               formatPrice={formatPrice}
+              globalSearch={globalSearch}
             />
           )}
         </motion.div>
@@ -1167,7 +1550,7 @@ function SpecialOffersTab({ darkMode, t }: { darkMode: boolean, t: any }) {
   );
 }
 
-function AdBannersTab({ darkMode, t }: { darkMode: boolean, t: any }) {
+function AdBannersTab({ darkMode, t, globalSearch }: { darkMode: boolean, t: any, globalSearch?: string }) {
   const { 
     promotionBanners, addPromotionBanner, updatePromotionBanner, deletePromotionBanner
   } = useStore();
@@ -1180,6 +1563,7 @@ function AdBannersTab({ darkMode, t }: { darkMode: boolean, t: any }) {
         update={updatePromotionBanner} 
         remove={deletePromotionBanner}
         darkMode={darkMode}
+        globalSearch={globalSearch}
       />
     </div>
   );
@@ -1720,13 +2104,14 @@ function AddProductModal({
   );
 }
 
-function UsersTab({ users, darkMode, updateUserPoints }: { users: any[], darkMode: boolean, updateUserPoints: (uid: string, p: number) => Promise<void> }) {
-  const [search, setSearch] = useState('');
-  const filteredUsers = users.filter(u => 
-    u.name?.toLowerCase().includes(search.toLowerCase()) || 
-    u.phone?.includes(search) ||
-    u.room?.includes(search)
-  );
+function UsersTab({ users, darkMode, updateUserPoints, globalSearch }: { users: any[], darkMode: boolean, updateUserPoints: (uid: string, p: number) => Promise<void>, globalSearch?: string }) {
+  const filteredUsers = users.filter(u => {
+    const s = globalSearch?.toLowerCase() || '';
+    return u.name?.toLowerCase().includes(s) || 
+           u.phone?.includes(s) ||
+           u.room?.includes(s) ||
+           u.id?.toLowerCase().includes(s);
+  });
 
   return (
     <div className="space-y-6">
@@ -1734,18 +2119,6 @@ function UsersTab({ users, darkMode, updateUserPoints }: { users: any[], darkMod
         <div>
           <h2 className="text-2xl font-black tracking-tight">Customer Management</h2>
           <p className="text-sm opacity-40 font-bold uppercase tracking-widest">{users.length} Total Customers</p>
-        </div>
-        <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 opacity-20" size={18} />
-          <input
-            type="text"
-            placeholder="Search customers..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className={`pl-12 pr-6 py-3 rounded-2xl border w-full md:w-80 font-bold text-sm outline-none transition-all ${
-              darkMode ? 'bg-white/5 border-white/10 focus:border-primary' : 'bg-white border-gray-100 focus:border-emerald-500 shadow-sm'
-            }`}
-          />
         </div>
       </div>
 
@@ -1834,7 +2207,12 @@ function UsersTab({ users, darkMode, updateUserPoints }: { users: any[], darkMod
   );
 }
 
-function CouponsTab({ coupons, addCoupon, updateCoupon, deleteCoupon, darkMode, formatPrice }: { coupons: any[], addCoupon: any, updateCoupon: any, deleteCoupon: any, darkMode: boolean, formatPrice: any }) {
+function CouponsTab({ coupons, addCoupon, updateCoupon, deleteCoupon, darkMode, formatPrice, globalSearch }: { coupons: any[], addCoupon: any, updateCoupon: any, deleteCoupon: any, darkMode: boolean, formatPrice: any, globalSearch?: string }) {
+  const filteredCoupons = coupons.filter(c => {
+    const s = globalSearch?.toLowerCase() || '';
+    return c.code.toLowerCase().includes(s);
+  });
+
   const [isAdding, setIsAdding] = useState(false);
   const [newCoupon, setNewCoupon] = useState({
     code: '',
@@ -1874,7 +2252,7 @@ function CouponsTab({ coupons, addCoupon, updateCoupon, deleteCoupon, darkMode, 
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {coupons.map(coupon => (
+        {filteredCoupons.map(coupon => (
           <div key={coupon.id} className={`p-6 rounded-[2rem] border relative overflow-hidden ${darkMode ? 'bg-white/5 border-white/10' : 'bg-white border-gray-100 shadow-sm'}`}>
             <div className="flex items-center justify-between mb-4">
               <div className={`px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${darkMode ? 'bg-primary/20 text-primary' : 'bg-emerald-100 text-emerald-700'}`}>
@@ -1972,7 +2350,12 @@ function CouponsTab({ coupons, addCoupon, updateCoupon, deleteCoupon, darkMode, 
   );
 }
 
-function NotificationsTab({ sendBroadcast, broadcastNotifications, darkMode }: { sendBroadcast: any, broadcastNotifications: any[], darkMode: boolean }) {
+function NotificationsTab({ sendBroadcast, broadcastNotifications, darkMode, globalSearch }: { sendBroadcast: any, broadcastNotifications: any[], darkMode: boolean, globalSearch?: string }) {
+  const filteredNotifications = broadcastNotifications.filter(n => {
+    const s = globalSearch?.toLowerCase() || '';
+    return n.title?.toLowerCase().includes(s) || n.message?.toLowerCase().includes(s);
+  });
+
   const [isSending, setIsSending] = useState(false);
   const [payload, setPayload] = useState({
     title: '',
@@ -2008,7 +2391,7 @@ function NotificationsTab({ sendBroadcast, broadcastNotifications, darkMode }: {
       </div>
 
       <div className="space-y-4">
-        {broadcastNotifications.map(notif => (
+        {filteredNotifications.map(notif => (
           <div key={notif.id} className={`p-6 rounded-[2rem] border flex gap-6 ${darkMode ? 'bg-white/5 border-white/10' : 'bg-white border-gray-100 shadow-sm'}`}>
             <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${
               notif.type === 'promotion' ? 'bg-emerald-100 text-emerald-600' :
@@ -2105,7 +2488,7 @@ function NotificationsTab({ sendBroadcast, broadcastNotifications, darkMode }: {
   );
 }
 
-function ProductsTab({ products, categories, addProduct, updateProduct, deleteProduct, darkMode, t, formatPrice }: { 
+function ProductsTab({ products, categories, addProduct, updateProduct, deleteProduct, darkMode, t, formatPrice, globalSearch }: { 
   products: Product[], 
   categories: any[],
   addProduct: any, 
@@ -2113,17 +2496,18 @@ function ProductsTab({ products, categories, addProduct, updateProduct, deletePr
   deleteProduct: any, 
   darkMode: boolean, 
   t: any,
-  formatPrice: any
+  formatPrice: any,
+  globalSearch?: string
 }) {
-  const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   const filteredProducts = products.filter(p => {
-    const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase()) || 
-                         p.mmName.toLowerCase().includes(search.toLowerCase());
+    const s = globalSearch?.toLowerCase() || '';
+    const matchesSearch = p.name.toLowerCase().includes(s) || 
+                         p.mmName.toLowerCase().includes(s);
     const matchesCategory = selectedCategory === 'all' || p.category === selectedCategory;
     return matchesSearch && matchesCategory;
   });
@@ -2173,19 +2557,6 @@ function ProductsTab({ products, categories, addProduct, updateProduct, deletePr
         </div>
         
         <div className="flex flex-wrap items-center gap-4">
-          <div className="relative flex-grow md:flex-none">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 opacity-20" size={18} />
-            <input
-              type="text"
-              placeholder="Search products..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className={`pl-12 pr-6 py-3 rounded-2xl border w-full md:w-64 font-bold text-sm outline-none transition-all ${
-                darkMode ? 'bg-white/5 border-white/10 focus:border-primary' : 'bg-white border-gray-100 focus:border-emerald-500 shadow-sm'
-              }`}
-            />
-          </div>
-
           <select
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
@@ -2378,7 +2749,15 @@ function ProductsTab({ products, categories, addProduct, updateProduct, deletePr
   );
 }
 
-function AuditLogsTab({ auditLogs, darkMode }: { auditLogs: any[], darkMode: boolean }) {
+function AuditLogsTab({ auditLogs, darkMode, globalSearch }: { auditLogs: any[], darkMode: boolean, globalSearch?: string }) {
+  const filteredLogs = auditLogs.filter(log => {
+    const s = globalSearch?.toLowerCase() || '';
+    return log.adminName?.toLowerCase().includes(s) || 
+           log.action?.toLowerCase().includes(s) || 
+           log.target?.toLowerCase().includes(s) ||
+           log.details?.toLowerCase().includes(s);
+  });
+
   return (
     <div className="space-y-6">
       <div>
@@ -2398,7 +2777,7 @@ function AuditLogsTab({ auditLogs, darkMode }: { auditLogs: any[], darkMode: boo
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50 dark:divide-white/5">
-              {auditLogs.map((log) => (
+              {filteredLogs.map((log) => (
                 <tr key={log.id} className="hover:bg-gray-50/50 dark:hover:bg-white/5 transition-colors">
                   <td className="px-8 py-4">
                     <p className="font-black text-sm">{log.adminName}</p>
@@ -2432,7 +2811,12 @@ function AuditLogsTab({ auditLogs, darkMode }: { auditLogs: any[], darkMode: boo
   );
 }
 
-function AdminsTab({ admins, addAdmin, updateAdminRole, removeAdmin, darkMode }: { admins: any[], addAdmin: any, updateAdminRole: any, removeAdmin: any, darkMode: boolean }) {
+function AdminsTab({ admins, addAdmin, updateAdminRole, removeAdmin, darkMode, globalSearch }: { admins: any[], addAdmin: any, updateAdminRole: any, removeAdmin: any, darkMode: boolean, globalSearch?: string }) {
+  const filteredAdmins = admins.filter(admin => {
+    const s = globalSearch?.toLowerCase() || '';
+    return admin.name?.toLowerCase().includes(s) || admin.email?.toLowerCase().includes(s);
+  });
+
   const [isAdding, setIsAdding] = useState(false);
   const [newAdmin, setNewAdmin] = useState({ uid: '', email: '', name: '', role: 'staff' as 'superadmin' | 'staff' });
 
@@ -2463,7 +2847,7 @@ function AdminsTab({ admins, addAdmin, updateAdminRole, removeAdmin, darkMode }:
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {admins.map(admin => (
+        {filteredAdmins.map(admin => (
           <div key={admin.uid} className={`p-6 rounded-[2rem] border ${darkMode ? 'bg-white/5 border-white/10' : 'bg-white border-gray-100 shadow-sm'}`}>
             <div className="flex items-center justify-between mb-4">
               <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
@@ -2564,12 +2948,13 @@ export default function AdminDashboard() {
     bankAccountNumber, setBankAccountNumber,
     bankAccountName, setBankAccountName,
     currency, setCurrency, formatPrice,
-    darkMode, t,
+    darkMode, setDarkMode, t,
     isDeliveryEnabled, setIsDeliveryEnabled,
     deliveryFee, setDeliveryFee,
     isLowStockAlertEnabled, setIsLowStockAlertEnabled,
     isMaintenanceMode, updateMaintenanceMode,
     cutoffTime, setCutoffTime,
+    isBankEnabled, setIsBankEnabled,
     estimatedDeliveryTime, setEstimatedDeliveryTime,
     signInWithGoogle, authUid, userEmail,
     users, updateUserPoints,
@@ -2583,7 +2968,6 @@ export default function AdminDashboard() {
   } = useStore();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'orders' | 'market' | 'products' | 'banners' | 'special-offers' | 'categories' | 'settings' | 'analytics' | 'users' | 'coupons' | 'notifications' | 'audit' | 'admins'>('analytics');
-  const [isHovered, setIsHovered] = useState(false);
   const [tempSupportNumber, setTempSupportNumber] = useState(supportNumber);
   const [tempCutoffTime, setTempCutoffTime] = useState(cutoffTime);
   const [tempEstimatedDeliveryTime, setTempEstimatedDeliveryTime] = useState(estimatedDeliveryTime);
@@ -2596,7 +2980,37 @@ export default function AdminDashboard() {
   const [tempBankDetails, setTempBankDetails] = useState({ name: bankName, number: bankAccountNumber, accountName: bankAccountName });
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<Order['status'] | 'all'>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [selectedDateFilter, setSelectedDateFilter] = useState({ start: '', end: '' });
+
+  // Sync selected order with latest order data from context to reflect status changes immediately
+  useEffect(() => {
+    if (selectedOrder && isOrderModalOpen) {
+      const updatedOrder = orders.find(o => o.id === selectedOrder.id);
+      if (updatedOrder && (updatedOrder.status !== selectedOrder.status || updatedOrder.paymentScreenshot !== selectedOrder.paymentScreenshot)) {
+        setSelectedOrder(updatedOrder);
+      }
+    }
+  }, [orders, isOrderModalOpen, selectedOrder]);
+
+  const filteredOrders = useMemo(() => {
+    let result = orders;
+    if (statusFilter !== 'all') result = result.filter(o => o.status === statusFilter);
+    if (selectedDateFilter.start) result = result.filter(o => new Date(o.createdAt).toISOString().split('T')[0] >= selectedDateFilter.start);
+    if (selectedDateFilter.end) result = result.filter(o => new Date(o.createdAt).toISOString().split('T')[0] <= selectedDateFilter.end);
+    
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(o => 
+        o.customerName.toLowerCase().includes(q) || 
+        o.id.toLowerCase().includes(q) ||
+        o.roomNumber.toLowerCase().includes(q) ||
+        o.customerPhone?.includes(q)
+      );
+    }
+    
+    return result;
+  }, [orders, statusFilter, selectedDateFilter, searchQuery]);
   
   // Real-time Notification for new orders
   useEffect(() => {
@@ -2666,7 +3080,7 @@ export default function AdminDashboard() {
   };
 
   // Market List Logic: Auto-Sum total weight/quantity of each product
-  const filteredOrders = useMemo(() => {
+  const marketListOrders = useMemo(() => {
     return orders.filter(order => {
       const matchesSearch = 
         order.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -2681,7 +3095,7 @@ export default function AdminDashboard() {
 
   const marketListByDate = useMemo(() => {
     const grouped: Record<string, Record<string, { id: string; name: string; total: number; unit: string }>> = {};
-    orders.forEach(order => {
+    marketListOrders.forEach(order => {
       const date = new Date(order.createdAt).toLocaleDateString();
       if (!grouped[date]) grouped[date] = {};
       order.items.forEach(item => {
@@ -2713,7 +3127,6 @@ export default function AdminDashboard() {
 
   return (
     <div className={`min-h-screen font-sans flex transition-all duration-500 ${darkMode ? 'bg-[#0c0e0e] text-on-surface' : 'bg-[#f8faf9]'}`}>
-      <Toaster position="top-right" theme={darkMode ? 'dark' : 'light'} richColors />
       
       <OrderDetailModal 
         order={selectedOrder}
@@ -2728,28 +3141,30 @@ export default function AdminDashboard() {
       {/* Sidebar */}
       <motion.aside 
         initial={false}
-        onMouseEnter={() => !isMenuOpen && setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
         animate={{ 
-          width: (isMenuOpen || isHovered) ? 280 : 72,
-          boxShadow: (isHovered && !isMenuOpen) ? '20px 0 50px rgba(0,0,0,0.1)' : 'none'
+          width: isMenuOpen ? 280 : 88,
+          boxShadow: isMenuOpen ? '20px 0 50px rgba(0,0,0,0.1)' : 'none'
         }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className={`fixed inset-y-0 left-0 z-50 flex-shrink-0 overflow-hidden ${darkMode ? 'bg-[#0c0e0e] border-r border-white/5' : 'bg-white border-r border-gray-100'}`}
+        className={`fixed inset-y-0 left-0 z-50 flex-shrink-0 overflow-hidden ${darkMode ? 'bg-[#0c0e0e]/80 backdrop-blur-xl border-r border-white/5' : 'bg-white/80 backdrop-blur-xl border-r border-gray-100'}`}
       >
-        <div className="w-full h-full flex flex-col py-4">
+        <div className="w-full h-full flex flex-col py-6">
           {/* Menu Toggle & Logo Area */}
-          <div className="flex items-center h-12 px-4 mb-4">
+          <div className="flex items-center h-12 px-6 mb-8">
             <button 
               onClick={() => setIsMenuOpen(!isMenuOpen)} 
-              className={`p-2 rounded-full transition-colors ${darkMode ? 'hover:bg-white/5' : 'hover:bg-gray-100'}`}
+              className={`p-2.5 rounded-2xl transition-all ${darkMode ? 'hover:bg-white/5 text-primary' : 'hover:bg-emerald-50 text-emerald-600'}`}
             >
-              <Menu size={20} />
+              <Menu size={22} />
             </button>
-            {(isMenuOpen || isHovered) && (
-              <div className="flex items-center gap-3 ml-4 overflow-hidden whitespace-nowrap">
-                <h1 className={`text-lg font-black tracking-tighter ${darkMode ? 'text-on-surface' : 'text-emerald-950'}`}>စားတော်ဆက်</h1>
-              </div>
+            {isMenuOpen && (
+              <motion.div 
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="flex items-center gap-3 ml-4 overflow-hidden whitespace-nowrap"
+              >
+                <h1 className={`text-xl font-black tracking-tight ${darkMode ? 'text-on-surface' : 'text-emerald-950'}`}>Sar Taw Set</h1>
+              </motion.div>
             )}
           </div>
 
@@ -2758,10 +3173,10 @@ export default function AdminDashboard() {
             <Popover.Root>
               <Popover.Trigger asChild>
                 <button className={`flex items-center gap-4 h-14 rounded-2xl transition-all duration-300 shadow-md hover:shadow-xl ${
-                  (isMenuOpen || isHovered) ? 'w-full px-6' : 'w-12 mx-auto px-0 justify-center'
+                  isMenuOpen ? 'w-full px-6' : 'w-12 mx-auto px-0 justify-center'
                 } ${darkMode ? 'bg-surface-container-highest text-primary' : 'bg-white text-emerald-700 border border-gray-100'}`}>
                   <Plus size={24} strokeWidth={2.5} />
-                  {(isMenuOpen || isHovered) && <span className="font-bold text-sm whitespace-nowrap">Create New</span>}
+                  {isMenuOpen && <span className="font-bold text-sm whitespace-nowrap">Create New</span>}
                 </button>
               </Popover.Trigger>
               <Popover.Portal>
@@ -2797,102 +3212,92 @@ export default function AdminDashboard() {
           </div>
 
           {/* Navigation Items */}
-          <nav className="flex-grow px-2 space-y-6 overflow-y-auto no-scrollbar pb-6">
+          <nav className="flex-grow px-3 space-y-8 overflow-y-auto no-scrollbar pb-6">
             <div>
-              {(isMenuOpen || isHovered) && <p className="px-6 mb-2 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant/40">Features</p>}
+              {isMenuOpen && <p className="px-6 mb-3 text-[10px] font-black uppercase tracking-[0.2em] opacity-30">Management</p>}
+              <div className="space-y-1">
               {[
                 { id: 'analytics', icon: BarChart3, label: 'Analytics' },
-                { id: 'orders', icon: LayoutDashboard, label: t('orders') },
-                { id: 'market', icon: ListChecks, label: t('marketList') },
+                { id: 'orders', icon: ShoppingBag, label: t('orders') },
                 { id: 'products', icon: Package, label: t('products') },
+                { id: 'banners', icon: ImageIcon, label: 'Ad Banners' },
+                { id: 'special-offers', icon: Tag, label: 'Specials' },
                 { id: 'categories', icon: SlidersHorizontal, label: 'Categories' },
-                { id: 'users', icon: Users, label: 'Customers' },
               ].map((item) => (
                 <button 
                   key={item.id}
                   onClick={() => setActiveTab(item.id as any)}
-                  className={`w-full flex items-center h-11 rounded-full transition-all duration-200 group relative mb-1 ${
+                  className={`w-full flex items-center h-12 rounded-2xl transition-all duration-300 group relative ${
                     activeTab === item.id 
                       ? darkMode 
-                        ? 'bg-primary/15 text-primary' 
+                        ? 'bg-primary/10 text-primary' 
                         : 'bg-emerald-50 text-emerald-700' 
                       : darkMode 
                         ? 'text-on-surface-variant/60 hover:bg-white/5 hover:text-on-surface' 
-                        : 'text-gray-500 hover:bg-gray-100 hover:text-emerald-900'
-                  } ${ (isMenuOpen || isHovered) ? 'px-6 gap-4' : 'px-0 justify-center' }`}
+                        : 'text-gray-500 hover:bg-gray-50 hover:text-emerald-900'
+                  } ${ isMenuOpen ? 'px-6 gap-4' : 'px-0 justify-center' }`}
                 >
-                  <item.icon size={18} className={activeTab === item.id ? 'text-current' : ''} />
-                  {(isMenuOpen || isHovered) && <span className="font-bold text-xs whitespace-nowrap">{item.label}</span>}
-                  {!isMenuOpen && !isHovered && (
-                    <div className="absolute left-full ml-4 px-2 py-1 bg-gray-800 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-[60]">
+                  {activeTab === item.id && (
+                    <motion.div 
+                      layoutId="navPill"
+                      className={`absolute left-0 w-1 h-6 rounded-r-full ${darkMode ? 'bg-primary' : 'bg-emerald-600'}`}
+                    />
+                  )}
+                  <item.icon size={20} strokeWidth={activeTab === item.id ? 2.5 : 2} className={activeTab === item.id ? 'text-current' : ''} />
+                  {isMenuOpen && (
+                    <span className={`font-bold text-xs whitespace-nowrap transition-transform duration-300 ${activeTab === item.id ? 'translate-x-1' : ''}`}>
                       {item.label}
-                    </div>
+                    </span>
+                  )}
+                  {activeTab === item.id && isMenuOpen && item.id === 'orders' && stats.pending > 0 && (
+                    <span className="ml-auto bg-rose-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full ring-4 ring-rose-500/10">
+                      {stats.pending}
+                    </span>
                   )}
                 </button>
               ))}
+              </div>
             </div>
 
             <div>
-              {(isMenuOpen || isHovered) && <p className="px-6 mb-2 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant/40">Marketing</p>}
+              {isMenuOpen && <p className="px-6 mb-3 text-[10px] font-black uppercase tracking-[0.2em] opacity-30">System</p>}
+              <div className="space-y-1">
               {[
-                { id: 'banners', icon: ImageIcon, label: 'Ad Banners' },
-                { id: 'special-offers', icon: Tag, label: 'Special Offers' },
+                { id: 'users', icon: Users, label: 'Customers' },
                 { id: 'coupons', icon: Ticket, label: 'Coupons' },
                 { id: 'notifications', icon: Bell, label: 'Broadcast' },
-              ].map((item) => (
-                <button 
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id as any)}
-                  className={`w-full flex items-center h-11 rounded-full transition-all duration-200 group relative mb-1 ${
-                    activeTab === item.id 
-                      ? darkMode 
-                        ? 'bg-primary/15 text-primary' 
-                        : 'bg-emerald-50 text-emerald-700' 
-                      : darkMode 
-                        ? 'text-on-surface-variant/60 hover:bg-white/5 hover:text-on-surface' 
-                        : 'text-gray-500 hover:bg-gray-100 hover:text-emerald-900'
-                  } ${ (isMenuOpen || isHovered) ? 'px-6 gap-4' : 'px-0 justify-center' }`}
-                >
-                  <item.icon size={18} className={activeTab === item.id ? 'text-current' : ''} />
-                  {(isMenuOpen || isHovered) && <span className="font-bold text-xs whitespace-nowrap">{item.label}</span>}
-                  {!isMenuOpen && !isHovered && (
-                    <div className="absolute left-full ml-4 px-2 py-1 bg-gray-800 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-[60]">
-                      {item.label}
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
-
-            <div>
-              {(isMenuOpen || isHovered) && <p className="px-6 mb-2 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant/40">System</p>}
-              {[
-                { id: 'settings', icon: Settings, label: t('settings') },
                 { id: 'audit', icon: History, label: 'Audit Logs' },
                 { id: 'admins', icon: ShieldCheck, label: 'Admins' },
+                { id: 'settings', icon: Settings, label: t('settings') },
               ].map((item) => (
                 <button 
                   key={item.id}
                   onClick={() => setActiveTab(item.id as any)}
-                  className={`w-full flex items-center h-11 rounded-full transition-all duration-200 group relative mb-1 ${
+                  className={`w-full flex items-center h-12 rounded-2xl transition-all duration-300 group relative ${
                     activeTab === item.id 
                       ? darkMode 
-                        ? 'bg-primary/15 text-primary' 
+                        ? 'bg-primary/10 text-primary' 
                         : 'bg-emerald-50 text-emerald-700' 
                       : darkMode 
                         ? 'text-on-surface-variant/60 hover:bg-white/5 hover:text-on-surface' 
-                        : 'text-gray-500 hover:bg-gray-100 hover:text-emerald-900'
-                  } ${ (isMenuOpen || isHovered) ? 'px-6 gap-4' : 'px-0 justify-center' }`}
+                        : 'text-gray-500 hover:bg-gray-50 hover:text-emerald-900'
+                  } ${ isMenuOpen ? 'px-6 gap-4' : 'px-0 justify-center' }`}
                 >
-                  <item.icon size={18} className={activeTab === item.id ? 'text-current' : ''} />
-                  {(isMenuOpen || isHovered) && <span className="font-bold text-xs whitespace-nowrap">{item.label}</span>}
-                  {!isMenuOpen && !isHovered && (
-                    <div className="absolute left-full ml-4 px-2 py-1 bg-gray-800 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-[60]">
+                  {activeTab === item.id && (
+                    <motion.div 
+                      layoutId="navPill"
+                      className={`absolute left-0 w-1 h-6 rounded-r-full ${darkMode ? 'bg-primary' : 'bg-emerald-600'}`}
+                    />
+                  )}
+                  <item.icon size={20} strokeWidth={activeTab === item.id ? 2.5 : 2} className={activeTab === item.id ? 'text-current' : ''} />
+                  {isMenuOpen && (
+                    <span className={`font-bold text-xs whitespace-nowrap transition-transform duration-300 ${activeTab === item.id ? 'translate-x-1' : ''}`}>
                       {item.label}
-                    </div>
+                    </span>
                   )}
                 </button>
               ))}
+              </div>
             </div>
           </nav>
 
@@ -2902,10 +3307,10 @@ export default function AdminDashboard() {
               onClick={handleLogout}
               className={`w-full flex items-center h-12 rounded-full transition-all duration-200 group relative ${
                 darkMode ? 'text-red-400/60 hover:bg-red-500/10 hover:text-red-400' : 'text-gray-400 hover:bg-gray-100 hover:text-red-600'
-              } ${ (isMenuOpen || isHovered) ? 'px-6 gap-4' : 'px-0 justify-center' }`}
+              } ${ isMenuOpen ? 'px-6 gap-4' : 'px-0 justify-center' }`}
             >
               <LogOut size={20} />
-              {(isMenuOpen || isHovered) && <span className="font-bold text-sm whitespace-nowrap">{t('logout')}</span>}
+              {isMenuOpen && <span className="font-bold text-sm whitespace-nowrap">{t('logout')}</span>}
             </button>
           </div>
         </div>
@@ -2914,29 +3319,53 @@ export default function AdminDashboard() {
       {/* Main Content */}
       <motion.main 
         animate={{ 
-          marginLeft: isMenuOpen ? 280 : 72 
+          marginLeft: isMenuOpen ? 280 : 88 
         }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
         className="flex-grow overflow-y-auto max-h-screen no-scrollbar"
       >
         {/* Header */}
         <header className={`sticky top-0 z-40 flex items-center justify-between px-4 md:px-8 py-3 border-b ${darkMode ? 'bg-[#0c0e0e]/80 backdrop-blur-md border-white/5' : 'bg-white/80 backdrop-blur-md border-gray-100'}`}>
-          <div className="flex items-center gap-4 flex-grow max-w-3xl">
+          <div className="flex items-center gap-4 flex-grow max-w-2xl">
             {/* Gmail-style Search Bar */}
             <div className="relative flex-grow">
-              <div className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${
-                darkMode ? 'bg-surface-container-high/60 focus-within:bg-surface-container-high focus-within:shadow-lg' : 'bg-gray-100 focus-within:bg-white focus-within:shadow-lg focus-within:ring-1 focus-within:ring-emerald-100'
+              <div className={`flex items-center gap-3 px-5 py-2 rounded-full transition-all group ${
+                darkMode ? 'bg-surface-container-high/40 focus-within:bg-surface-container-high border border-white/5 focus-within:border-primary/30 focus-within:shadow-[0_0_20px_rgba(var(--primary-rgb),0.1)]' : 'bg-gray-100 focus-within:bg-white border border-transparent focus-within:border-emerald-200 focus-within:shadow-xl focus-within:shadow-emerald-900/5 transition-all'
               }`}>
-                <Search className={darkMode ? 'text-on-surface-variant/40' : 'text-gray-400'} size={18} />
+                <Search className={darkMode ? 'text-on-surface-variant/40' : 'text-gray-400'} size={16} />
                 <input 
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={t('searchOrders')}
-                  className="bg-transparent border-none outline-none w-full text-sm font-medium"
+                  placeholder={
+                    activeTab === 'users' ? 'Search customers by name, phone or room...' :
+                    activeTab === 'products' ? 'Search products by name...' :
+                    activeTab === 'categories' ? 'Search categories...' :
+                    activeTab === 'coupons' ? 'Search coupons by code...' :
+                    activeTab === 'notifications' ? 'Search notifications...' :
+                    activeTab === 'audit' ? 'Search audit logs...' :
+                    activeTab === 'admins' ? 'Search admins...' :
+                    activeTab === 'special-offers' ? 'Search deals and bundles...' :
+                    activeTab === 'banners' ? 'Search banners...' :
+                    'Search orders by customer or ID...'
+                  }
+                  className="bg-transparent border-none outline-none w-full text-xs font-bold"
                 />
-                <button className={`p-1.5 rounded-lg transition-colors ${darkMode ? 'hover:bg-white/5' : 'hover:bg-gray-200'}`}>
-                  <SlidersHorizontal size={16} className={darkMode ? 'text-on-surface-variant/40' : 'text-gray-400'} />
+                <button 
+                  onClick={() => {
+                    setSearchQuery('');
+                    setStatusFilter('all');
+                    setSelectedDateFilter({ start: '', end: '' });
+                    toast.info('Filters and search cleared');
+                  }}
+                  title="Clear all filters"
+                  className={`p-1.5 rounded-lg transition-all ${
+                    (searchQuery || statusFilter !== 'all' || selectedDateFilter.start) 
+                      ? 'bg-primary/10 text-primary hover:bg-primary/20 animate-pulse' 
+                      : darkMode ? 'hover:bg-white/5 text-on-surface-variant/40' : 'hover:bg-gray-200 text-gray-400'
+                  }`}
+                >
+                  <SlidersHorizontal size={14} />
                 </button>
               </div>
             </div>
@@ -2994,44 +3423,73 @@ export default function AdminDashboard() {
               )}
             </button>
             
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-black transition-transform hover:scale-105 cursor-pointer ${
-              darkMode ? 'bg-primary/20 text-primary border border-primary/20' : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+            <div className="flex bg-gray-100 dark:bg-white/5 p-1 rounded-2xl">
+              <button 
+                onClick={() => setDarkMode(!darkMode)}
+                className={`p-2.5 rounded-xl transition-all ${darkMode ? 'bg-primary text-surface shadow-lg shadow-primary/20' : 'text-gray-400 hover:text-emerald-600'}`}
+              >
+                <Moon size={18} />
+              </button>
+              <button 
+                onClick={() => setDarkMode(!darkMode)}
+                className={`p-2.5 rounded-xl transition-all ${!darkMode ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200' : 'text-on-surface-variant/40 hover:text-white'}`}
+              >
+                <Sun size={18} />
+              </button>
+            </div>
+
+            <div className={`flex items-center gap-3 pl-3 pr-5 py-1.5 rounded-full border transition-all hover:shadow-lg ${
+              darkMode ? 'bg-white/5 border-white/10 hover:bg-white/10' : 'bg-white border-gray-100 hover:border-gray-200'
             }`}>
-              {auth.currentUser?.email?.[0].toUpperCase() || 'A'}
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-black shadow-inner ${
+                darkMode ? 'bg-primary/20 text-primary' : 'bg-emerald-100 text-emerald-700'
+              }`}>
+                {auth.currentUser?.email?.[0].toUpperCase() || 'A'}
+              </div>
+              <div className="hidden lg:block text-left">
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 leading-none mb-0.5">Administrator</p>
+                <p className="text-[11px] font-bold truncate max-w-[120px]">{auth.currentUser?.email?.split('@')[0]}</p>
+              </div>
             </div>
           </div>
         </header>
 
         {/* Content Area */}
-        <div className="p-4 md:p-8">
+        <div className="flex-grow min-w-0 transition-opacity duration-300">
+          <div className="p-4 md:p-10 max-w-[1600px] mx-auto">
 
         {/* Low Stock Alerts */}
         {isLowStockAlertEnabled && stats.lowStock > 0 && activeTab === 'analytics' && (
           <motion.div 
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className={`mb-8 p-6 rounded-[2.5rem] border flex flex-col md:flex-row md:items-center justify-between gap-6 ${
-              darkMode ? 'bg-red-500/10 border-red-500/20' : 'bg-red-50 border-red-100'
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className={`mb-10 p-8 rounded-[3rem] border flex flex-col md:flex-row md:items-center justify-between gap-8 relative overflow-hidden ${
+              darkMode ? 'bg-red-500/10 border-red-500/10 shadow-2xl shadow-red-900/10' : 'bg-red-50 border-red-100 shadow-xl shadow-red-900/5'
             }`}
           >
-            <div className="flex items-center gap-5">
-              <div className="w-14 h-14 rounded-2xl bg-red-500 flex items-center justify-center text-white shadow-lg shadow-red-500/20">
-                <AlertTriangle size={28} />
+            <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-red-500 to-transparent opacity-50`} />
+            <div className="flex items-center gap-6 relative z-10">
+              <div className="w-16 h-16 rounded-[1.5rem] bg-red-500 flex items-center justify-center text-white shadow-lg shadow-red-500/30">
+                <AlertTriangle size={32} />
               </div>
               <div>
-                <h3 className={`text-xl font-black tracking-tight ${darkMode ? 'text-red-400' : 'text-red-700'}`}>Low Stock Alert</h3>
-                <p className={`text-xs font-bold ${darkMode ? 'text-red-400/60' : 'text-red-600/60'}`}>
-                  {stats.lowStock} products are running low on inventory.
+                <h3 className={`text-2xl font-black tracking-tight ${darkMode ? 'text-red-400' : 'text-red-800'}`}>Inventory Warning</h3>
+                <p className={`text-sm font-bold ${darkMode ? 'text-red-400/50' : 'text-red-600/60'}`}>
+                  {stats.lowStock} essential products are critically low.
                 </p>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-3 relative z-10">
               {products.filter(p => p.stock <= 5).map(p => (
-                <span key={p.id} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border ${
-                  darkMode ? 'bg-white/5 border-white/10 text-red-400' : 'bg-white border-red-100 text-red-600'
-                }`}>
+                <motion.span 
+                  whileHover={{ y: -2 }}
+                  key={p.id} 
+                  className={`px-5 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest border transition-colors ${
+                    darkMode ? 'bg-white/5 border-white/10 text-red-300 hover:bg-white/10' : 'bg-white/80 backdrop-blur-sm border-red-100 text-red-700 hover:bg-white'
+                  }`}
+                >
                   {p.name}: {p.stock} {p.unit}
-                </span>
+                </motion.span>
               ))}
             </div>
           </motion.div>
@@ -3076,149 +3534,179 @@ export default function AdminDashboard() {
               className="space-y-6"
             >
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
+                <div className="flex flex-col">
                   <h2 className={`text-2xl font-black tracking-tight ${darkMode ? 'text-on-surface' : 'text-emerald-900'}`}>{t('orderManagement')}</h2>
-                  <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border ${
-                    darkMode ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-emerald-50 border-emerald-100 text-emerald-600'
-                  }`}>
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-[8px] font-black uppercase tracking-widest">Live Sync</span>
-                  </div>
+                  <p className="text-[10px] font-medium opacity-50 -mt-1">Manage, filter, and track all customer orders in real-time.</p>
                 </div>
                 <button 
                   onClick={() => {
-                    const headers = ['Order ID', 'Customer', 'Room', 'Total', 'Status', 'Date'];
-                    const csvContent = [
-                      headers.join(','),
-                      ...orders.map(o => [
-                        o.id,
-                        o.customerName,
-                        o.roomNumber,
-                        o.total,
-                        o.status,
-                        new Date(o.createdAt).toLocaleString()
-                      ].join(','))
-                    ].join('\n');
-                    
-                    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                    const link = document.createElement('a');
-                    const url = URL.createObjectURL(blob);
-                    link.setAttribute('href', url);
-                    link.setAttribute('download', `orders_${new Date().toISOString().split('T')[0]}.csv`);
-                    link.style.visibility = 'hidden';
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
+                    const doc = new jsPDF({
+                      orientation: 'portrait',
+                      unit: 'mm',
+                      format: 'a4'
+                    });
+
+                    const pageWidth = doc.internal.pageSize.getWidth();
+                    const pageHeight = doc.internal.pageSize.getHeight();
+
+                    // Header: Company Name
+                    doc.setFontSize(22);
+                    doc.setTextColor(16, 185, 129); // Emerald-500
+                    doc.setFont('helvetica', 'bold');
+                    doc.text('Sar Taw Set', 14, 20);
+
+                    // Header: Title
+                    doc.setFontSize(16);
+                    doc.setTextColor(40);
+                    doc.text('Order Management Report', 14, 30);
+
+                    // Header: Timestamp
+                    doc.setFontSize(10);
+                    doc.setTextColor(100);
+                    doc.setFont('helvetica', 'normal');
+                    const timestamp = new Date().toLocaleString();
+                    doc.text(`Generated on: ${timestamp}`, 14, 37);
+
+                    const tableData = filteredOrders.map(o => [
+                      `#${o.id.slice(-6).toUpperCase().padStart(6, '0')}`,
+                      o.customerName,
+                      formatPrice(o.total),
+                      o.status.toUpperCase(),
+                      new Date(o.createdAt).toLocaleDateString()
+                    ]);
+
+                    autoTable(doc, {
+                      head: [['Order ID', 'Customer Name', 'Total Amount', 'Status', 'Order Date']],
+                      body: tableData,
+                      startY: 45,
+                      theme: 'grid',
+                      headStyles: { fillColor: [16, 185, 129], textColor: 255, fontStyle: 'bold' },
+                      styles: { fontSize: 9, cellPadding: 3, lineColor: [230, 230, 230], lineWidth: 0.1 },
+                      margin: { bottom: 20 },
+                      didDrawPage: (data) => {
+                        // Footer: Page Number
+                        doc.setFontSize(8);
+                        doc.setTextColor(150);
+                        const str = `Page ${doc.getNumberOfPages()}`;
+                        doc.text(str, pageWidth / 2, pageHeight - 10, { align: 'center' });
+                      }
+                    });
+
+                    doc.save(`SarTawSet_Orders_${new Date().toISOString().split('T')[0]}.pdf`);
                   }}
                   className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all ${
                     darkMode ? 'bg-white/5 text-on-surface-variant/60 hover:bg-white/10' : 'bg-white text-gray-600 border border-gray-100 hover:bg-gray-50 shadow-sm'
                   }`}
                 >
-                  <Download size={16} />
-                  Export CSV
+                  <FileText size={16} />
+                  Export PDF
                 </button>
               </div>
 
-              {/* Status Filter Chips */}
-              <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
-                {[
-                  { id: 'all', label: t('all'), color: 'bg-gray-500' },
-                  { id: 'pending', label: t('statusPending'), color: 'bg-amber-500' },
-                  { id: 'packing', label: t('statusPacking'), color: 'bg-blue-500' },
-                  { id: 'delivered', label: t('statusDelivered'), color: 'bg-emerald-500' },
-                  { id: 'cancelled', label: t('statusCancelled'), color: 'bg-rose-500' }
-                ].map((chip) => (
-                  <button
-                    key={chip.id}
-                    onClick={() => setStatusFilter(chip.id as any)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-full whitespace-nowrap transition-all border ${
-                      statusFilter === chip.id
-                        ? `${chip.color} text-white border-transparent shadow-lg shadow-${chip.color.split('-')[1]}-500/20`
-                        : darkMode
-                          ? 'bg-white/5 border-white/10 text-on-surface-variant/60 hover:bg-white/10'
-                          : 'bg-white border-gray-100 text-gray-500 hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className={`w-1.5 h-1.5 rounded-full ${statusFilter === chip.id ? 'bg-white' : chip.color}`} />
-                    <span className="text-[10px] font-black uppercase tracking-widest">{chip.label}</span>
-                    {statusFilter === chip.id && (
-                      <span className="ml-1 px-1.5 py-0.5 rounded-md bg-white/20 text-[8px] font-black">
-                        {orders.filter(o => chip.id === 'all' ? true : o.status === chip.id).length}
-                      </span>
-                    )}
-                  </button>
-                ))}
+              {/* Status Filter Chips & Date Range Inline */}
+              <div className="flex flex-wrap items-center gap-3 mb-6">
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar flex-grow md:flex-grow-0">
+                  {[
+                    { id: 'all', label: t('all'), color: 'bg-gray-500' },
+                    { id: 'pending', label: t('statusPending'), color: 'bg-amber-500' },
+                    { id: 'packing', label: t('statusPacking'), color: 'bg-blue-500' },
+                    { id: 'delivered', label: t('statusDelivered'), color: 'bg-emerald-500' },
+                    { id: 'cancelled', label: t('statusCancelled'), color: 'bg-rose-500' }
+                  ].map((chip) => (
+                    <button
+                      key={chip.id}
+                      onClick={() => setStatusFilter(chip.id as any)}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-full whitespace-nowrap transition-all border ${
+                        statusFilter === chip.id
+                          ? `${chip.color} text-white border-transparent shadow-lg shadow-${chip.color.split('-')[1]}-500/20`
+                          : darkMode
+                            ? 'bg-white/5 border-white/10 text-on-surface-variant/60 hover:bg-white/10'
+                            : 'bg-white border-gray-100 text-gray-500 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className={`w-1.5 h-1.5 rounded-full ${statusFilter === chip.id ? 'bg-white' : chip.color}`} />
+                      <span className="text-[10px] font-black uppercase tracking-widest">{chip.label}</span>
+                      {statusFilter === chip.id && (
+                        <span className="ml-1 px-1.5 py-0.5 rounded-md bg-white/20 text-[8px] font-black">
+                          {orders.filter(o => chip.id === 'all' ? true : o.status === chip.id).length}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+
+                <div className={`ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border transition-colors ${darkMode ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-100'}`}>
+                  <Calendar size={12} className="opacity-40" />
+                  <input 
+                    type="date" 
+                    className="bg-transparent text-[10px] font-bold outline-none cursor-pointer" 
+                    onChange={e => setSelectedDateFilter(prev => ({...prev, start: e.target.value}))} 
+                  />
+                  <span className="opacity-20 text-[10px]">—</span>
+                  <input 
+                    type="date" 
+                    className="bg-transparent text-[10px] font-bold outline-none cursor-pointer" 
+                    onChange={e => setSelectedDateFilter(prev => ({...prev, end: e.target.value}))} 
+                  />
+                </div>
               </div>
 
-              <div className="flex flex-col gap-2">
+              {/* Compact Enhanced Orders Grid */}
+              <div className="grid gap-2">
                 {filteredOrders.length > 0 ? filteredOrders.map((order, i) => (
                   <motion.div 
                     key={order.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.02 }}
-                    className={`group flex items-center gap-4 p-4 rounded-xl border transition-all duration-200 ${
-                      order.status === 'pending' 
-                        ? darkMode ? 'bg-amber-950/10 border-amber-900/30' : 'bg-amber-50/50 border-amber-100'
-                        : darkMode ? 'bg-surface-container-high/40 border-white/5' : 'bg-white border-gray-100'
-                    } hover:shadow-md cursor-pointer`}
-                    onClick={() => {
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.01, duration: 0.2 }}
+                    onClick={(e) => {
+                      e.stopPropagation();
                       setSelectedOrder(order);
                       setIsOrderModalOpen(true);
                     }}
+                    className={`group px-4 py-3 rounded-xl border flex items-center justify-between transition-all cursor-pointer ${
+                      order.status === 'pending' 
+                        ? 'bg-amber-950/5 border-amber-500/20 hover:bg-amber-950/10' 
+                        : 'bg-surface-container-high/20 border-white/5 hover:bg-surface-container-high/40'
+                    }`}
                   >
-                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                      order.status === 'pending' ? 'bg-amber-500' : 
-                      order.status === 'packing' ? 'bg-blue-500' : 'bg-emerald-500'
-                    }`} />
-                    
-                    <div className="flex-grow flex items-center gap-6 overflow-hidden">
-                      <div className={`w-40 font-bold text-sm truncate ${darkMode ? 'text-on-surface' : 'text-emerald-950'}`}>
-                        {order.customerName}
-                      </div>
-                      <div className={`flex-grow text-sm truncate ${darkMode ? 'text-on-surface-variant/60' : 'text-gray-500'}`}>
-                        <span className="font-bold mr-2">#{order.roomNumber}</span>
-                        {order.items.map(item => item.name).join(', ')}
-                      </div>
-                      <div className={`w-28 text-right font-black text-sm ${darkMode ? 'text-primary' : 'text-emerald-700'}`}>
-                        {formatPrice(order.total)}
-                      </div>
-                      <div className="w-24 text-right text-[10px] font-bold opacity-40">
-                        {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    </div>
+                     <div className="flex items-center gap-4 flex-1">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-[10px] ${
+                          order.status === 'pending' ? 'bg-amber-500/10 text-amber-500' : 'bg-primary/10 text-primary'
+                        }`}>
+                          {order.customerName.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div className="truncate">
+                          <p className="font-bold text-xs text-on-surface truncate">{order.customerName}</p>
+                          <p className="font-mono text-[10px] font-bold text-on-surface-variant/40">#{order.id.slice(-6).toUpperCase().padStart(6, '0')}</p>
+                        </div>
+                     </div>
 
-                    {/* Contextual Actions (Gmail style) */}
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 ml-4">
-                      {[
-                        { id: 'pending', icon: Clock, color: 'text-amber-500' },
-                        { id: 'packing', icon: Package, color: 'text-blue-500' },
-                        { id: 'delivered', icon: CheckCircle2, color: 'text-emerald-500' }
-                      ].map((btn) => (
-                        <button 
-                          key={btn.id}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            updateOrderStatus(order.id, btn.id as any);
-                          }}
-                          title={t(btn.id)}
-                          className={`p-2 rounded-lg transition-all ${
-                            order.status === btn.id 
-                              ? darkMode ? 'bg-white/10 ' + btn.color : 'bg-gray-100 ' + btn.color
-                              : darkMode ? 'hover:bg-white/10 text-on-surface-variant/40' : 'hover:bg-gray-100 text-gray-400'
-                          }`}
-                        >
-                          <btn.icon size={18} />
-                        </button>
-                      ))}
-                    </div>
+                     <div className="flex items-center gap-6">
+                         <div className="text-right hidden sm:block">
+                           <p className="text-[9px] uppercase tracking-wider text-on-surface-variant/40 font-bold">Ordered On</p>
+                           <p className="font-bold text-[10px] text-on-surface">{new Date(order.createdAt).toLocaleDateString()}</p>
+                         </div>
+
+                         <div className="text-right">
+                           <p className="font-black text-xs text-on-surface">{formatPrice(order.total)}</p>
+                           <p className="text-[9px] uppercase tracking-wider text-on-surface-variant/40 font-bold">{order.items.length} items</p>
+                         </div>
+                         
+                         <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                            order.status === 'delivered' ? 'bg-emerald-500/10 text-emerald-500' : 
+                            order.status === 'packing' ? 'bg-blue-500/10 text-blue-500' :
+                            'bg-amber-500/10 text-amber-500'
+                         }`}>{order.status}</span>
+                         
+                         <div className="text-on-surface-variant/20 group-hover:text-primary transition-colors">
+                            <ChevronRight size={14} />
+                         </div>
+                     </div>
                   </motion.div>
                 )) : (
-                  <div className={`rounded-[3rem] p-24 text-center border border-dashed transition-all duration-500 ${darkMode ? 'bg-surface-container-high/20 border-white/10' : 'bg-white border-gray-200'}`}>
-                    <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${darkMode ? 'bg-white/5' : 'bg-gray-50'}`}>
-                      <ShoppingBag size={32} className="opacity-20" />
-                    </div>
-                    <p className={`text-lg font-bold ${darkMode ? 'text-on-surface-variant/30' : 'text-gray-400'}`}>{t('noOrdersYet')}</p>
+                  <div className="p-10 text-center rounded-2xl border border-dashed border-white/5">
+                     <p className="font-bold text-xs opacity-30">No orders found.</p>
                   </div>
                 )}
               </div>
@@ -3323,6 +3811,7 @@ export default function AdminDashboard() {
                 darkMode={darkMode}
                 t={t}
                 formatPrice={formatPrice}
+                globalSearch={searchQuery}
               />
             </motion.div>
           ) : activeTab === 'banners' ? (
@@ -3331,7 +3820,7 @@ export default function AdminDashboard() {
                 <h2 className={`text-3xl font-black tracking-tight ${darkMode ? 'text-on-surface' : 'text-emerald-950'}`}>Ad Banners</h2>
                 <p className={`text-xs font-bold ${darkMode ? 'text-on-surface-variant/60' : 'text-gray-500'}`}>Manage full-image advertisements</p>
               </div>
-              <AdBannersTab darkMode={darkMode} t={t} />
+              <AdBannersTab darkMode={darkMode} t={t} globalSearch={searchQuery} />
             </motion.div>
           ) : activeTab === 'special-offers' ? (
             <motion.div key="special-offers" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-6">
@@ -3339,11 +3828,11 @@ export default function AdminDashboard() {
                 <h2 className={`text-3xl font-black tracking-tight ${darkMode ? 'text-on-surface' : 'text-emerald-950'}`}>Special Offers</h2>
                 <p className={`text-xs font-bold ${darkMode ? 'text-on-surface-variant/60' : 'text-gray-500'}`}>Manage daily deals and product bundles</p>
               </div>
-              <SpecialOffersTab darkMode={darkMode} t={t} />
+              <SpecialOffersTab darkMode={darkMode} t={t} globalSearch={searchQuery} />
             </motion.div>
           ) : activeTab === 'categories' ? (
             <motion.div key="categories" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-6">
-              <CategoriesTab categories={categories} updateCategory={updateCategory} addCategory={addCategory} deleteCategory={deleteCategory} darkMode={darkMode} t={t} />
+              <CategoriesTab categories={categories} updateCategory={updateCategory} addCategory={addCategory} deleteCategory={deleteCategory} darkMode={darkMode} t={t} globalSearch={searchQuery} />
             </motion.div>
           ) : activeTab === 'users' ? (
             <motion.div 
@@ -3352,7 +3841,7 @@ export default function AdminDashboard() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
             >
-              <UsersTab users={users} darkMode={darkMode} updateUserPoints={updateUserPoints} />
+              <UsersTab users={users} darkMode={darkMode} updateUserPoints={updateUserPoints} globalSearch={searchQuery} />
             </motion.div>
           ) : activeTab === 'coupons' ? (
             <motion.div 
@@ -3361,7 +3850,7 @@ export default function AdminDashboard() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
             >
-              <CouponsTab coupons={coupons} addCoupon={addCoupon} updateCoupon={updateCoupon} deleteCoupon={deleteCoupon} darkMode={darkMode} formatPrice={formatPrice} />
+              <CouponsTab coupons={coupons} addCoupon={addCoupon} updateCoupon={updateCoupon} deleteCoupon={deleteCoupon} darkMode={darkMode} formatPrice={formatPrice} globalSearch={searchQuery} />
             </motion.div>
           ) : activeTab === 'notifications' ? (
             <motion.div 
@@ -3370,7 +3859,7 @@ export default function AdminDashboard() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
             >
-              <NotificationsTab sendBroadcast={sendBroadcast} broadcastNotifications={broadcastNotifications} darkMode={darkMode} />
+              <NotificationsTab sendBroadcast={sendBroadcast} broadcastNotifications={broadcastNotifications} darkMode={darkMode} globalSearch={searchQuery} />
             </motion.div>
           ) : activeTab === 'audit' ? (
             <motion.div 
@@ -3379,7 +3868,7 @@ export default function AdminDashboard() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
             >
-              <AuditLogsTab auditLogs={auditLogs} darkMode={darkMode} />
+              <AuditLogsTab auditLogs={auditLogs} darkMode={darkMode} globalSearch={searchQuery} />
             </motion.div>
           ) : activeTab === 'admins' ? (
             <motion.div 
@@ -3388,7 +3877,7 @@ export default function AdminDashboard() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
             >
-              <AdminsTab admins={admins} addAdmin={addAdmin} updateAdminRole={updateAdminRole} removeAdmin={removeAdmin} darkMode={darkMode} />
+              <AdminsTab admins={admins} addAdmin={addAdmin} updateAdminRole={updateAdminRole} removeAdmin={removeAdmin} darkMode={darkMode} globalSearch={searchQuery} />
             </motion.div>
           ) : activeTab === 'settings' ? (
             <motion.div 
@@ -3650,14 +4139,30 @@ export default function AdminDashboard() {
 
                     {/* Bank Details */}
                     <section className="space-y-6">
-                      <div className="flex items-center gap-4">
-                        <div className={`p-3 rounded-xl ${darkMode ? 'bg-white/5 text-blue-500' : 'bg-blue-50 text-blue-600'}`}>
-                          <CreditCard size={20} />
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className={`p-3 rounded-xl ${darkMode ? 'bg-white/5 text-blue-500' : 'bg-blue-50 text-blue-600'}`}>
+                            <CreditCard size={20} />
+                          </div>
+                          <div>
+                            <h4 className={`font-black uppercase tracking-widest text-xs ${darkMode ? 'text-on-surface' : 'text-emerald-900'}`}>{t('bankTransferSettings')}</h4>
+                            <p className={`text-[10px] font-bold ${darkMode ? 'text-on-surface-variant/40' : 'text-gray-400'}`}>{t('bankTransferSettingsDesc')}</p>
+                          </div>
                         </div>
-                        <div>
-                          <h4 className={`font-black uppercase tracking-widest text-xs ${darkMode ? 'text-on-surface' : 'text-emerald-900'}`}>{t('bankTransferSettings')}</h4>
-                          <p className={`text-[10px] font-bold ${darkMode ? 'text-on-surface-variant/40' : 'text-gray-400'}`}>{t('bankTransferSettingsDesc')}</p>
-                        </div>
+                        <button
+                          onClick={() => authUid && setIsBankEnabled(!isBankEnabled)}
+                          disabled={!authUid}
+                          className={`w-16 h-9 rounded-full relative p-1 transition-all duration-500 ${
+                            !authUid ? 'opacity-50 cursor-not-allowed bg-gray-300' :
+                            isBankEnabled ? 'bg-blue-500' : (darkMode ? 'bg-white/10' : 'bg-gray-200')
+                          }`}
+                        >
+                          <motion.div 
+                            animate={{ x: isBankEnabled ? 28 : 0 }}
+                            transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                            className="w-7 h-7 bg-white rounded-full shadow-xl" 
+                          />
+                        </button>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3781,6 +4286,7 @@ export default function AdminDashboard() {
             </motion.div>
           ) : null}
         </AnimatePresence>
+        </div>
         </div>
       </motion.main>
     </div>

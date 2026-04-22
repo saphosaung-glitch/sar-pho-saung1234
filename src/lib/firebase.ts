@@ -14,8 +14,8 @@ export const db = initializeFirestore(app, {
 }, firebaseConfig.firestoreDatabaseId);
 
 export const auth = getAuth(app);
-// Explicitly pass the storage bucket to ensure it's correctly initialized
-export const storage = getStorage(app, firebaseConfig.storageBucket ? `gs://${firebaseConfig.storageBucket}` : undefined);
+// Initialize Storage using the bucket from firebaseConfig (most robust)
+export const storage = getStorage(app);
 export { signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, signInAnonymously };
 
 export enum OperationType {
@@ -102,15 +102,18 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 
 async function testConnection() {
   console.log("Testing Firestore connection to database:", firebaseConfig.firestoreDatabaseId);
+  // Wait a moment for Firebase to initialize
+  await new Promise(resolve => setTimeout(resolve, 3000));
   try {
     const docRef = doc(db, 'test', 'connection');
     await getDoc(docRef);
     console.log("Firestore connection successful!");
   } catch (error) {
     console.error("Firestore connection test failed:", error);
-    if(error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration. The client is reporting as offline.");
+    if(error instanceof Error && error.message.includes('unavailable')) {
+      console.warn("Firestore reports backend is unavailable. This is often temporary in sandboxed environments. Retrying later via SDK...");
     }
   }
 }
-testConnection();
+// Call with a small delay to allow SDK initialization
+setTimeout(testConnection, 1000);

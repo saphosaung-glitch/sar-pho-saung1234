@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
+import { uploadOrderReceipt } from '../services/uploadService';
 
 export default function CheckoutPage() {
   const { 
@@ -20,7 +21,7 @@ export default function CheckoutPage() {
     points, setPoints,
     addresses,
     selectedAddressId, setSelectedAddressId,
-    isDeliveryEnabled, getDeliveryDate, estimatedDeliveryTime, deliveryFee,
+    isDeliveryEnabled, getDeliveryDate, estimatedDeliveryTime, deliveryFee, isBankEnabled,
     t, darkMode, formatPrice, getMainName, getSecondaryName
   } = useStore();
 
@@ -51,17 +52,27 @@ export default function CheckoutPage() {
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
   const [receiptUploaded, setReceiptUploaded] = useState(false);
+  const [receiptUrl, setReceiptUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
   
   const navigate = useNavigate();
 
-  const handleFileUpload = () => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
     setIsUploading(true);
-    // Simulate upload
-    setTimeout(() => {
-      setIsUploading(false);
+    try {
+      const url = await uploadOrderReceipt(file);
+      setReceiptUrl(url);
       setReceiptUploaded(true);
-    }, 1500);
+      toast.success(t('receiptUploaded') || 'Receipt uploaded successfully');
+    } catch (error: any) {
+      console.error("Receipt upload error:", error);
+      toast.error(t('uploadFailed') || 'Upload failed. Please try again.');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleCopy = () => {
@@ -99,6 +110,7 @@ export default function CheckoutPage() {
           room: selectedAddress ? `${selectedAddress.building || ''} ${selectedAddress.room || ''}`.trim() : roomNumber,
           address: selectedAddress ? `${selectedAddress.street}, ${selectedAddress.township}, ${selectedAddress.city}, ${selectedAddress.region}` : undefined,
           paymentMethod: paymentDisplay,
+          paymentScreenshot: receiptUrl,
           pointDiscount: pointsDiscount,
           pointsUsed: usePoints ? pointsToUse : 0,
           deliveryFee: deliveryCost,
@@ -512,7 +524,7 @@ export default function CheckoutPage() {
 
               {/* Other Methods */}
               <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
+                <div className={`grid ${isBankEnabled ? 'grid-cols-2' : 'grid-cols-1'} gap-3`}>
                   <button 
                     type="button"
                     onClick={() => setPaymentMethod('COD')}
@@ -536,28 +548,30 @@ export default function CheckoutPage() {
                     )}
                   </button>
 
-                  <button 
-                    type="button"
-                    onClick={() => setPaymentMethod('Bank')}
-                    className={`p-4 rounded-[1.5rem] border-2 text-left transition-all relative overflow-hidden flex items-center gap-3 ${
-                      paymentMethod === 'Bank' 
-                        ? 'border-primary bg-primary/5 shadow-[0_4px_12px_rgba(13,99,27,0.06)]' 
-                        : (darkMode ? 'border-white/5 bg-slate-900 hover:border-white/10 shadow-sm' : 'border-on-surface/5 bg-white hover:border-on-surface/10 shadow-sm')
-                    }`}
-                  >
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${paymentMethod === 'Bank' ? 'bg-primary/10' : (darkMode ? 'bg-slate-800' : 'bg-surface-container-low')}`}>
-                      <CreditCard size={20} className={paymentMethod === 'Bank' ? 'text-primary' : (darkMode ? 'text-white/20' : 'text-on-surface-variant/50')} />
-                    </div>
-                    <div>
-                      <p className={`font-black text-xs leading-tight mb-0.5 ${paymentMethod === 'Bank' ? 'text-primary' : (darkMode ? 'text-white' : 'text-on-surface')}`}>{t('bank')}</p>
-                      <p className={`text-[9px] font-bold uppercase tracking-widest ${darkMode ? 'text-white/40' : 'text-on-surface-variant'}`}>{t('transfer')}</p>
-                    </div>
-                    {paymentMethod === 'Bank' && (
-                      <div className="absolute top-3 right-3 text-primary">
-                        <CheckCircle2 size={16} className="fill-primary/20" />
+                  {isBankEnabled && (
+                    <button 
+                      type="button"
+                      onClick={() => setPaymentMethod('Bank')}
+                      className={`p-4 rounded-[1.5rem] border-2 text-left transition-all relative overflow-hidden flex items-center gap-3 ${
+                        paymentMethod === 'Bank' 
+                          ? 'border-primary bg-primary/5 shadow-[0_4px_12px_rgba(13,99,27,0.06)]' 
+                          : (darkMode ? 'border-white/5 bg-slate-900 hover:border-white/10 shadow-sm' : 'border-on-surface/5 bg-white hover:border-on-surface/10 shadow-sm')
+                      }`}
+                    >
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${paymentMethod === 'Bank' ? 'bg-primary/10' : (darkMode ? 'bg-slate-800' : 'bg-surface-container-low')}`}>
+                        <CreditCard size={20} className={paymentMethod === 'Bank' ? 'text-primary' : (darkMode ? 'text-white/20' : 'text-on-surface-variant/50')} />
                       </div>
-                    )}
-                  </button>
+                      <div>
+                        <p className={`font-black text-xs leading-tight mb-0.5 ${paymentMethod === 'Bank' ? 'text-primary' : (darkMode ? 'text-white' : 'text-on-surface')}`}>{t('bank')}</p>
+                        <p className={`text-[9px] font-bold uppercase tracking-widest ${darkMode ? 'text-white/40' : 'text-on-surface-variant'}`}>{t('transfer')}</p>
+                      </div>
+                      {paymentMethod === 'Bank' && (
+                        <div className="absolute top-3 right-3 text-primary">
+                          <CheckCircle2 size={16} className="fill-primary/20" />
+                        </div>
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
 

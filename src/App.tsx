@@ -81,11 +81,16 @@ function ThemeHandler() {
   return null;
 }
 
+function ThemedToaster() {
+  const { darkMode } = useStore();
+  return <Toaster position="top-center" theme={darkMode ? 'dark' : 'light'} expand={false} richColors />;
+}
+
 export default function App() {
   return (
     <StoreProvider>
       <ThemeHandler />
-      <Toaster position="top-center" expand={false} richColors />
+      <ThemedToaster />
       <HashRouter>
         <ScrollToTop />
         <Routes>

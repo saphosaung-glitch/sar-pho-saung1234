@@ -176,7 +176,7 @@ export default function SuccessPage() {
               <Receipt size={14} className="text-primary" />
               <span className="text-[9px] font-black text-on-surface uppercase tracking-widest">{t('orderId')}</span>
             </div>
-            <span className="text-xs font-black text-primary font-mono bg-primary/10 px-2 py-0.5 rounded-md">#{orderId || 'SP-8924'}</span>
+            <span className="text-xs font-black text-primary font-mono bg-primary/10 px-2 py-0.5 rounded-md">#{(orderId || 'SP-8924').slice(-6).toUpperCase().padStart(6, '0')}</span>
           </div>
           
           <div className="space-y-[1.5vh]">

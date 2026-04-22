@@ -43,7 +43,12 @@ export default function SearchPage() {
   
   const [recentSearches, setRecentSearches] = useState<string[]>(() => {
     const saved = localStorage.getItem('recentSearches');
-    return saved ? JSON.parse(saved) : [];
+    if (!saved) return [];
+    try {
+      return JSON.parse(saved);
+    } catch {
+      return [];
+    }
   });
 
   const handleSearch = (query: string) => {

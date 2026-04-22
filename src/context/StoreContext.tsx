@@ -69,6 +69,7 @@ export interface Order {
   items: CartItem[];
   total: number;
   pointDiscount: number;
+  deliveryFee: number;
   pointsUsed: number;
   earnedPoints: number;
   status: 'pending' | 'packing' | 'delivered' | 'cancelled';
@@ -77,6 +78,7 @@ export interface Order {
   deliveryDate?: string;
   deliveryDay?: string;
   note?: string;
+  paymentScreenshot?: string;
   timestamp: number;
   createdAt: number;
   uid?: string;
@@ -253,6 +255,8 @@ interface StoreContextType {
   setIsLowStockAlertEnabled: (enabled: boolean) => Promise<void>;
   cutoffTime: string;
   setCutoffTime: (time: string) => Promise<void>;
+  isBankEnabled: boolean;
+  setIsBankEnabled: (enabled: boolean) => Promise<void>;
   getDeliveryDate: () => { date: string; isToday: boolean };
   logout: () => void;
   forceSync: () => Promise<void>;
@@ -332,10 +336,16 @@ export interface PaymentMethod {
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [cart, setCart] = useState<CartItem[]>(() => {
-    const saved = localStorage.getItem('sp_cart');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const safeParse = <T,>(saved: string | null, fallback: T): T => {
+    if (!saved) return fallback;
+    try {
+      return JSON.parse(saved);
+    } catch {
+      return fallback;
+    }
+  };
+
+  const [cart, setCart] = useState<CartItem[]>(() => safeParse(localStorage.getItem('sp_cart'), []));
 
   const [authUid, setAuthUid] = useState<string | null>(null);
   const [userName, setUserName] = useState(() => {
@@ -371,29 +381,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return (val && val !== 'null' && val !== 'undefined') ? val : '';
   });
   const [roomNumber, setRoomNumber] = useState(() => localStorage.getItem('sp_room') || '');
-  const [orders, setOrders] = useState<Order[]>(() => {
-    const saved = localStorage.getItem('sp_orders');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [orders, setOrders] = useState<Order[]>(() => safeParse(localStorage.getItem('sp_orders'), []));
   const [adminOrders, setAdminOrders] = useState<Order[]>([]);
   const [estimatedDeliveryTime, setEstimatedDeliveryTimeState] = useState('8:00 AM - 10:00 AM');
   const [points, setPoints] = useState(() => {
     const saved = localStorage.getItem('sp_points');
-    return saved ? parseInt(saved, 10) : 0;
+    const parsed = saved ? parseInt(saved, 10) : 0;
+    return isNaN(parsed) ? 0 : parsed;
   });
-  const [products, setProducts] = useState<any[]>(() => {
-    const saved = localStorage.getItem('sp_products');
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [addresses, setAddresses] = useState<Address[]>(() => {
-    const saved = localStorage.getItem('sp_addresses');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [products, setProducts] = useState<any[]>(() => safeParse(localStorage.getItem('sp_products'), []));
+  const [addresses, setAddresses] = useState<Address[]>(() => safeParse(localStorage.getItem('sp_addresses'), []));
   const [selectedAddressId, setSelectedAddressIdState] = useState<string | null>(null);
-  const [favorites, setFavorites] = useState<string[]>(() => {
-    const saved = localStorage.getItem('sp_favorites');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [favorites, setFavorites] = useState<string[]>(() => safeParse(localStorage.getItem('sp_favorites'), []));
   const [categories, setCategories] = useState<Category[]>([]);
   const [promotionBanners, setPromotionBanners] = useState<PromotionBanner[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
@@ -1498,20 +1497,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [bankAccountName, setBankAccountName] = useState(() => {
     return localStorage.getItem('sp_bank_acc_name') || 'SAPHOSAUNG GROCERY';
   });
-  const [notifications, setNotifications] = useState<Notification[]>(() => {
-    const saved = localStorage.getItem('sp_notifications');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [notifications, setNotifications] = useState<Notification[]>(() => safeParse(localStorage.getItem('sp_notifications'), []));
   const [emailNotificationsEnabled, setEmailNotificationsEnabled] = useState(() => {
     const saved = localStorage.getItem('sp_email_enabled');
     return saved === null ? true : saved === 'true';
   });
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(() => {
-    const saved = localStorage.getItem('sp_payment_methods');
-    return saved ? JSON.parse(saved) : [
-      { id: 'pm-1', type: 'visa', last4: '4242', expiry: '12/26', cardHolder: 'SAPHOSAUNG', isDefault: true }
-    ];
-  });
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(() => safeParse(localStorage.getItem('sp_payment_methods'), [
+    { id: 'pm-1', type: 'visa', last4: '4242', expiry: '12/26', cardHolder: 'SAPHOSAUNG', isDefault: true }
+  ]));
   const [language, setLanguage] = useState(() => {
     const saved = localStorage.getItem('sp_language') || 'en';
     console.log('StoreContext: Initial language:', saved);
@@ -1554,6 +1547,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isLowStockAlertEnabled, setIsLowStockAlertEnabledState] = useState(true);
   const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
   const [cutoffTime, setCutoffTimeState] = useState('06:00');
+  const [isBankEnabled, setIsBankEnabledState] = useState(true);
 
   // Sync settings from Firestore
   useEffect(() => {
@@ -1565,6 +1559,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setIsLowStockAlertEnabledState(data.lowStockAlertsEnabled ?? true);
         setCutoffTimeState(data.cutoffTime ?? '06:00');
         setEstimatedDeliveryTimeState(data.estimatedDeliveryTime ?? '8:00 AM - 10:00 AM');
+        setIsBankEnabledState(data.isBankEnabled ?? true);
       }
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, 'settings/delivery');
@@ -1647,6 +1642,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     try {
       await setDoc(doc(db, 'settings', 'delivery'), { estimatedDeliveryTime: time }, { merge: true });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'settings/delivery');
+    }
+  };
+
+  const setIsBankEnabled = async (enabled: boolean) => {
+    if (!authUid) return;
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot update settings.');
+      return;
+    }
+    try {
+      await setDoc(doc(db, 'settings', 'delivery'), { isBankEnabled: enabled }, { merge: true });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'settings/delivery');
     }
@@ -1801,6 +1809,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     pointsUsed: number;
     deliveryFee?: number;
     note?: string;
+    paymentScreenshot?: string;
   }) => {
     const orderPhoneId = details.phone.replace(/[^0-9]/g, '');
     if (!orderPhoneId) return null;
@@ -1828,6 +1837,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       customerName: details.name,
       customerPhone: details.phone,
       paymentMethod: details.paymentMethod,
+      paymentScreenshot: details.paymentScreenshot || null,
       deliveryDate,
       deliveryDay: isToday ? 'Today' : 'Tomorrow',
       note: details.note || null,
@@ -1943,12 +1953,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       toast.error('Daily limit reached. Cannot update order status.');
       return;
     }
-    const order = orders.find(o => o.id === id);
+    const order = adminOrders.find(o => o.id === id);
     if (!order) return;
     const oldStatus = order.status;
     
+    const toastId = toast.loading(`Updating order status to ${status}...`);
     try {
+      setOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o));
+      setAdminOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o));
       await updateDoc(doc(db, 'orders', id), { status });
+      toast.success(`Order status updated to ${status}`, { id: toastId });
       
       // Stock logic: Return stock if order is cancelled
       if (status === 'cancelled' && oldStatus !== 'cancelled') {
@@ -2572,177 +2586,232 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  return (
-    <StoreContext.Provider value={{ 
-      cart, 
-      addToCart, 
-      updateQuantity, 
-      clearCart,
-      cartTotal, 
-      userName,
-      setUserName,
-      userPhone,
-      setUserPhone,
-      roomNumber, 
-      setRoomNumber, 
-      orders,
-      adminOrders,
-      supportNumber,
-      setSupportNumber,
-      bankName,
-      setBankName,
-      bankAccountNumber,
-      setBankAccountNumber,
-      bankAccountName,
-      setBankAccountName,
-      userAvatar,
-      setUserAvatar,
-      userEmail,
-      setUserEmail,
-      userBirthday,
-      setUserBirthday,
-      updateUserProfile,
-      placeOrder, 
-      updateOrderStatus,
-      cancelOrder,
-      reorder,
-      favorites,
-      toggleFavorite,
-      notifications,
-      addNotification,
-      markNotificationAsRead,
-      clearNotifications,
-      emailNotificationsEnabled,
-      setEmailNotificationsEnabled,
-      paymentMethods,
-      addPaymentMethod,
-      removePaymentMethod,
-      setDefaultPaymentMethod,
-      points,
-      setPoints,
-      language,
-      setLanguage,
-      currency,
-      setCurrency,
-      formatPrice: (price: number) => {
-        if (currency === 'RM') {
-          return `RM ${price.toFixed(2)}`;
-        }
-        return `${price.toLocaleString()} Ks`;
-      },
-      getMainName: (item: any) => {
-        return item.name || item.title || '';
-      },
-      getSecondaryName: (item: any) => {
-        const mm = item.mmName || item.titleMm || '';
-        const ms = item.msName || mm;
-        const th = item.thName || mm;
-        const zh = item.zhName || mm;
+  const value = useMemo(() => ({
+    cart, 
+    addToCart, 
+    updateQuantity, 
+    clearCart,
+    cartTotal, 
+    userName,
+    setUserName,
+    userPhone,
+    setUserPhone,
+    roomNumber, 
+    setRoomNumber, 
+    orders,
+    adminOrders,
+    supportNumber,
+    setSupportNumber,
+    bankName,
+    setBankName,
+    bankAccountNumber,
+    setBankAccountNumber,
+    bankAccountName,
+    setBankAccountName,
+    userAvatar,
+    setUserAvatar,
+    userEmail,
+    setUserEmail,
+    userBirthday,
+    setUserBirthday,
+    updateUserProfile,
+    placeOrder, 
+    updateOrderStatus,
+    cancelOrder,
+    reorder,
+    favorites,
+    toggleFavorite,
+    notifications,
+    addNotification,
+    markNotificationAsRead,
+    clearNotifications,
+    emailNotificationsEnabled,
+    setEmailNotificationsEnabled,
+    paymentMethods,
+    addPaymentMethod,
+    removePaymentMethod,
+    setDefaultPaymentMethod,
+    points,
+    setPoints,
+    language,
+    setLanguage,
+    currency,
+    setCurrency,
+    formatPrice: (price: number) => {
+      if (currency === 'RM') {
+        return `RM ${price.toFixed(2)}`;
+      }
+      return `${price.toLocaleString()} Ks`;
+    },
+    getMainName: (item: any) => {
+      return item.name || item.title || '';
+    },
+    getSecondaryName: (item: any) => {
+      const en = item.name || item.title || '';
+      const mm = item.mmName || item.titleMm || '';
+      const ms = item.msName || mm;
+      const th = item.thName || mm;
+      const zh = item.zhName || mm;
 
-        switch (language) {
-          case 'en':
-            return mm; // English selected -> Second is Myanmar
-          case 'my':
-            return mm; // Myanmar selected -> Second is Myanmar
-          case 'th':
-            return th;
-          case 'zh':
-            return zh;
-          case 'ms':
-            return ms;
-          default:
-            return mm;
-        }
-      },
-      getLocalizedName: (item: { mmName: string; msName?: string; thName?: string; zhName?: string }) => {
-        switch (language) {
-          case 'ms':
-            return item.msName || item.mmName;
-          case 'th':
-            return item.thName || item.mmName;
-          case 'zh':
-            return item.zhName || item.mmName;
-          case 'en':
-          case 'my':
-          default:
-            return item.mmName;
-        }
-      },
-      t: (key: string) => {
-        if (!translations) return key;
-        return translations[language]?.[key] || translations['en']?.[key] || key;
-      },
-      darkMode,
-      setDarkMode,
-      isDeliveryEnabled,
-      setIsDeliveryEnabled,
-      deliveryFee,
-      setDeliveryFee,
-      isLowStockAlertEnabled,
-      setIsLowStockAlertEnabled,
-      isMaintenanceMode,
-      updateMaintenanceMode,
-      cutoffTime,
-      setCutoffTime,
-      estimatedDeliveryTime,
-      setEstimatedDeliveryTime,
-      getDeliveryDate,
-      logout,
-      forceSync,
-      isSyncing,
-      isProfileLoaded,
-      uid,
-      authUid,
-      products,
-      addProduct,
-      updateProduct,
-      deleteProduct,
-      addresses,
-      addAddress,
-      updateAddress,
-      removeAddress,
-      setDefaultAddress,
-      selectedAddressId,
-      setSelectedAddressId,
-      categories,
-      updateCategory,
-      addCategory,
-      deleteCategory,
-      promotionBanners,
-      deals,
-      bundles,
-      addPromotionBanner,
-      updatePromotionBanner,
-      deletePromotionBanner,
-      addDeal,
-      updateDeal,
-      deleteDeal,
-      addBundle,
-      updateBundle,
-      deleteBundle,
-      updateProductStock,
-      coupons,
-      addCoupon,
-      updateCoupon,
-      deleteCoupon,
-      auditLogs,
-      logAudit,
-      broadcastNotifications,
-      sendBroadcast,
-      admins,
-      addAdmin,
-      updateAdminRole,
-      removeAdmin,
-      users,
-      updateUserPoints,
-      isAdmin,
-      isAuthLoading,
-      isQuotaExceeded,
-      resetQuotaExceeded,
-      deviceId,
-      sessions,
-      revokeSession
-    }}>
+      switch (language) {
+        case 'my':
+        case 'mm': // Handle both 'my' and 'mm' for Myanmar
+          return mm; // Myanmar selected -> Second is Myanmar
+        case 'th':
+          return th; // Thai selected -> Second is Thai
+        case 'zh':
+          return zh; // Chinese selected -> Second is Chinese
+        case 'ms':
+          return ms; // Malay selected -> Second is Malay
+        case 'en':
+        default:
+          return mm; // English selected or default -> Second is Myanmar
+      }
+    },
+    getLocalizedName: (item: { mmName: string; msName?: string; thName?: string; zhName?: string }) => {
+      switch (language) {
+        case 'ms':
+          return item.msName || item.mmName;
+        case 'th':
+          return item.thName || item.mmName;
+        case 'zh':
+          return item.zhName || item.mmName;
+        case 'en':
+        case 'my':
+        default:
+          return item.mmName;
+      }
+    },
+    t: (key: string) => {
+      if (!translations) return key;
+      return translations[language]?.[key] || translations['en']?.[key] || key;
+    },
+    darkMode,
+    setDarkMode,
+    isDeliveryEnabled,
+    setIsDeliveryEnabled,
+    deliveryFee,
+    setDeliveryFee,
+    isLowStockAlertEnabled,
+    setIsLowStockAlertEnabled,
+    isMaintenanceMode,
+    updateMaintenanceMode,
+    cutoffTime,
+    setCutoffTime,
+    estimatedDeliveryTime,
+    setEstimatedDeliveryTime,
+    isBankEnabled,
+    setIsBankEnabled,
+    getDeliveryDate,
+    logout,
+    forceSync,
+    isSyncing,
+    isProfileLoaded,
+    uid,
+    authUid,
+    products,
+    addProduct,
+    updateProduct,
+    deleteProduct,
+    addresses,
+    addAddress,
+    updateAddress,
+    removeAddress,
+    setDefaultAddress,
+    selectedAddressId,
+    setSelectedAddressId,
+    categories,
+    updateCategory,
+    addCategory,
+    deleteCategory,
+    promotionBanners,
+    deals,
+    bundles,
+    addPromotionBanner,
+    updatePromotionBanner,
+    deletePromotionBanner,
+    addDeal,
+    updateDeal,
+    deleteDeal,
+    addBundle,
+    updateBundle,
+    deleteBundle,
+    updateProductStock,
+    coupons,
+    addCoupon,
+    updateCoupon,
+    deleteCoupon,
+    auditLogs,
+    logAudit,
+    broadcastNotifications,
+    sendBroadcast,
+    admins,
+    addAdmin,
+    updateAdminRole,
+    removeAdmin,
+    users,
+    updateUserPoints,
+    isAdmin,
+    isAuthLoading,
+    isQuotaExceeded,
+    resetQuotaExceeded,
+    deviceId,
+    sessions,
+    revokeSession
+  }), [
+    cart,
+    userName,
+    userPhone,
+    roomNumber,
+    orders,
+    adminOrders,
+    supportNumber,
+    bankName,
+    bankAccountNumber,
+    bankAccountName,
+    userAvatar,
+    userEmail,
+    userBirthday,
+    favorites,
+    notifications,
+    emailNotificationsEnabled,
+    paymentMethods,
+    points,
+    language,
+    currency,
+    darkMode,
+    isDeliveryEnabled,
+    deliveryFee,
+    isLowStockAlertEnabled,
+    isMaintenanceMode,
+    cutoffTime,
+    estimatedDeliveryTime,
+    isBankEnabled,
+    isSyncing,
+    isProfileLoaded,
+    uid,
+    authUid,
+    products,
+    addresses,
+    selectedAddressId,
+    categories,
+    promotionBanners,
+    deals,
+    bundles,
+    coupons,
+    auditLogs,
+    broadcastNotifications,
+    admins,
+    users,
+    isAdmin,
+    isAuthLoading,
+    isQuotaExceeded,
+    deviceId,
+    sessions
+  ]);
+
+  return (
+    <StoreContext.Provider value={value}>
       {children}
     </StoreContext.Provider>
   );

@@ -72,7 +72,7 @@ export default function OrdersPage() {
       <header className={`sticky top-0 z-50 backdrop-blur-xl border-b border-on-surface/5 px-4 h-[72px] flex items-center gap-4 ${darkMode ? 'bg-surface/80' : 'bg-white/80'}`}>
         <button 
           onClick={handleBack}
-          className={`flex-none w-10 h-10 border border-on-surface/10 shadow-sm rounded-full flex items-center justify-center transition-all active:scale-90 ${darkMode ? 'bg-surface-container-high hover:bg-surface-container-highest' : 'bg-white hover:bg-slate-50'}`}
+          className={`flex-none w-10 h-10 border border-on-surface/10 shadow-sm rounded-full flex items-center justify-center transition-all active:scale-90 touch-manipulation ${darkMode ? 'bg-surface-container-high hover:bg-surface-container-highest' : 'bg-white hover:bg-slate-50'}`}
         >
           <ChevronLeft size={20} className="text-on-surface" />
         </button>
@@ -89,7 +89,7 @@ export default function OrdersPage() {
             <p className="text-sm text-on-surface-variant max-w-[200px]">{t('noOrdersDesc')}</p>
             <button 
               onClick={() => navigate('/menu')}
-              className="mt-4 px-8 py-3 bg-primary text-white rounded-full font-black text-xs uppercase tracking-widest shadow-lg shadow-primary/20"
+              className="mt-4 px-8 py-3 bg-primary text-white rounded-full font-black text-xs uppercase tracking-widest shadow-lg shadow-primary/20 transition-all active:scale-95 touch-manipulation"
             >
               {t('goShopping')}
             </button>
@@ -99,13 +99,10 @@ export default function OrdersPage() {
             {sortedOrders.map((order, idx) => {
               const StatusIcon = getStatusIcon(order.status);
               return (
-                <motion.div
+                <div
                   key={order.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.05 }}
                   onClick={() => navigate(`/orders/${order.id}`)}
-                  className={`p-4 rounded-[2rem] border shadow-sm active:scale-[0.98] transition-all cursor-pointer ${darkMode ? 'bg-surface-container-high border-on-surface/5' : 'bg-white border-slate-100'}`}
+                  className={`p-4 rounded-[2rem] border shadow-sm transition-all active:scale-[0.98] cursor-pointer touch-manipulation ${darkMode ? 'bg-surface-container-high border-on-surface/5' : 'bg-white border-slate-100'}`}
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">
@@ -113,7 +110,7 @@ export default function OrdersPage() {
                         <StatusIcon size={18} />
                       </div>
                       <div>
-                        <p className="text-xs font-black text-on-surface">Order #{order.id.slice(-6).toUpperCase()}</p>
+                        <p className="text-xs font-black text-on-surface">Order #{order.id.slice(-6).toUpperCase().padStart(6, '0')}</p>
                         <p className="text-[10px] font-bold text-on-surface-variant mt-0.5">
                           {new Date(order.timestamp).toLocaleDateString()}
                         </p>
@@ -133,9 +130,12 @@ export default function OrdersPage() {
                         {t(order.status?.toLowerCase()) || order.status}
                       </span>
                       <button
-                        onClick={(e) => handleReorder(e, order)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleReorder(e, order);
+                        }}
                         disabled={reorderingId === order.id}
-                        className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50 ${darkMode ? 'bg-primary/10 text-primary border-primary/20' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}
+                        className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50 touch-manipulation ${darkMode ? 'bg-primary/10 text-primary border-primary/20' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}
                       >
                         {reorderingId === order.id ? (
                           <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
@@ -150,7 +150,7 @@ export default function OrdersPage() {
                       <ChevronRight size={14} />
                     </div>
                   </div>
-                </motion.div>
+                </div>
               );
             })}
             <div ref={bottomRef} className="h-1" />
