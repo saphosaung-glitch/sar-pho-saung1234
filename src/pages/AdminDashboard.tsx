@@ -376,10 +376,18 @@ function OrderDetailModal({ order, isOpen, onClose, darkMode, formatPrice, updat
   };
 
   const handlePrint = (format: 'a4' | 'thermal') => {
-    console.log('handlePrint called with format:', format);
-    // To bypass sandbox restrictions where iframes and window.open are blocked or have cross-origin errors,
-    // we inject the print layout directly into the DOM, hide everything else via print CSS, trigger print, then clean up.
-    const itemsSubtotal = order.items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+    try {
+      console.log(`handlePrint: Initiating ${format} print`);
+      
+      if (!order || !order.items) {
+        console.error("handlePrint: Order data is missing or invalid", order);
+        toast.error("Order data error. Please try again.");
+        return;
+      }
+
+      // To bypass sandbox restrictions where iframes and window.open are blocked or have cross-origin errors,
+      // we inject the print layout directly into the DOM, hide everything else via print CSS, trigger print, then clean up.
+      const itemsSubtotal = order.items.reduce((acc, item) => acc + (item.price * (item.quantity || 1)), 0);
     const invoiceDate = new Date(order.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
     const printContainer = document.createElement('div');
@@ -404,9 +412,23 @@ function OrderDetailModal({ order, isOpen, onClose, darkMode, formatPrice, updat
 
       styleEl.innerHTML = `
         @media print {
-          body > *:not(#print-container) { display: none !important; }
-          #print-container { display: block !important; position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; }
+          /* Hide EVERYTHING on the page */
+          body > *:not(#print-container) { display: none !important; height: 0 !important; overflow: hidden !important; }
+          #root { display: none !important; }
+          
+          /* Show only our print container */
+          #print-container { 
+            display: block !important; 
+            position: relative !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+          }
+          
           @page { size: 58mm auto; margin: 0; }
+          html, body { background: white !important; margin: 0 !important; padding: 0 !important; }
+          
           .thermal-print-body { font-family: monospace; margin: 0 auto; padding: 2mm; width: 54mm; max-width: 58mm; color: #000; -webkit-font-smoothing: antialiased; }
           .thermal-header { text-align: center; margin-bottom: 12px; }
           .thermal-header h1 { margin: 0; font-size: 18px; font-weight: bold; text-transform: uppercase; }
@@ -501,10 +523,23 @@ function OrderDetailModal({ order, isOpen, onClose, darkMode, formatPrice, updat
       styleEl.innerHTML = `
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         @media print {
-          body > *:not(#print-container) { display: none !important; }
-          #print-container { display: block !important; position: absolute; left: 0; top: 0; width: 100%; }
+          /* Hide EVERYTHING on the page */
+          body > *:not(#print-container) { display: none !important; height: 0 !important; overflow: hidden !important; }
+          #root { display: none !important; }
+          
+          /* Show only our print container */
+          #print-container { 
+            display: block !important; 
+            position: relative !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+          }
+          
           @page { size: A4; margin: 15mm; }
-          body { background: white; margin: 0; padding: 0; width: 100%; font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
+          html, body { background: white !important; margin: 0 !important; padding: 0 !important; }
+          body { font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; color: #000 !important; }
           
           .a4-print-body { padding: 0; margin: 0; color: #374151; }
           .invoice-box { width: 100%; max-width: 100%; }
@@ -633,16 +668,20 @@ function OrderDetailModal({ order, isOpen, onClose, darkMode, formatPrice, updat
       `;
     }
 
+    console.log("handlePrint: DOM elements prepared, injecting into document");
     printContainer.innerHTML = printHtml;
     document.head.appendChild(styleEl);
-    document.body.appendChild(printContainer);
+    document.body.prepend(printContainer);
 
-    // Call print immediately
+    // Call print IMMEDIATELY. On many laptop browsers, calling this inside a setTimeout
+    // loses the "user activation" flag, which can cause the print dialog to be blocked.
+    console.log("handlePrint: Triggering window.print() synchronously");
     window.print();
 
     // Clean up after print dialog has captured the page
     setTimeout(() => {
       try {
+        console.log("handlePrint: Starting cleanup");
         if (styleEl && document.head.contains(styleEl)) {
           document.head.removeChild(styleEl);
         }
@@ -650,10 +689,14 @@ function OrderDetailModal({ order, isOpen, onClose, darkMode, formatPrice, updat
           document.body.removeChild(printContainer);
         }
       } catch (err) {
-        console.error("Cleanup error:", err);
+        console.error("handlePrint: Cleanup error:", err);
       }
-    }, 1000);
-  };
+    }, 3000);
+  } catch (err) {
+    console.error("handlePrint: Critical error:", err);
+    toast.error("Format error in print layout. Check console.");
+  }
+};
 
   const statusConfig = {
     pending: { color: 'amber', icon: Clock, label: t('statusPending'), bg: 'bg-amber-500', text: 'text-amber-500', light: 'bg-amber-50', border: 'border-amber-100', dark: 'bg-amber-500/10' },
@@ -879,7 +922,13 @@ function OrderDetailModal({ order, isOpen, onClose, darkMode, formatPrice, updat
                         darkMode ? 'bg-[#18181b] border-white/10' : 'bg-white border-gray-100'
                       }`}>
                         <button
-                          onClick={() => { console.log('A4 button clicked'); setIsPrintMenuOpen(false); handlePrint('a4'); }}
+                          type="button"
+                          onPointerDown={(e) => { e.stopPropagation(); }}
+                          onClick={(e) => { 
+                            e.stopPropagation();
+                            console.log('A4 print clicked'); 
+                            handlePrint('a4'); 
+                          }}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors ${
                             darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-emerald-50 text-emerald-950'
                           }`}
@@ -888,7 +937,13 @@ function OrderDetailModal({ order, isOpen, onClose, darkMode, formatPrice, updat
                           A4 Invoice
                         </button>
                         <button
-                          onClick={() => { console.log('Thermal button clicked'); setIsPrintMenuOpen(false); handlePrint('thermal'); }}
+                          type="button"
+                          onPointerDown={(e) => { e.stopPropagation(); }}
+                          onClick={(e) => { 
+                            e.stopPropagation();
+                            console.log('Thermal print clicked'); 
+                            handlePrint('thermal'); 
+                          }}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors ${
                             darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-emerald-50 text-emerald-950'
                           }`}
