@@ -2,7 +2,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore, Product, Order } from '../context/StoreContext';
 import OrdersTab from '../components/admin/OrdersTab';
-import { LogOut, Package, Clock, CheckCircle2, LayoutDashboard, ShoppingBag, ListChecks, ChevronRight, MapPin, Settings, Phone, Save, CreditCard, DollarSign, Database, RefreshCw, Plus, Trash2, Sparkles, Image as ImageIcon, Tag, Hash, ShieldCheck, Menu, X, Search, SlidersHorizontal, Eye, Printer, User, Users, Calendar, BarChart3, TrendingUp, PieChart as PieChartIcon, AlertTriangle, Download, Bell, Ticket, History, MessageSquare, ToggleLeft, ToggleRight, FileText, KeyRound, Moon, Sun, Truck } from 'lucide-react';
+import ProductsTab from '../components/admin/ProductsTab';
+import { LogOut, Package, Clock, CheckCircle2, LayoutDashboard, ShoppingBag, ListChecks, ChevronRight, MapPin, Settings, Phone, Save, CreditCard, DollarSign, Database, RefreshCw, Plus, Trash2, Sparkles, Image as ImageIcon, Tag, Hash, ShieldCheck, Menu, X, Search, SlidersHorizontal, Eye, Printer, User, Users, Calendar, BarChart3, TrendingUp, PieChart as PieChartIcon, AlertTriangle, Download, Bell, Ticket, History, MessageSquare, ToggleLeft, ToggleRight, FileText, KeyRound, Moon, Sun, Truck, ClipboardList } from 'lucide-react';
 import * as Popover from '@radix-ui/react-popover';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
@@ -375,328 +376,368 @@ function OrderDetailModal({ order, isOpen, onClose, darkMode, formatPrice, updat
     }
   };
 
+  const handleDownloadPDF = () => {
+    try {
+      if (!order || !order.items) return;
+      toast.info("Generating PDF Invoice...", { icon: '📄' });
+      
+      const doc = new jsPDF();
+      const invoiceDate = new Date(order.createdAt).toLocaleDateString('en-US', { 
+        year: 'numeric', month: 'long', day: 'numeric' 
+      });
+      const itemsSubtotal = order.items.reduce((acc, item) => acc + (item.price * (item.quantity || 1)), 0);
+
+      // --- MATCH A4 PRINT LAYOUT STYLE ---
+      
+      // Header Section
+      doc.setTextColor(0, 0, 0);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(32);
+      doc.text('SAR TAW SET', 20, 30);
+      
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 100, 100);
+      doc.text('Grocery & Meat Delivery Service', 20, 38);
+      doc.setFontSize(10);
+      doc.text('Mandalay, Myanmar', 20, 43);
+
+      // Invoice Details (Top Right)
+      doc.setTextColor(120, 120, 120);
+      doc.setFontSize(11);
+      doc.text('INVOICE', 190, 25, { align: 'right' });
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(22);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`#${order.id.slice(-8).toUpperCase()}`, 190, 35, { align: 'right' });
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 100, 100);
+      doc.text(`Issued: ${invoiceDate}`, 190, 42, { align: 'right' });
+
+      // Divider
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(1);
+      doc.line(20, 55, 190, 55);
+
+      // Meta Info Grid
+      // Billed To
+      doc.setFontSize(10);
+      doc.setTextColor(150, 150, 150);
+      doc.text('BILLED TO', 20, 70);
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text(order.customerName, 20, 78);
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(80, 80, 80);
+      doc.text(`Room ${order.roomNumber}`, 20, 85);
+      doc.text(order.customerPhone, 20, 91);
+      if (order.address) {
+        const splitAddr = doc.splitTextToSize(order.address, 90);
+        doc.setFontSize(11);
+        doc.text(splitAddr, 20, 98);
+      }
+
+      // Payment
+      doc.setFontSize(10);
+      doc.setTextColor(150, 150, 150);
+      doc.text('PAYMENT', 190, 70, { align: 'right' });
+      doc.setFontSize(14);
+      doc.setTextColor(0, 0, 0);
+      doc.setFont('helvetica', 'bold');
+      doc.text(order.paymentMethod.toUpperCase(), 190, 78, { align: 'right' });
+
+      // Items Table
+      const itemsData = order.items.map(item => [
+        item.name,
+        formatPrice(item.price),
+        item.quantity.toString(),
+        formatPrice(item.price * item.quantity)
+      ]);
+
+      autoTable(doc, {
+        startY: 115,
+        head: [['Description', 'Unit Price', 'Qty', 'Total']],
+        body: itemsData,
+        theme: 'plain',
+        headStyles: { 
+          fontSize: 11, 
+          fontStyle: 'bold', 
+          textColor: [100, 100, 100], 
+          cellPadding: { bottom: 5, top: 0, left: 0, right: 0 },
+          lineColor: [200, 200, 200],
+          lineWidth: { bottom: 0.5 }
+        },
+        bodyStyles: { 
+          fontSize: 12, 
+          textColor: [0, 0, 0],
+          cellPadding: { bottom: 3, top: 3, left: 0, right: 0 }
+        },
+        columnStyles: {
+          1: { halign: 'right' },
+          2: { halign: 'right' },
+          3: { halign: 'right' }
+        },
+        alternateRowStyles: { fillColor: [252, 252, 252] }
+      });
+
+      // Totals
+      const finalY = (doc as any).lastAutoTable.finalY + 15;
+      const totalsX = 130;
+      const amountX = 190;
+      
+      doc.setFontSize(12);
+      doc.setTextColor(100, 100, 100);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Subtotal', totalsX, finalY);
+      doc.setTextColor(0, 0, 0);
+      doc.text(formatPrice(itemsSubtotal), amountX, finalY, { align: 'right' });
+      
+      let nextY = finalY + 8;
+      if (order.deliveryFee > 0) {
+        doc.setTextColor(100, 100, 100);
+        doc.text('Delivery Fee', totalsX, nextY);
+        doc.setTextColor(0, 0, 0);
+        doc.text(`+${formatPrice(order.deliveryFee)}`, amountX, nextY, { align: 'right' });
+        nextY += 8;
+      }
+      
+      if (order.pointDiscount > 0) {
+        doc.setTextColor(100, 100, 100);
+        doc.text('Discount', totalsX, nextY);
+        doc.setTextColor(0, 0, 0);
+        doc.text(`-${formatPrice(order.pointDiscount)}`, amountX, nextY, { align: 'right' });
+        nextY += 8;
+      }
+
+      // Final Total Line
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(1.5);
+      doc.line(totalsX - 10, nextY, 190, nextY);
+      nextY += 12;
+      
+      doc.setFontSize(20);
+      doc.setFont('helvetica', 'bold');
+      doc.text('TOTAL DUE', totalsX, nextY);
+      doc.text(formatPrice(order.total), amountX, nextY, { align: 'right' });
+
+      // Footer
+      const h = doc.internal.pageSize.getHeight();
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(150, 150, 150);
+      doc.text('Thank you for choosing Sar Taw Set. If you have any questions, please contact us.', 105, h - 25, { align: 'center' });
+      doc.text(`Customer Support: ${order.customerPhone}`, 105, h - 18, { align: 'center' });
+
+      doc.save(`Invoice_#${order.id.slice(-8).toUpperCase()}.pdf`);
+      toast.success("PDF Downloaded!");
+    } catch (err) {
+      console.error("PDF Export error:", err);
+      toast.error("Failed to generate PDF.");
+    }
+  };
+
   const handlePrint = (format: 'a4' | 'thermal') => {
     try {
-      console.log(`handlePrint: Initiating ${format} print`);
+      toast.info(`Preparing ${format === 'a4' ? 'Invoice' : 'Receipt'}...`, { icon: '🖨️' });
       
       if (!order || !order.items) {
-        console.error("handlePrint: Order data is missing or invalid", order);
-        toast.error("Order data error. Please try again.");
+        toast.error("Order data is missing.");
         return;
       }
 
-      // To bypass sandbox restrictions where iframes and window.open are blocked or have cross-origin errors,
-      // we inject the print layout directly into the DOM, hide everything else via print CSS, trigger print, then clean up.
       const itemsSubtotal = order.items.reduce((acc, item) => acc + (item.price * (item.quantity || 1)), 0);
-    const invoiceDate = new Date(order.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+      const invoiceDate = new Date(order.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
-    const printContainer = document.createElement('div');
-    printContainer.id = 'print-container';
-    
-    // Add print-specific styles
-    const styleEl = document.createElement('style');
-    styleEl.id = 'print-style';
+      let styles = '';
+      let content = '';
 
-    let printHtml = '';
+      if (format === 'thermal') {
+        const itemsHtml = order.items.map(item => `
+          <tr>
+            <td style="padding: 4px 0; font-size: 11px;">
+              ${item.name}<br>
+              <span style="font-size: 9px; color: #555;">${item.quantity} x ${formatPrice(item.price)}</span>
+            </td>
+            <td style="padding: 4px 0; text-align: right; font-size: 11px; vertical-align: top;">${formatPrice(item.price * item.quantity)}</td>
+          </tr>
+        `).join('');
 
-    if (format === 'thermal') {
-      const itemsHtml = order.items.map(item => `
-        <tr>
-          <td style="padding: 4px 0; font-size: 11px;">
-            ${item.name}<br>
-            <span style="font-size: 9px; color: #555;">${item.quantity} x ${formatPrice(item.price)}</span>
-          </td>
-          <td style="padding: 4px 0; text-align: right; font-size: 11px; vertical-align: top;">${formatPrice(item.price * item.quantity)}</td>
-        </tr>
-      `).join('');
-
-      styleEl.innerHTML = `
-        @media print {
-          /* Hide EVERYTHING on the page */
-          body > *:not(#print-container) { display: none !important; height: 0 !important; overflow: hidden !important; }
-          #root { display: none !important; }
-          
-          /* Show only our print container */
-          #print-container { 
-            display: block !important; 
-            position: relative !important;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: white !important;
-          }
-          
+        styles = `
           @page { size: 58mm auto; margin: 0; }
-          html, body { background: white !important; margin: 0 !important; padding: 0 !important; }
-          
-          .thermal-print-body { font-family: monospace; margin: 0 auto; padding: 2mm; width: 54mm; max-width: 58mm; color: #000; -webkit-font-smoothing: antialiased; }
-          .thermal-header { text-align: center; margin-bottom: 12px; }
-          .thermal-header h1 { margin: 0; font-size: 18px; font-weight: bold; text-transform: uppercase; }
-          .thermal-header p { margin: 2px 0; font-size: 10px; color: #333; }
-          .thermal-divider { border-bottom: 1px dashed #000; margin: 8px 0; }
-          .thermal-details { font-size: 10px; margin-bottom: 12px; }
-          .thermal-details p { margin: 3px 0; display: flex; justify-content: space-between; }
-          .thermal-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
-          .thermal-table th { text-align: left; padding-bottom: 6px; border-bottom: 1px dashed #000; font-size: 10px; text-transform: uppercase; }
-          .thermal-table th.right { text-align: right; }
-          .thermal-totals-row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 11px; font-weight: bold; }
-          .thermal-total-final { font-size: 15px; font-weight: bold; padding-top: 6px; border-top: 1px dashed #000; margin-top: 6px; }
-          .thermal-footer { text-align: center; margin-top: 20px; font-size: 10px; color: #333; }
-        }
-        @media screen {
-          #print-container { display: none !important; }
-        }
-      `;
-
-      printHtml = `
-        <div class="thermal-print-body">
-          <div class="thermal-header">
-            <h1>Sar Taw Set</h1>
-            <p>Fresh Grocery & Meat</p>
-            <p>Mandalay, Myanmar</p>
-          </div>
-          <div class="thermal-details">
-            <p><span>Order:</span><span>#${order.id.slice(-8).toUpperCase()}</span></p>
-            <p><span>Date:</span><span>${new Date(order.createdAt).toLocaleDateString()}</span></p>
-            <p><span>Customer:</span><span>${order.customerName}</span></p>
-            <p><span>Room:</span><span>${order.roomNumber}</span></p>
-            ${order.paymentMethod ? `<p><span>Pay:</span><span style="text-transform: uppercase;">${order.paymentMethod}</span></p>` : ''}
-            ${order.address ? `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px dotted #ccc;">
-              <strong style="display:block; margin-bottom: 2px;">Address:</strong>
-              <span style="line-height: 1.3;">${order.address}</span>
-            </div>` : ''}
-            ${order.note ? `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px dotted #ccc;">
-              <strong style="display:block; margin-bottom: 2px;">Note:</strong>
-              <span style="line-height: 1.3;">${order.note}</span>
-            </div>` : ''}
-          </div>
-          <div class="thermal-divider"></div>
-          <table class="thermal-table">
-            <thead>
-              <tr>
-                <th>Item</th>
-                <th class="right">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${itemsHtml}
-            </tbody>
-          </table>
-          <div class="thermal-divider"></div>
-          <div class="thermal-totals-row">
-            <span>Subtotal</span>
-            <span>${formatPrice(itemsSubtotal)}</span>
-          </div>
-          ${order.pointDiscount > 0 ? `
-            <div class="thermal-totals-row" style="font-weight: normal;">
-              <span>Points Disc.</span>
-              <span>-${formatPrice(order.pointDiscount)}</span>
-            </div>
-          ` : ''}
-          ${order.deliveryFee > 0 ? `
-            <div class="thermal-totals-row" style="font-weight: normal;">
-              <span>Delivery Fee</span>
-              <span>+${formatPrice(order.deliveryFee)}</span>
-            </div>
-          ` : ''}
-          <div class="thermal-totals-row thermal-total-final">
-            <span>Total</span>
-            <span>${formatPrice(order.total)}</span>
-          </div>
-          <div class="thermal-footer">
-            <p>Thank you for shopping with us!</p>
-          </div>
-        </div>
-      `;
-    } else {
-      const itemsHtml = order.items.map(item => `
-        <tr>
-          <td style="padding: 16px 0; border-bottom: 1px solid #f3f4f6;">
-            <div style="font-weight: 600; font-size: 13px; color: #111827;">${item.name}</div>
-          </td>
-          <td style="padding: 16px 0; border-bottom: 1px solid #f3f4f6; text-align: right; color: #6b7280; font-size: 13px;">${formatPrice(item.price)}</td>
-          <td style="padding: 16px 0; border-bottom: 1px solid #f3f4f6; text-align: right; color: #6b7280; font-size: 13px;">${item.quantity}</td>
-          <td style="padding: 16px 0; border-bottom: 1px solid #f3f4f6; text-align: right; font-weight: 600; color: #111827; font-size: 13px;">${formatPrice(item.price * item.quantity)}</td>
-        </tr>
-      `).join('');
-
-      styleEl.innerHTML = `
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        @media print {
-          /* Hide EVERYTHING on the page */
-          body > *:not(#print-container) { display: none !important; height: 0 !important; overflow: hidden !important; }
-          #root { display: none !important; }
-          
-          /* Show only our print container */
-          #print-container { 
-            display: block !important; 
-            position: relative !important;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: white !important;
+          body { 
+            background: #fff; margin: 0; padding: 0; 
+            font-family: 'Courier New', Courier, monospace;
+            -webkit-print-color-adjust: exact;
           }
-          
-          @page { size: A4; margin: 15mm; }
-          html, body { background: white !important; margin: 0 !important; padding: 0 !important; }
-          body { font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; color: #000 !important; }
-          
-          .a4-print-body { padding: 0; margin: 0; color: #374151; }
-          .invoice-box { width: 100%; max-width: 100%; }
-          .invoice-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #f3f4f6; padding-bottom: 40px; margin-bottom: 40px; }
-          .brand h1 { margin: 0; font-size: 28px; font-weight: 700; color: #000; letter-spacing: -0.5px; }
-          .brand p { margin: 4px 0 0; color: #6b7280; font-size: 13px; }
-          .invoice-title { text-align: right; }
-          .invoice-title h2 { margin: 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: #666; }
-          .invoice-title p { margin: 8px 0 0; font-size: 20px; font-weight: 600; color: #000; font-family: monospace; }
-          .meta-grid { display: flex; justify-content: space-between; margin-bottom: 50px; }
-          .meta-section { width: 45%; }
-          .meta-section h3 { margin: 0 0 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #666; }
-          .meta-section p { margin: 0 0 4px; font-size: 14px; color: #000; font-weight: 500; }
-          .meta-section .sub-text { font-size: 13px; color: #6b7280; font-weight: 400; margin-top: 4px; }
-          .a4-table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
-          .a4-table th { text-align: left; padding: 0 0 16px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #666; border-bottom: 2px solid #ccc; }
-          .a4-table th.right { text-align: right; }
-          
-          .totals-container { display: flex; justify-content: flex-end; }
-          .totals-table { width: 320px; }
-          .a4-totals-row { display: flex; justify-content: space-between; padding: 12px 0; font-size: 13px; color: #4b5563; border-bottom: 1px solid #f3f4f6; }
-          .a4-totals-row.discount { color: #000; }
-          .a4-totals-row.delivery { color: #000; }
-          .a4-totals-row.final { border-bottom: none; border-top: 2px solid #000; padding-top: 20px; margin-top: 8px; color: #000; font-size: 16px; font-weight: 700; align-items: center; }
-          .final-amount { font-size: 28px; letter-spacing: -1px; }
-          
-          .a4-footer { margin-top: 80px; padding-top: 30px; border-top: 1px solid #f3f4f6; color: #666; font-size: 12px; text-align: center; }
-        }
-        @media screen {
-          #print-container { display: none !important; }
-        }
-      `;
+          .thermal-print-body { width: 54mm; margin: 0 auto; color: #000; padding: 2mm; box-sizing: border-box; }
+          .thermal-header { text-align: center; margin-bottom: 12px; }
+          .thermal-header h1 { margin: 0; font-size: 18px; font-weight: bold; }
+          .thermal-divider { border-bottom: 1px dashed #000; margin: 8px 0; }
+          .thermal-table { width: 100%; border-collapse: collapse; }
+          .thermal-table th { text-align: left; font-size: 10px; border-bottom: 1px dashed #000; padding-bottom: 5px; }
+          .thermal-totals { margin-top: 8px; font-size: 11px; font-weight: bold; }
+        `;
 
-      printHtml = `
-        <div class="a4-print-body">
-          <div class="invoice-box">
-            <div class="invoice-header">
+        content = `
+          <div class="thermal-print-body">
+            <div class="thermal-header">
+              <h1>SAR TAW SET</h1>
+              <p style="font-size: 10px; margin: 4px 0;">Fresh Grocery Delivery</p>
+            </div>
+            <div style="font-size: 10px; margin-bottom: 8px;">
+              <p style="margin: 2px 0;">ID: #${order.id.slice(-8).toUpperCase()}</p>
+              <p style="margin: 2px 0;">Date: ${new Date(order.createdAt).toLocaleString()}</p>
+              <p style="margin: 2px 0;">Customer: ${order.customerName}</p>
+              <p style="margin: 2px 0;">Room/Phone: ${order.roomNumber} / ${order.customerPhone}</p>
+            </div>
+            <div class="thermal-divider"></div>
+            <table class="thermal-table">
+              <thead><tr><th>ITEM</th><th style="text-align:right">TOTAL</th></tr></thead>
+              <tbody>${itemsHtml}</tbody>
+            </table>
+            <div class="thermal-divider"></div>
+            <div class="thermal-totals">
+              <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>SUBTOTAL</span><span>${formatPrice(itemsSubtotal)}</span></div>
+              ${order.deliveryFee > 0 ? `<div style="display:flex; justify-content:space-between; margin-bottom: 4px; font-weight:normal;"><span>DELIVERY</span><span>+${formatPrice(order.deliveryFee)}</span></div>` : ''}
+              ${order.pointDiscount > 0 ? `<div style="display:flex; justify-content:space-between; margin-bottom: 4px; font-weight:normal;"><span>POINTS</span><span>-${formatPrice(order.pointDiscount)}</span></div>` : ''}
+              <div style="display:flex; justify-content:space-between; font-size:16px; margin-top:8px; border-top:1px dashed #000; padding-top:8px;"><span>TOTAL</span><span>${formatPrice(order.total)}</span></div>
+            </div>
+            <div style="text-align:center; margin-top:15px; font-size:9px;">Thank you for shopping Sar Taw Set!</div>
+          </div>
+        `;
+      } else {
+        const itemsHtml = order.items.map(item => `
+          <tr>
+            <td style="padding: 12px 0; border-bottom: 1px solid #eee;">
+              <div style="font-weight: 600; font-size: 14px;">${item.name}</div>
+            </td>
+            <td style="padding: 12px 0; border-bottom: 1px solid #eee; text-align: right;">${formatPrice(item.price)}</td>
+            <td style="padding: 12px 0; border-bottom: 1px solid #eee; text-align: right;">${item.quantity}</td>
+            <td style="padding: 12px 0; border-bottom: 1px solid #eee; text-align: right; font-weight: 600;">${formatPrice(item.price * item.quantity)}</td>
+          </tr>
+        `).join('');
+
+        styles = `
+          @page { size: A4; margin: 0; }
+          body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: #fff; margin: 0; padding: 20mm; -webkit-print-color-adjust: exact;
+          }
+          .a4-invoice { color: #000; width: 100%; }
+          .header { display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 30px; }
+          .brand h1 { margin: 0; font-size: 32px; font-weight: 800; }
+          .table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+          .table th { text-align: left; border-bottom: 2px solid #eee; padding-bottom: 10px; font-size: 12px; text-transform: uppercase; }
+          .totals { float: right; width: 300px; }
+          .total-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px; }
+          .total-final { border-top: 2px solid #000; padding-top: 10px; margin-top: 10px; font-size: 20px; font-weight: 800; }
+        `;
+
+        content = `
+          <div class="a4-invoice">
+            <div class="header">
               <div class="brand">
-                <h1>Sar Taw Set</h1>
-                <p>Fresh Grocery & Meat Delivery</p>
-                <p>Mandalay, Myanmar</p>
+                <h1>SAR TAW SET</h1>
+                <p style="margin: 5px 0; color: #444;">Grocery & Meat Delivery Service</p>
+                <p style="margin: 0; color: #666; font-size: 12px;">Mandalay, Myanmar</p>
               </div>
-              <div class="invoice-title">
-                <h2>Invoice</h2>
-                <p>#${order.id.slice(-8).toUpperCase()}</p>
+              <div style="text-align: right;">
+                <h2 style="margin: 0; color: #666; font-size: 12px; letter-spacing: 2px;">INVOICE</h2>
+                <p style="margin: 5px 0; font-weight: bold; font-size: 18px;">#${order.id.slice(-8).toUpperCase()}</p>
+                <p style="margin: 0; font-size: 12px;">Issued: ${invoiceDate}</p>
               </div>
             </div>
             
-            <div class="meta-grid">
-              <div class="meta-section">
-                <h3>Billed To</h3>
-                <p>${order.customerName}</p>
-                <div class="sub-text">Room ${order.roomNumber}</div>
-                ${order.address ? `<div class="sub-text" style="line-height: 1.4;">${order.address}</div>` : ''}
+            <div style="display: flex; justify-content: space-between; margin-bottom: 40px;">
+              <div>
+                <h3 style="font-size: 10px; color: #888; text-transform: uppercase; margin-bottom: 8px;">Billed To</h3>
+                <p style="margin: 0; font-weight: bold; font-size: 16px;">${order.customerName}</p>
+                <p style="margin: 2px 0; color: #444; font-size: 14px;">Room ${order.roomNumber}</p>
+                <p style="margin: 2px 0; color: #444; font-size: 14px;">${order.customerPhone}</p>
+                ${order.address ? `<p style="margin: 8px 0; max-width: 350px; font-size: 12px; line-height: 1.5;">${order.address}</p>` : ''}
               </div>
-              <div class="meta-section" style="text-align: right;">
-                <h3>Invoice Details</h3>
-                <div style="display: flex; justify-content: space-between; max-width: 250px; margin-left: auto; margin-bottom: 8px;">
-                  <span class="sub-text">Date Of Issue:</span>
-                  <span style="font-weight: 500; font-size: 13px;">${invoiceDate}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; max-width: 250px; margin-left: auto; margin-bottom: 8px;">
-                  <span class="sub-text">Phone:</span>
-                  <span style="font-weight: 500; font-size: 13px;">${order.customerPhone}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; max-width: 250px; margin-left: auto;">
-                  <span class="sub-text">Payment Method:</span>
-                  <span style="font-weight: 500; font-size: 13px; text-transform: uppercase;">${order.paymentMethod}</span>
+              <div style="text-align: right;">
+                <h3 style="font-size: 10px; color: #888; text-transform: uppercase; margin-bottom: 8px;">Payment</h3>
+                <div style="display: inline-block; padding: 4px 12px; background: #f3f4f6; border-radius: 4px; font-weight: bold; font-size: 12px;">
+                  ${order.paymentMethod.toUpperCase()}
                 </div>
               </div>
             </div>
 
-            ${order.note ? `
-            <div style="margin-top: -10px; margin-bottom: 40px;">
-              <h3 style="margin: 0 0 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #666;">Customer Note</h3>
-              <div style="padding: 16px; border: 1px dashed #ccc; font-size: 13px; color: #000; font-style: italic;">
-                "${order.note}"
-              </div>
-            </div>
-            ` : ''}
-
-            <table class="a4-table">
-              <thead>
-                <tr>
-                  <th>Description</th>
-                  <th class="right">Unit Price</th>
-                  <th class="right">Qty</th>
-                  <th class="right">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${itemsHtml}
-              </tbody>
+            <table class="table">
+              <thead><tr><th>Description</th><th style="text-align:right">Price</th><th style="text-align:right">Qty</th><th style="text-align:right">Total</th></tr></thead>
+              <tbody>${itemsHtml}</tbody>
             </table>
 
-            <div class="totals-container">
-              <div class="totals-table">
-                <div class="a4-totals-row">
-                  <span>Subtotal</span>
-                  <span style="font-weight: 600; color: #000;">${formatPrice(itemsSubtotal)}</span>
-                </div>
-                ${order.pointDiscount > 0 ? `
-                  <div class="a4-totals-row discount">
-                    <span>Points Discount</span>
-                    <span style="font-weight: 600;">-${formatPrice(order.pointDiscount)}</span>
-                  </div>
-                ` : ''}
-                ${order.deliveryFee > 0 ? `
-                  <div class="a4-totals-row delivery">
-                    <span>Delivery Fee</span>
-                    <span style="font-weight: 600;">+${formatPrice(order.deliveryFee)}</span>
-                  </div>
-                ` : ''}
-                <div class="a4-totals-row final">
-                  <span>Amount Due</span>
-                  <span class="final-amount">${formatPrice(order.total)}</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="a4-footer">
-              <p>Thank you for your business. For any inquiries, please contact our support.</p>
+            <div class="totals">
+              <div class="total-row"><span>Subtotal</span><span>${formatPrice(itemsSubtotal)}</span></div>
+              ${order.deliveryFee > 0 ? `<div class="total-row"><span>Delivery Fee</span><span>+${formatPrice(order.deliveryFee)}</span></div>` : ''}
+              ${order.pointDiscount > 0 ? `<div class="total-row"><span>Discount</span><span>-${formatPrice(order.pointDiscount)}</span></div>` : ''}
+              <div class="total-row total-final"><span>TOTAL DUE</span><span>${formatPrice(order.total)}</span></div>
             </div>
           </div>
-        </div>
-      `;
-    }
-
-    console.log("handlePrint: DOM elements prepared, injecting into document");
-    printContainer.innerHTML = printHtml;
-    document.head.appendChild(styleEl);
-    document.body.prepend(printContainer);
-
-    // Call print IMMEDIATELY. On many laptop browsers, calling this inside a setTimeout
-    // loses the "user activation" flag, which can cause the print dialog to be blocked.
-    console.log("handlePrint: Triggering window.print() synchronously");
-    window.print();
-
-    // Clean up after print dialog has captured the page
-    setTimeout(() => {
-      try {
-        console.log("handlePrint: Starting cleanup");
-        if (styleEl && document.head.contains(styleEl)) {
-          document.head.removeChild(styleEl);
-        }
-        if (printContainer && document.body.contains(printContainer)) {
-          document.body.removeChild(printContainer);
-        }
-      } catch (err) {
-        console.error("handlePrint: Cleanup error:", err);
+        `;
       }
-    }, 3000);
-  } catch (err) {
-    console.error("handlePrint: Critical error:", err);
-    toast.error("Format error in print layout. Check console.");
-  }
-};
+
+      // Try window.open first as it's most reliable for opening print dialogs
+      const printWin = window.open('', '_blank');
+      if (printWin) {
+        printWin.document.open();
+        printWin.document.write(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>Invoice #${order.id.slice(-8).toUpperCase()}</title>
+              <style>${styles}</style>
+            </head>
+            <body>
+              ${content}
+              <script>
+                window.onload = function() {
+                  window.print();
+                  setTimeout(function() { window.close(); }, 500);
+                };
+              </script>
+            </body>
+          </html>
+        `);
+        printWin.document.close();
+      } else {
+        // Fallback to iframe if window.open is blocked
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = '0';
+        document.body.appendChild(iframe);
+        
+        const iframeDoc = iframe.contentWindow?.document || iframe.contentDocument;
+        if (iframeDoc) {
+          iframeDoc.open();
+          iframeDoc.write(`
+            <!DOCTYPE html><html><head><style>${styles}</style></head>
+            <body>${content}<script>window.onload = function() { window.print(); };</script></body></html>
+          `);
+          iframeDoc.close();
+          setTimeout(() => {
+            if (document.body.contains(iframe)) document.body.removeChild(iframe);
+          }, 5000);
+        } else {
+          toast.error("Could not prepare print dialog.");
+        }
+      }
+
+    } catch (err) {
+      console.error("[Print] Fatal error:", err);
+      toast.error("Could not prepare print document.");
+    }
+  };
+
 
   const statusConfig = {
     pending: { color: 'amber', icon: Clock, label: t('statusPending'), bg: 'bg-amber-500', text: 'text-amber-500', light: 'bg-amber-50', border: 'border-amber-100', dark: 'bg-amber-500/10' },
@@ -923,13 +964,26 @@ function OrderDetailModal({ order, isOpen, onClose, darkMode, formatPrice, updat
                       }`}>
                         <button
                           type="button"
-                          onPointerDown={(e) => { e.stopPropagation(); }}
                           onClick={(e) => { 
                             e.stopPropagation();
-                            console.log('A4 print clicked'); 
-                            handlePrint('a4'); 
+                            handleDownloadPDF(); 
+                            setTimeout(() => setIsPrintMenuOpen(false), 200);
                           }}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors ${
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors cursor-pointer ${
+                            darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-emerald-50 text-emerald-950'
+                          }`}
+                        >
+                          <Download size={14} className={darkMode ? 'text-white/50' : 'text-emerald-700/50'} />
+                          Download PDF
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => { 
+                            e.stopPropagation();
+                            handlePrint('a4'); 
+                            setTimeout(() => setIsPrintMenuOpen(false), 200);
+                          }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors cursor-pointer ${
                             darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-emerald-50 text-emerald-950'
                           }`}
                         >
@@ -938,13 +992,12 @@ function OrderDetailModal({ order, isOpen, onClose, darkMode, formatPrice, updat
                         </button>
                         <button
                           type="button"
-                          onPointerDown={(e) => { e.stopPropagation(); }}
                           onClick={(e) => { 
                             e.stopPropagation();
-                            console.log('Thermal print clicked'); 
                             handlePrint('thermal'); 
+                            setTimeout(() => setIsPrintMenuOpen(false), 200);
                           }}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors ${
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors cursor-pointer ${
                             darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-emerald-50 text-emerald-950'
                           }`}
                         >
@@ -1626,538 +1679,7 @@ function AdBannersTab({ darkMode, t, globalSearch }: { darkMode: boolean, t: any
 
 import { uploadProductImage } from '../services/uploadService';
 
-function AddProductModal({ 
-  isOpen, 
-  onClose, 
-  addProduct, 
-  updateProduct,
-  product,
-  categories, 
-  darkMode, 
-  t 
-}: { 
-  isOpen: boolean, 
-  onClose: () => void, 
-  addProduct: (p: any) => Promise<void>, 
-  updateProduct?: (id: string, p: any) => Promise<void>,
-  product?: any,
-  categories: any[], 
-  darkMode: boolean, 
-  t: any 
-}) {
-  const [loading, setLoading] = useState(false);
-  const [loadingText, setLoadingText] = useState('Saving...');
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [useAI, setUseAI] = useState(true);
-  const [formData, setFormData] = useState({
-    name: product?.name || '',
-    price: product?.price || '',
-    salePrice: product?.salePrice || '',
-    category: product?.category || categories[0]?.id || 'meat',
-    unit: product?.unit || '1 kg',
-    image: product?.image || '',
-    stock: product?.stock || '100',
-    description: product?.description || '',
-    sku: product?.sku || '',
-    weight: product?.weight || '',
-    status: product?.status || 'published',
-    mmName: product?.mmName || '',
-    thName: product?.thName || '',
-    zhName: product?.zhName || '',
-    msName: product?.msName || ''
-  });
-  const [showUrlInput, setShowUrlInput] = useState(true);
 
-  // Update form data when product prop changes
-  useEffect(() => {
-    if (product) {
-      setFormData({
-        name: product.name || '',
-        price: product.price || '',
-        salePrice: product.salePrice || '',
-        category: product.category || categories[0]?.id || 'meat',
-        unit: product.unit || '1 kg',
-        image: product.image || '',
-        stock: product.stock || '100',
-        description: product.description || '',
-        sku: product.sku || '',
-        weight: product.weight || '',
-        status: product.status || 'published',
-        mmName: product.mmName || '',
-        thName: product.thName || '',
-        zhName: product.zhName || '',
-        msName: product.msName || ''
-      });
-    }
-  }, [product, categories]);
-
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    // Basic validation
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please select an image file');
-      return;
-    }
-
-    setUploading(true);
-    setUploadProgress(0);
-    console.log("Starting upload for file:", file.name, "size:", file.size);
-
-    try {
-      const url = await uploadProductImage(file, (progress) => {
-        setUploadProgress(Math.round(progress));
-      });
-      setFormData(prev => ({ ...prev, image: url }));
-      toast.success('Image uploaded successfully');
-      setShowUrlInput(false); // Hide URL input if upload succeeds
-    } catch (error: any) {
-      console.error('Upload error in component:', error);
-      toast.error(error.message || 'Failed to upload image');
-      // If upload fails, suggest using URL but keep upload option visible
-      setShowUrlInput(true);
-    } finally {
-      setUploading(false);
-      // Don't reset progress immediately so user can see it reached 100% or where it stopped
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.name || !formData.price) {
-      toast.error('Please fill in required fields');
-      return;
-    }
-    
-    setLoading(true);
-    setLoadingText('Saving product...');
-    try {
-      let translations = {
-        mmName: formData.mmName,
-        thName: formData.thName,
-        zhName: formData.zhName,
-        msName: formData.msName
-      };
-
-      if (useAI && !product) { // Only auto-translate for new products
-        setLoadingText('Translating product name...');
-        const aiTranslations = await translateProductName(formData.name);
-        translations = {
-          mmName: aiTranslations.mmName || formData.name,
-          thName: aiTranslations.thName || formData.name,
-          zhName: aiTranslations.zhName || formData.name,
-          msName: aiTranslations.msName || formData.name
-        };
-      }
-
-      const productData = {
-        ...formData,
-        ...translations,
-        price: Number(formData.price),
-        stock: Number(formData.stock),
-        salePrice: formData.salePrice ? Number(formData.salePrice) : undefined,
-      };
-
-      setLoadingText('Uploading to database...');
-      if (product && updateProduct) {
-        await updateProduct(product.id, productData);
-        toast.success('Product updated successfully!');
-      } else {
-        await addProduct(productData);
-        toast.success('Product added successfully!');
-      }
-      
-      onClose();
-      if (!product) {
-        setFormData({
-          name: '', price: '', salePrice: '', category: categories[0]?.id || 'meat',
-          unit: '1 kg', image: '', stock: '100', description: '', sku: '',
-          weight: '', status: 'published', mmName: '', thName: '', zhName: '', msName: ''
-        });
-      }
-    } catch (error) {
-      console.error("Error saving product:", error);
-      toast.error("Failed to save product.");
-    } finally {
-      setLoading(false);
-      setLoadingText('Saving...');
-    }
-  };
-
-  const inputClasses = `w-full px-3 py-2 rounded-lg border font-bold transition-all outline-none text-xs ${
-    darkMode 
-      ? 'bg-white/5 border-white/10 focus:border-primary/50 text-on-surface' 
-      : 'bg-gray-50 border-gray-100 focus:bg-white focus:border-emerald-300 text-emerald-950'
-  }`;
-
-  const labelClasses = `text-[9px] font-black uppercase tracking-widest mb-1 block ${
-    darkMode ? 'text-on-surface-variant/40' : 'text-gray-400'
-  }`;
-
-  return (
-    <Dialog.Root open={isOpen} onOpenChange={onClose}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] animate-in fade-in duration-300" />
-        <Dialog.Content className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg max-h-[95vh] overflow-hidden rounded-[2rem] shadow-2xl z-[101] animate-in zoom-in-95 duration-300 ${darkMode ? 'bg-surface-container-high border border-white/5' : 'bg-white'}`}>
-          <div className="p-6 overflow-y-auto max-h-[95vh] no-scrollbar">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <Dialog.Title className="text-xl font-black tracking-tight">Add Product</Dialog.Title>
-                <Dialog.Description className="text-[10px] font-bold opacity-40 uppercase tracking-widest">Premium listing details</Dialog.Description>
-              </div>
-              <Dialog.Close className="p-1.5 rounded-full hover:bg-black/5 transition-colors">
-                <X size={18} />
-              </Dialog.Close>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <Tabs.Root defaultValue="general" className="space-y-4">
-                <Tabs.List className="flex gap-1 p-1 rounded-xl bg-black/5 dark:bg-white/5">
-                  {['general', 'pricing', 'translations', 'advanced'].map(tab => (
-                    <Tabs.Trigger 
-                      key={tab} 
-                      value={tab}
-                      className="flex-1 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all data-[state=active]:bg-white dark:data-[state=active]:bg-white/10 data-[state=active]:shadow-sm"
-                    >
-                      {tab}
-                    </Tabs.Trigger>
-                  ))}
-                </Tabs.List>
-
-                <Tabs.Content value="general" className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="col-span-2">
-                      <label className={labelClasses}>Product Name (English)</label>
-                      <input 
-                        type="text" 
-                        value={formData.name}
-                        onChange={e => setFormData({...formData, name: e.target.value})}
-                        placeholder="e.g. Premium Fuji Apple"
-                        className={inputClasses}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className={labelClasses}>Category</label>
-                      <select 
-                        value={formData.category}
-                        onChange={e => setFormData({...formData, category: e.target.value})}
-                        className={inputClasses}
-                      >
-                        {categories.filter(c => c.id !== 'all').map(category => (
-                          <option key={category.id} value={category.id}>{category.name || t(category.key)}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className={labelClasses}>Unit</label>
-                      <input 
-                        type="text" 
-                        value={formData.unit}
-                        onChange={e => setFormData({...formData, unit: e.target.value})}
-                        placeholder="e.g. 1 kg"
-                        className={inputClasses}
-                        required
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className={labelClasses}>Product Image</label>
-                        <button 
-                          type="button"
-                          onClick={() => setShowUrlInput(!showUrlInput)}
-                          className="text-[9px] font-black text-primary uppercase tracking-widest hover:underline"
-                        >
-                          {showUrlInput ? 'Use Upload' : 'Use Image URL'}
-                        </button>
-                      </div>
-                      
-                      {showUrlInput ? (
-                        <div className="space-y-3 p-3 bg-black/5 dark:bg-white/5 rounded-xl border border-black/10 dark:border-white/10">
-                          <div className="flex items-center justify-between">
-                            <p className="text-[8px] font-black text-primary uppercase tracking-widest">Image URL Mode</p>
-                            <button 
-                              type="button"
-                              onClick={() => setShowUrlInput(false)}
-                              className="text-[8px] font-bold opacity-40 hover:opacity-100 underline"
-                            >
-                              Back to Upload
-                            </button>
-                          </div>
-                          <input 
-                            type="url"
-                            value={formData.image}
-                            onChange={e => setFormData({...formData, image: e.target.value})}
-                            placeholder="https://example.com/image.jpg"
-                            className={inputClasses}
-                          />
-                          <div className="flex flex-wrap gap-2">
-                            <p className="w-full text-[8px] font-bold opacity-40 uppercase tracking-widest">Quick Sample Images:</p>
-                            {[
-                              { label: 'Apple', url: 'https://images.unsplash.com/photo-1560806887-1e4cd0b6bcd6?w=400&h=400&fit=crop' },
-                              { label: 'Meat', url: 'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?w=400&h=400&fit=crop' },
-                              { label: 'Veggie', url: 'https://images.unsplash.com/photo-1566385101042-1a0aa0c12e8c?w=400&h=400&fit=crop' },
-                              { label: 'Milk', url: 'https://images.unsplash.com/photo-1563636619-e9107da5a1bb?w=400&h=400&fit=crop' }
-                            ].map(sample => (
-                              <button
-                                key={sample.label}
-                                type="button"
-                                onClick={() => setFormData({...formData, image: sample.url})}
-                                className={`px-2 py-1 rounded-md text-[8px] font-black uppercase border transition-all ${
-                                  formData.image === sample.url 
-                                    ? 'bg-primary text-white border-primary' 
-                                    : 'bg-white dark:bg-black border-black/10 dark:border-white/10 hover:border-primary/30'
-                                }`}
-                              >
-                                {sample.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex gap-3">
-                          <div className={`flex-grow relative border-2 border-dashed rounded-xl flex flex-col items-center justify-center p-4 transition-all ${
-                            uploading ? 'opacity-50 pointer-events-none' : ''
-                          } ${
-                            darkMode ? 'border-white/10 hover:border-primary/50' : 'border-gray-200 hover:border-emerald-400'
-                          }`}>
-                            {formData.image ? (
-                              <div className="relative w-full h-32 rounded-lg overflow-hidden group">
-                                <img src={formData.image} className="w-full h-full object-cover" />
-                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                  <button 
-                                    type="button"
-                                    onClick={() => setFormData({...formData, image: ''})}
-                                    className="p-2 bg-rose-500 text-white rounded-full hover:scale-110 transition-transform"
-                                  >
-                                    <X size={16} />
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <>
-                                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center mb-2">
-                                  <ImageIcon className="text-primary" size={20} />
-                                </div>
-                                <p className="text-[10px] font-bold text-center">
-                                  {uploading ? 'Uploading...' : 'Click or Drag to Upload Product Image'}
-                                </p>
-                                <p className="text-[8px] opacity-40 mt-1 uppercase tracking-widest">Max size: 10MB</p>
-                              </>
-                            )}
-                            <input 
-                              type="file" 
-                              accept="image/*"
-                              onChange={handleImageUpload}
-                              className="absolute inset-0 opacity-0 cursor-pointer"
-                              disabled={uploading}
-                            />
-                          </div>
-                          
-                          {uploading && (
-                            <div className="flex flex-col items-center justify-center w-28 p-3 bg-primary/5 rounded-xl border border-primary/10">
-                              <div className="relative w-14 h-14 flex items-center justify-center">
-                                <svg className="w-full h-full transform -rotate-90">
-                                  <circle
-                                    cx="28"
-                                    cy="28"
-                                    r="24"
-                                    stroke="currentColor"
-                                    strokeWidth="4"
-                                    fill="transparent"
-                                    className="text-black/5 dark:text-white/5"
-                                  />
-                                  <circle
-                                    cx="28"
-                                    cy="28"
-                                    r="24"
-                                    stroke="currentColor"
-                                    strokeWidth="4"
-                                    fill="transparent"
-                                    strokeDasharray={150.8}
-                                    strokeDashoffset={150.8 - (150.8 * uploadProgress) / 100}
-                                    className="text-primary transition-all duration-500"
-                                  />
-                                </svg>
-                                <span className="absolute text-[10px] font-black text-primary">{uploadProgress}%</span>
-                              </div>
-                              <span className="text-[8px] font-black uppercase tracking-widest text-primary mt-2 animate-pulse">Uploading</span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </Tabs.Content>
-
-                <Tabs.Content value="pricing" className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className={labelClasses}>Regular Price</label>
-                      <input 
-                        type="number" 
-                        value={formData.price}
-                        onChange={e => setFormData({...formData, price: e.target.value})}
-                        placeholder="0.00"
-                        className={inputClasses}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className={labelClasses}>Sale Price (Optional)</label>
-                      <input 
-                        type="number" 
-                        value={formData.salePrice}
-                        onChange={e => setFormData({...formData, salePrice: e.target.value})}
-                        placeholder="0.00"
-                        className={inputClasses}
-                      />
-                    </div>
-                    <div>
-                      <label className={labelClasses}>Stock Quantity</label>
-                      <input 
-                        type="number" 
-                        value={formData.stock}
-                        onChange={e => setFormData({...formData, stock: e.target.value})}
-                        className={inputClasses}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className={labelClasses}>Status</label>
-                      <select 
-                        value={formData.status}
-                        onChange={e => setFormData({...formData, status: e.target.value as any})}
-                        className={inputClasses}
-                      >
-                        <option value="published">Published</option>
-                        <option value="draft">Draft</option>
-                      </select>
-                    </div>
-                  </div>
-                </Tabs.Content>
-
-                <Tabs.Content value="translations" className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="flex items-center justify-between p-3 rounded-xl bg-primary/5 border border-primary/10 mb-3">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="text-primary" size={16} />
-                      <div>
-                        <p className="text-[10px] font-black">AI Auto-Translation</p>
-                        <p className="text-[8px] font-bold opacity-60">Translate to 4 languages automatically</p>
-                      </div>
-                    </div>
-                    <button 
-                      type="button"
-                      onClick={() => setUseAI(!useAI)}
-                      className={`w-10 h-5 rounded-full relative transition-all ${useAI ? 'bg-primary' : 'bg-gray-300'}`}
-                    >
-                      <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${useAI ? 'left-5.5' : 'left-0.5'}`} />
-                    </button>
-                  </div>
-
-                  {!useAI && (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className={labelClasses}>Myanmar (Burmese)</label>
-                        <input 
-                          type="text" 
-                          value={formData.mmName}
-                          onChange={e => setFormData({...formData, mmName: e.target.value})}
-                          className={inputClasses}
-                        />
-                      </div>
-                      <div>
-                        <label className={labelClasses}>Thai</label>
-                        <input 
-                          type="text" 
-                          value={formData.thName}
-                          onChange={e => setFormData({...formData, thName: e.target.value})}
-                          className={inputClasses}
-                        />
-                      </div>
-                      <div>
-                        <label className={labelClasses}>Chinese (Simplified)</label>
-                        <input 
-                          type="text" 
-                          value={formData.zhName}
-                          onChange={e => setFormData({...formData, zhName: e.target.value})}
-                          className={inputClasses}
-                        />
-                      </div>
-                      <div>
-                        <label className={labelClasses}>Malay</label>
-                        <input 
-                          type="text" 
-                          value={formData.msName}
-                          onChange={e => setFormData({...formData, msName: e.target.value})}
-                          className={inputClasses}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </Tabs.Content>
-
-                <Tabs.Content value="advanced" className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className={labelClasses}>SKU / Barcode</label>
-                      <input 
-                        type="text" 
-                        value={formData.sku}
-                        onChange={e => setFormData({...formData, sku: e.target.value})}
-                        placeholder="e.g. APP-001"
-                        className={inputClasses}
-                      />
-                    </div>
-                    <div>
-                      <label className={labelClasses}>Weight / Size</label>
-                      <input 
-                        type="text" 
-                        value={formData.weight}
-                        onChange={e => setFormData({...formData, weight: e.target.value})}
-                        placeholder="e.g. 500g"
-                        className={inputClasses}
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <label className={labelClasses}>Product Description</label>
-                      <textarea 
-                        value={formData.description}
-                        onChange={e => setFormData({...formData, description: e.target.value})}
-                        placeholder="Describe your product..."
-                        className={`${inputClasses} h-20 resize-none`}
-                      />
-                    </div>
-                  </div>
-                </Tabs.Content>
-              </Tabs.Root>
-
-              <div className="pt-2 flex gap-3">
-                <button 
-                  type="button"
-                  onClick={onClose}
-                  className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest border transition-all ${darkMode ? 'border-white/10 hover:bg-white/5' : 'border-gray-100 hover:bg-gray-50'}`}
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="submit"
-                  disabled={loading || uploading}
-                  className={`flex-[2] py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-xl transition-all flex items-center justify-center gap-2 ${loading ? 'opacity-50' : 'hover:scale-[1.02] active:scale-[0.98]'} ${darkMode ? 'bg-primary text-surface' : 'bg-emerald-600 text-white'}`}
-                >
-                  {loading ? <RefreshCw className="animate-spin" size={16} /> : <Save size={16} />}
-                  {loading ? loadingText : 'Save Product'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
-  );
-}
 
 function UsersTab({ users, darkMode, updateUserPoints, globalSearch }: { users: any[], darkMode: boolean, updateUserPoints: (uid: string, p: number) => Promise<void>, globalSearch?: string }) {
   const filteredUsers = users.filter(u => {
@@ -2543,266 +2065,7 @@ function NotificationsTab({ sendBroadcast, broadcastNotifications, darkMode, glo
   );
 }
 
-function ProductsTab({ products, categories, addProduct, updateProduct, deleteProduct, darkMode, t, formatPrice, globalSearch }: { 
-  products: Product[], 
-  categories: any[],
-  addProduct: any, 
-  updateProduct: any, 
-  deleteProduct: any, 
-  darkMode: boolean, 
-  t: any,
-  formatPrice: any,
-  globalSearch?: string
-}) {
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
-  const [isAdding, setIsAdding] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-  const filteredProducts = products.filter(p => {
-    const s = globalSearch?.toLowerCase() || '';
-    const matchesSearch = p.name.toLowerCase().includes(s) || 
-                         p.mmName.toLowerCase().includes(s);
-    const matchesCategory = selectedCategory === 'all' || p.category === selectedCategory;
-    return matchesSearch && matchesCategory;
-  });
-
-  const toggleSelect = (id: string) => {
-    setSelectedProducts(prev => 
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    );
-  };
-
-  const selectAll = () => {
-    if (selectedProducts.length === filteredProducts.length && filteredProducts.length > 0) {
-      setSelectedProducts([]);
-    } else {
-      setSelectedProducts(filteredProducts.map(p => p.id));
-    }
-  };
-
-  const bulkDelete = async () => {
-    if (confirm(`Are you sure you want to delete ${selectedProducts.length} products?`)) {
-      for (const id of selectedProducts) {
-        await deleteProduct(id);
-      }
-      setSelectedProducts([]);
-      toast.success('Bulk delete successful');
-    }
-  };
-
-  const bulkCategoryChange = async () => {
-    const newCat = prompt('Enter new category ID:');
-    if (newCat) {
-      for (const id of selectedProducts) {
-        await updateProduct(id, { category: newCat });
-      }
-      setSelectedProducts([]);
-      toast.success('Bulk category update successful');
-    }
-  };
-
-  return (
-    <div className="space-y-8">
-      {/* Header & Controls */}
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
-        <div>
-          <h2 className="text-3xl font-black tracking-tight">Product Catalog</h2>
-          <p className="text-sm opacity-40 font-bold uppercase tracking-widest">{products.length} Total Items</p>
-        </div>
-        
-        <div className="flex flex-wrap items-center gap-4">
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            className={`px-6 py-3 rounded-2xl border font-bold text-sm outline-none transition-all appearance-none min-w-[160px] ${
-              darkMode ? 'bg-white/5 border-white/10 focus:border-primary' : 'bg-white border-gray-100 focus:border-emerald-500 shadow-sm'
-            }`}
-          >
-            <option value="all">All Categories</option>
-            {categories.map(cat => (
-              <option key={cat.id} value={cat.id}>{cat.name || t(cat.key)}</option>
-            ))}
-          </select>
-
-          <button 
-            onClick={() => { setEditingProduct(null); setIsAdding(true); }}
-            className={`px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center gap-2 transition-all ${
-              isAdding 
-                ? 'bg-rose-500 text-white' 
-                : darkMode ? 'bg-primary text-surface' : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-200'
-            }`}
-          >
-            {isAdding ? <X size={18} /> : <Plus size={18} />}
-            {isAdding ? 'Cancel' : 'Add Product'}
-          </button>
-        </div>
-      </div>
-
-      {/* Bulk Actions Bar */}
-      <AnimatePresence>
-        {selectedProducts.length > 0 && (
-          <motion.div 
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className={`p-4 rounded-2xl flex items-center justify-between gap-4 border ${
-              darkMode ? 'bg-primary/10 border-primary/20 text-primary' : 'bg-emerald-50 border-emerald-100 text-emerald-700'
-            }`}
-          >
-            <div className="flex items-center gap-4">
-              <span className="text-xs font-black uppercase tracking-widest">{selectedProducts.length} Selected</span>
-              <button onClick={selectAll} className="text-[10px] font-black uppercase tracking-widest hover:underline">
-                {selectedProducts.length === filteredProducts.length ? 'Deselect All' : 'Select All'}
-              </button>
-            </div>
-            <div className="flex items-center gap-3">
-              <button 
-                onClick={bulkCategoryChange}
-                className="px-4 py-2 rounded-xl bg-white/20 hover:bg-white/30 text-[10px] font-black uppercase tracking-widest transition-all"
-              >
-                Change Category
-              </button>
-              <button 
-                onClick={bulkDelete}
-                className="px-4 py-2 rounded-xl bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest transition-all"
-              >
-                Delete Selected
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Add/Edit Product Modal */}
-      <AddProductModal 
-        isOpen={isAdding || !!editingProduct} 
-        onClose={() => { setIsAdding(false); setEditingProduct(null); }} 
-        addProduct={addProduct} 
-        updateProduct={updateProduct}
-        product={editingProduct}
-        categories={categories} 
-        darkMode={darkMode} 
-        t={t} 
-      />
-
-      {/* Product Grid/List */}
-      <div className={`rounded-[2.5rem] border overflow-hidden ${darkMode ? 'bg-white/5 border-white/10' : 'bg-white border-gray-100 shadow-sm'}`}>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className={`border-b ${darkMode ? 'border-white/5' : 'border-gray-50'}`}>
-                <th className="px-8 py-6 w-10">
-                  <input 
-                    type="checkbox" 
-                    checked={selectedProducts.length === filteredProducts.length && filteredProducts.length > 0}
-                    onChange={selectAll}
-                    className="w-5 h-5 rounded-lg border-2 border-gray-300 checked:bg-primary"
-                  />
-                </th>
-                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest opacity-40">Product</th>
-                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest opacity-40">Category</th>
-                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest opacity-40">Price</th>
-                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest opacity-40">Status</th>
-                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest opacity-40">Stock</th>
-                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest opacity-40 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50 dark:divide-white/5">
-              {filteredProducts.map((product) => (
-                <tr key={product.id} className={`group transition-colors ${selectedProducts.includes(product.id) ? 'bg-primary/5' : 'hover:bg-gray-50/50 dark:hover:bg-white/5'}`}>
-                  <td className="px-8 py-5">
-                    <input 
-                      type="checkbox" 
-                      checked={selectedProducts.includes(product.id)}
-                      onChange={() => toggleSelect(product.id)}
-                      className="w-5 h-5 rounded-lg border-2 border-gray-300 checked:bg-primary"
-                    />
-                  </td>
-                  <td className="px-8 py-5">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-xl overflow-hidden border border-gray-100 dark:border-white/10 shrink-0">
-                        <img src={product.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                      </div>
-                      <div>
-                        <p className="font-black text-sm">{product.name}</p>
-                        <p className="text-[10px] opacity-40 font-bold">{product.mmName}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-8 py-5">
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${darkMode ? 'bg-white/5 text-on-surface-variant/60' : 'bg-gray-100 text-gray-500'}`}>
-                      {categories.find(c => c.id === product.category)?.name || t(CATEGORIES.find(c => c.id === product.category)?.key || product.category)}
-                    </span>
-                  </td>
-                  <td className="px-8 py-5">
-                    <div className="flex flex-col">
-                      <span className={`font-black text-sm ${product.salePrice ? 'text-rose-500' : ''}`}>
-                        {formatPrice(product.salePrice || product.price)}
-                      </span>
-                      {product.salePrice && (
-                        <span className="text-[10px] opacity-40 line-through font-bold">
-                          {formatPrice(product.price)}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-8 py-5">
-                    <button
-                      onClick={() => updateProduct(product.id, { status: product.status === 'published' ? 'draft' : 'published' })}
-                      className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${
-                        product.status === 'published' 
-                          ? 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20' 
-                          : 'bg-amber-500/10 text-amber-500 hover:bg-amber-500/20'
-                      }`}
-                    >
-                      {product.status || 'published'}
-                    </button>
-                  </td>
-                  <td className="px-8 py-5">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-2 h-2 rounded-full ${product.stock <= 5 ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500'}`} />
-                      <span className={`font-black text-sm ${product.stock <= 5 ? 'text-rose-500' : ''}`}>
-                        {product.stock} {product.unit}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-8 py-5 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button 
-                        onClick={() => setEditingProduct(product)}
-                        className="p-2 rounded-xl hover:bg-blue-500/10 text-blue-500 transition-colors"
-                        title="Edit Product"
-                      >
-                        <Settings size={18} />
-                      </button>
-                      <button 
-                        onClick={() => updateProduct(product.id, { isAvailable: !product.isAvailable })}
-                        className={`p-2 rounded-xl transition-colors ${product.isAvailable === false ? 'hover:bg-amber-500/10 text-amber-500' : 'hover:bg-emerald-500/10 text-emerald-500'}`}
-                        title={product.isAvailable === false ? "Set as Available" : "Set as Sold Out"}
-                      >
-                        {product.isAvailable === false ? <ToggleLeft size={18} /> : <ToggleRight size={18} />}
-                      </button>
-                      <button 
-                        onClick={() => {
-                          if (confirm(`Delete ${product.name}?`)) deleteProduct(product.id);
-                        }}
-                        className="p-2 rounded-xl hover:bg-rose-500/10 text-rose-500 transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function AuditLogsTab({ auditLogs, darkMode, globalSearch }: { auditLogs: any[], darkMode: boolean, globalSearch?: string }) {
   const filteredLogs = auditLogs.filter(log => {
@@ -3135,6 +2398,18 @@ export default function AdminDashboard() {
   };
 
   // Market List Logic: Auto-Sum total weight/quantity of each product
+  const [customMarketDate, setCustomMarketDate] = useState<string>('');
+
+  const normalizeDateKey = (dateStr?: string, createdAt?: string | number | Date) => {
+    const isLongFormat = dateStr && (dateStr.includes(',') || /[a-zA-Z]/.test(dateStr));
+    if (!dateStr || !isLongFormat) {
+      const dateObj = dateStr ? new Date(dateStr) : new Date(createdAt!);
+      const options: Intl.DateTimeFormatOptions = { weekday: 'long', month: 'long', day: 'numeric' };
+      return dateObj.toLocaleDateString('en-US', options);
+    }
+    return dateStr;
+  };
+
   const marketListOrders = useMemo(() => {
     return orders.filter(order => {
       const matchesSearch = 
@@ -3142,33 +2417,35 @@ export default function AdminDashboard() {
         order.roomNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
         order.id.toLowerCase().includes(searchQuery.toLowerCase());
       
-      const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
+      const matchesStatus = order.status !== 'cancelled';
       
       return matchesSearch && matchesStatus;
     });
-  }, [orders, searchQuery, statusFilter]);
+  }, [orders, searchQuery]);
 
   const marketListByDate = useMemo(() => {
-    const grouped: Record<string, Record<string, { id: string; name: string; total: number; unit: string }>> = {};
+    const grouped: Record<string, Record<string, { id: string; name: string; total: number; unit: string; category: string }>> = {};
     marketListOrders.forEach(order => {
-      const date = new Date(order.createdAt).toLocaleDateString();
-      if (!grouped[date]) grouped[date] = {};
+      const dateKey = normalizeDateKey(order.deliveryDate, order.createdAt);
+      
+      if (!grouped[dateKey]) grouped[dateKey] = {};
       order.items.forEach(item => {
-        if (!grouped[date][item.id]) {
-          grouped[date][item.id] = { id: item.id, name: item.name, total: 0, unit: t('oneKg') };
+        if (!grouped[dateKey][item.id]) {
+          grouped[dateKey][item.id] = { 
+            id: item.id, 
+            name: item.name, 
+            total: 0, 
+            unit: item.unit || t('oneKg'),
+            category: item.category || 'Other'
+          };
         }
-        grouped[date][item.id].total += item.quantity;
+        grouped[dateKey][item.id].total += item.quantity;
       });
     });
     return grouped;
-  }, [orders, t]);
+  }, [marketListOrders, t]);
 
-  React.useEffect(() => {
-    const dates = Object.keys(marketListByDate);
-    if (dates.length > 0 && !selectedDate) {
-      setSelectedDate(dates[0]);
-    }
-  }, [marketListByDate, selectedDate]);
+  // Removed auto-redirect useEffect that prevented seeing the date selection overview
 
   const stats = useMemo(() => {
     return {
@@ -3179,6 +2456,97 @@ export default function AdminDashboard() {
       lowStock: products.filter(p => p.stock <= 5).length
     };
   }, [orders, products]);
+
+  const handlePrintMarketList = () => {
+    if (!selectedDate || !marketListByDate[selectedDate]) return;
+    
+    const marketItems = Object.values(marketListByDate[selectedDate]) as { name: string; category: string; total: number; unit: string }[];
+    const doc = new jsPDF();
+    
+    // Header Section
+    doc.setFontSize(18);
+    doc.setTextColor(0);
+    doc.setFont("helvetica", "bold");
+    doc.text("MARKET PURCHASE LIST", 14, 20);
+    
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(80);
+    doc.text(`Delivery Date: ${selectedDate}`, 14, 28);
+    doc.text(`Generated On: ${new Date().toLocaleString()}`, 14, 33);
+    doc.text(`Total Unique Items: ${marketItems.length}`, 14, 38);
+    
+    // Line Separator
+    doc.setDrawColor(230);
+    doc.line(14, 42, 196, 42);
+
+    const categories = Array.from(new Set(marketItems.map(i => i.category))).sort();
+    let currentY = 50;
+
+    categories.forEach((cat) => {
+      const catItems = marketItems.filter(i => i.category === cat);
+      
+      // Check for page overflow before writing category title
+      if (currentY > 250) {
+        doc.addPage();
+        currentY = 20;
+      }
+
+      // Category Header
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(0);
+      doc.text(cat.toUpperCase(), 14, currentY);
+      
+      const tableData = catItems.map((item, idx) => [
+        idx + 1,
+        item.name,
+        `${item.total} ${item.unit}`,
+        "[  ]"
+      ]);
+
+      autoTable(doc, {
+        startY: currentY + 4,
+        head: [['#', 'Description', 'Quantity / Weight', 'Check']],
+        body: tableData,
+        theme: 'grid',
+        headStyles: { 
+          fillColor: [250, 250, 250], 
+          textColor: [0, 0, 0], 
+          fontStyle: 'bold',
+          lineWidth: 0.1,
+          lineColor: [220, 220, 220]
+        },
+        styles: { 
+          fontSize: 9, 
+          cellPadding: 3.5, 
+          lineColor: [240, 240, 240],
+          lineWidth: 0.1,
+          textColor: [50, 50, 50]
+        },
+        columnStyles: {
+          0: { cellWidth: 12, halign: 'center' },
+          1: { cellWidth: 'auto' },
+          2: { cellWidth: 45, halign: 'right' },
+          3: { cellWidth: 20, halign: 'center' }
+        },
+        margin: { left: 14, right: 14 }
+      });
+      
+      currentY = (doc as any).lastAutoTable.finalY + 12;
+    });
+
+    // Page Numbers
+    const pageCount = (doc as any).internal.getNumberOfPages();
+    for(let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        doc.text(`Page ${i} of ${pageCount}`, 196, 287, { align: 'right' });
+    }
+    
+    doc.save(`Market_List_${selectedDate.replace(/\//g, '-')}.pdf`);
+  };
 
   return (
     <div className={`min-h-screen font-sans flex transition-all duration-500 ${darkMode ? 'bg-[#0c0e0e] text-on-surface' : 'bg-[#f8faf9]'}`}>
@@ -3274,6 +2642,7 @@ export default function AdminDashboard() {
               {[
                 { id: 'analytics', icon: BarChart3, label: 'Analytics' },
                 { id: 'orders', icon: ShoppingBag, label: t('orders') },
+                { id: 'market', icon: ClipboardList, label: 'Market List' },
                 { id: 'products', icon: Package, label: t('products') },
                 { id: 'banners', icon: ImageIcon, label: 'Ad Banners' },
                 { id: 'special-offers', icon: Tag, label: 'Specials' },
@@ -3774,78 +3143,216 @@ export default function AdminDashboard() {
               exit={{ opacity: 0, y: -20 }}
               className="space-y-8"
             >
-              {selectedDate && marketListByDate[selectedDate] ? (
+              {selectedDate ? (
                 // Detail View
                 <div className="space-y-6">
-                  <div className="flex items-center gap-4">
-                    <button onClick={() => setSelectedDate(null)} className={`p-2 rounded-xl transition-colors ${darkMode ? 'hover:bg-white/5' : 'hover:bg-gray-100'}`}>
-                      <ChevronRight size={20} className="rotate-180" />
-                    </button>
-                    <h2 className={`text-2xl font-black tracking-tight ${darkMode ? 'text-on-surface' : 'text-emerald-900'}`}>{selectedDate}</h2>
-                  </div>
-                  
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex gap-4">
-                      <div className={`px-6 py-4 rounded-2xl border ${darkMode ? 'bg-white/5 border-white/5' : 'bg-gray-50 border-gray-100'}`}>
-                        <p className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? 'text-on-surface-variant/40' : 'text-gray-400'}`}>{t('totalItems')}</p>
-                        <p className={`text-xl font-black ${darkMode ? 'text-on-surface' : 'text-emerald-950'}`}>{Object.keys(marketListByDate[selectedDate]).length}</p>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+                    <div className="flex items-center gap-4">
+                      <button onClick={() => setSelectedDate(null)} className={`p-2.5 rounded-xl transition-all hover:scale-110 active:scale-95 ${darkMode ? 'bg-white/5 hover:bg-white/10 text-primary' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border border-emerald-100'}`}>
+                        <ChevronRight size={18} className="rotate-180" />
+                      </button>
+                      <div>
+                        <h2 className={`text-2xl font-black tracking-tight ${darkMode ? 'text-on-surface' : 'text-emerald-900'}`}>{selectedDate}</h2>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? 'text-on-surface-variant/40' : 'text-gray-400'}`}>Market Purchase Summary</span>
+                          <span className={`w-1 h-1 rounded-full ${darkMode ? 'bg-white/10' : 'bg-gray-200'}`} />
+                          <span className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? 'text-primary' : 'text-emerald-600'}`}>{Object.keys(marketListByDate[selectedDate] || {}).length} Products Found</span>
+                        </div>
                       </div>
                     </div>
-                    <button className={`px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl transition-all flex items-center gap-3 ${darkMode ? 'bg-primary text-surface shadow-primary/20 hover:bg-primary/90' : 'bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700'}`}>
-                      {t('printList')}
-                    </button>
-                  </div>
-
-                  <div className={`rounded-[3rem] p-10 border overflow-hidden ${darkMode ? 'bg-surface-container-high/40 border-white/5' : 'bg-white border-gray-100 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.05)]'}`}>
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className={`border-b ${darkMode ? 'border-white/5' : 'border-gray-100'}`}>
-                          <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-gray-400">#</th>
-                          <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-gray-400">{t('itemName')}</th>
-                          <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">{t('totalWeightQty')}</th>
-                          <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(Object.values(marketListByDate[selectedDate]) as { id: string; name: string; total: number; unit: string }[]).map((item, i) => (
-                          <tr key={item.id} className={`border-b last:border-0 transition-colors ${darkMode ? 'border-white/5 hover:bg-white/5' : 'border-gray-100 hover:bg-gray-50'}`}>
-                            <td className={`py-6 px-4 text-sm font-bold ${darkMode ? 'text-on-surface-variant/60' : 'text-gray-500'}`}>{i + 1}</td>
-                            <td className={`py-6 px-4 font-bold ${darkMode ? 'text-on-surface' : 'text-emerald-950'}`}>{item.name}</td>
-                            <td className={`py-6 px-4 font-black text-right ${darkMode ? 'text-primary' : 'text-emerald-700'}`}>{item.total} {item.unit}</td>
-                            <td className="py-6 px-4 text-center">
-                              <input type="checkbox" className={`w-5 h-5 rounded-lg border-2 ${darkMode ? 'border-white/20 checked:bg-primary' : 'border-gray-200 checked:bg-emerald-600'}`} />
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : (
-                // Overview Page
-                <div className="space-y-8">
-                  <div className="flex items-center justify-between">
-                    <h2 className={`text-2xl font-black tracking-tight ${darkMode ? 'text-on-surface' : 'text-emerald-900'}`}>{t('marketList')}</h2>
-                    <div className={`px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest ${darkMode ? 'bg-white/5 text-on-surface-variant/60' : 'bg-gray-50 text-gray-500'}`}>
-                      {Object.keys(marketListByDate).length} {t('days')}
+                    
+                    <div className="flex items-center gap-3">
+                      <div className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${darkMode ? 'bg-primary/5 text-primary/60' : 'bg-emerald-50 text-emerald-600/60'}`}>
+                        Market Mode
+                      </div>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {Object.keys(marketListByDate).map(date => (
+                  
+                  {marketListByDate[selectedDate] ? (
+                    <>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className={`p-4 rounded-xl border ${darkMode ? 'bg-surface-container-high/40 border-white/5' : 'bg-white border-gray-100 shadow-sm'}`}>
+                          <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${darkMode ? 'text-on-surface-variant/40' : 'text-gray-400'}`}>{t('totalItems')}</p>
+                          <p className={`text-xl font-black ${darkMode ? 'text-on-surface' : 'text-emerald-950'}`}>{Object.keys(marketListByDate[selectedDate]).length}</p>
+                        </div>
+                        
+                        <div className={`p-4 rounded-xl border ${darkMode ? 'bg-surface-container-high/40 border-white/5' : 'bg-white border-gray-100 shadow-sm'}`}>
+                          <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${darkMode ? 'text-on-surface-variant/40' : 'text-gray-400'}`}>Categories</p>
+                          <p className={`text-xl font-black ${darkMode ? 'text-on-surface' : 'text-emerald-950'}`}>
+                            {new Set(Object.values(marketListByDate[selectedDate]).map((i: any) => i.category)).size}
+                          </p>
+                        </div>
+                        
+                        <div className={`p-4 rounded-xl border ${darkMode ? 'bg-surface-container-high/40 border-white/5' : 'bg-white border-gray-100 shadow-sm'}`}>
+                          <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${darkMode ? 'text-on-surface-variant/40' : 'text-gray-400'}`}>Orders</p>
+                          <p className={`text-xl font-black ${darkMode ? 'text-on-surface' : 'text-emerald-950'}`}>
+                            {marketListOrders.filter(o => normalizeDateKey(o.deliveryDate, o.createdAt) === selectedDate).length}
+                          </p>
+                        </div>
+
+                        <button 
+                          onClick={handlePrintMarketList} 
+                          className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all group active:scale-95 ${
+                            darkMode 
+                              ? 'bg-primary border-primary hover:bg-primary/90 text-surface shadow-lg shadow-primary/20' 
+                              : 'bg-emerald-600 border-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20'
+                          }`}
+                        >
+                           <FileText size={16} className="group-hover:scale-110 transition-transform" />
+                           <span className="text-[9px] font-black uppercase tracking-widest">Export PDF</span>
+                        </button>
+                      </div>
+
+                      <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-surface-container-high/40 border-white/5' : 'bg-white border-gray-100 shadow-sm'}`}>
+                        {Object.entries(
+                          Object.values(marketListByDate[selectedDate]).reduce((acc, item: any) => {
+                            if (!acc[item.category]) acc[item.category] = [];
+                            acc[item.category].push(item);
+                            return acc;
+                          }, {} as Record<string, any[]>)
+                        ).map(([category, items]: [string, any[]], catIdx) => (
+                          <div key={category} className={catIdx > 0 ? "border-t " + (darkMode ? "border-white/5" : "border-gray-100") : ""}>
+                            <div className={`px-5 py-3 flex items-center justify-between ${darkMode ? 'bg-white/[0.03]' : 'bg-gray-50/80 border-b border-gray-100'}`}>
+                              <h3 className={`text-[9px] font-black uppercase tracking-[0.25em] ${darkMode ? 'text-primary' : 'text-emerald-600'}`}>
+                                {category}
+                              </h3>
+                              <span className={`text-[9px] font-black px-2 py-0.5 rounded-md ${darkMode ? 'bg-white/5 text-on-surface-variant/50' : 'bg-white border border-gray-100 text-gray-400 shadow-sm uppercase tracking-tighter text-[8px]'}`}>
+                                {items.length} Items
+                              </span>
+                            </div>
+                            
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left border-collapse table-fixed">
+                                <thead>
+                                  <tr className={`border-b ${darkMode ? 'border-white/5' : 'border-gray-50'}`}>
+                                    <th className="py-2.5 px-6 text-[8px] font-black uppercase tracking-widest text-gray-400 w-[50px] text-center">#</th>
+                                    <th className="py-2.5 px-0 text-[8px] font-black uppercase tracking-widest text-gray-400">{t('itemName')}</th>
+                                    <th className="py-2.5 px-6 text-[8px] font-black uppercase tracking-widest text-gray-400 text-right w-[150px]">{t('totalWeightQty')}</th>
+                                    <th className="py-2.5 px-6 text-[8px] font-black uppercase tracking-widest text-gray-400 text-center w-[80px]">{t('status')}</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {items.map((item, i) => (
+                                    <tr key={item.id} className={`group border-b last:border-0 transition-colors ${darkMode ? 'border-white/5 hover:bg-white/5' : 'border-gray-50 hover:bg-emerald-50/30'}`}>
+                                      <td className={`py-3 px-6 text-[10px] font-bold text-center ${darkMode ? 'text-on-surface-variant/30' : 'text-gray-300'}`}>{i + 1}</td>
+                                      <td className={`py-3 px-0 text-xs font-bold leading-tight ${darkMode ? 'text-on-surface' : 'text-emerald-950'}`}>{item.name}</td>
+                                      <td className={`py-3 px-6 text-xs font-black text-right ${darkMode ? 'text-primary' : 'text-emerald-700'}`}>
+                                        <span className="tabular-nums">{item.total}</span> <span className="text-[9px] opacity-40 ml-0.5 lowercase font-medium">{item.unit}</span>
+                                      </td>
+                                      <td className="py-3 px-6 text-center">
+                                        <label className="flex items-center justify-center cursor-pointer group-hover:scale-110 transition-transform">
+                                          <input 
+                                            type="checkbox" 
+                                            className={`w-3.5 h-3.5 rounded transition-all cursor-pointer ${
+                                              darkMode 
+                                                ? 'border-white/10 checked:bg-primary/40 checked:border-primary' 
+                                                : 'border-gray-200 checked:bg-emerald-500 checked:border-emerald-600 focus:ring-0 appearance-none'
+                                            }`} 
+                                          />
+                                        </label>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="p-20 text-center rounded-[3rem] border border-dashed border-white/5">
+                      <p className="font-bold text-lg opacity-30">No items found for this date.</p>
+                      <button onClick={() => setSelectedDate(null)} className="mt-4 text-primary font-bold hover:underline">Go back home</button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-8">
+                  {/* Overview Page: Date Selection Cards */}
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                    <div>
+                      <h2 className={`text-2xl font-black tracking-tight ${darkMode ? 'text-on-surface' : 'text-emerald-900'}`}>{t('marketList')}</h2>
+                      <p className={`text-xs font-bold ${darkMode ? 'text-on-surface-variant/60' : 'text-gray-500'}`}>Choose a date to view summarized purchase list</p>
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                      <button 
+                        onClick={() => {
+                          const options: Intl.DateTimeFormatOptions = { weekday: 'long', month: 'long', day: 'numeric' };
+                          const today = new Date().toLocaleDateString('en-US', options);
+                          setSelectedDate(today);
+                        }}
+                        className={`px-4 py-2.5 rounded-xl font-bold text-[10px] uppercase tracking-widest border transition-all ${darkMode ? 'bg-primary/10 border-primary/20 text-primary hover:bg-primary/20' : 'bg-emerald-50 border-emerald-100 text-emerald-700 hover:bg-emerald-100'}`}
+                      >
+                        Today
+                      </button>
+                      <div className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border transition-all ${darkMode ? 'bg-surface-container-high/40 border-white/5 focus-within:border-primary/50' : 'bg-white border-gray-100 shadow-sm focus-within:border-emerald-500 shadow-emerald-500/5'}`}>
+                        <Calendar size={16} className={darkMode ? 'text-primary' : 'text-emerald-600'} />
+                        <input 
+                          type="date"
+                          className="bg-transparent border-none outline-none text-xs font-bold w-full"
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              const date = new Date(e.target.value);
+                              const options: Intl.DateTimeFormatOptions = { weekday: 'long', month: 'long', day: 'numeric' };
+                              const formatted = date.toLocaleDateString('en-US', options);
+                              setSelectedDate(formatted);
+                            }
+                          }}
+                        />
+                      </div>
+                      <div className={`px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest border ${darkMode ? 'bg-white/5 border-white/5 text-on-surface-variant/60' : 'bg-gray-50 border-gray-100 text-gray-500'}`}>
+                        {Object.keys(marketListByDate).length} {t('days')}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* Sort dates chronologically if possible */}
+                    {Object.keys(marketListByDate).sort((a, b) => {
+                      const da = new Date(a).getTime();
+                      const db = new Date(b).getTime();
+                      if (isNaN(da) || isNaN(db)) return 0;
+                      return db - da; // Newest first
+                    }).map(date => (
                       <button
                         key={date}
                         onClick={() => setSelectedDate(date)}
-                        className={`group p-8 rounded-[2rem] border text-left transition-all hover:scale-[1.02] ${darkMode ? 'bg-white/5 border-white/5 hover:border-primary/20' : 'bg-white border-gray-100 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.05)] hover:border-emerald-200'}`}
+                        className={`group p-6 rounded-2xl border text-left transition-all hover:scale-[1.02] active:scale-[0.98] ${
+                          darkMode 
+                            ? 'bg-surface-container-high/40 border-white/5 hover:bg-white/5' 
+                            : 'bg-white border-gray-100 shadow-sm hover:shadow-md hover:border-emerald-200'
+                        }`}
                       >
-                        <div className="flex items-center justify-between mb-4">
-                          <h4 className={`font-black text-xl ${darkMode ? 'text-on-surface' : 'text-emerald-950'}`}>{date}</h4>
-                          <ChevronRight className={`transition-transform group-hover:translate-x-1 ${darkMode ? 'text-primary' : 'text-emerald-600'}`} size={20} />
+                        <div className="flex flex-col h-full gap-4">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${darkMode ? 'bg-white/5 text-primary' : 'bg-emerald-50 text-emerald-600'}`}>
+                            <Calendar size={20} />
+                          </div>
+                          <div>
+                            <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${darkMode ? 'text-on-surface-variant/40' : 'text-gray-400'}`}>Delivery Date</p>
+                            <h3 className={`font-black text-sm leading-tight ${darkMode ? 'text-on-surface' : 'text-emerald-950'}`}>{date}</h3>
+                          </div>
+                          <div className="mt-auto flex items-center justify-between">
+                            <span className={`text-[10px] font-black px-2 py-1 rounded-lg ${darkMode ? 'bg-white/5 text-primary' : 'bg-emerald-50 text-emerald-700'}`}>
+                              {Object.keys(marketListByDate[date]).length} {t('items')}
+                            </span>
+                            <ChevronRight size={16} className={`transition-transform group-hover:translate-x-1 ${darkMode ? 'text-white/20' : 'text-emerald-200'}`} />
+                          </div>
                         </div>
-                        <p className={`text-[10px] font-black uppercase tracking-[0.2em] ${darkMode ? 'text-primary' : 'text-emerald-600'}`}>
-                          {Object.keys(marketListByDate[date]).length} {t('items')}
-                        </p>
                       </button>
                     ))}
+                    
+                    {Object.keys(marketListByDate).length === 0 && (
+                      <div className={`col-span-full py-20 text-center rounded-[2rem] border-2 border-dashed ${darkMode ? 'border-white/5' : 'border-gray-100'}`}>
+                        <div className="flex flex-col items-center gap-4">
+                          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${darkMode ? 'bg-white/5 text-white/5' : 'bg-gray-50 text-gray-200'}`}>
+                            <ClipboardList size={32} />
+                          </div>
+                          <p className={`font-bold text-lg ${darkMode ? 'text-white/20' : 'text-gray-400'}`}>No market lists generated yet.</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
