@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, signInAnonymously } from 'firebase/auth';
+import { getAuth, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, signInAnonymously, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { initializeFirestore, memoryLocalCache, doc, getDoc } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -14,9 +14,10 @@ export const db = initializeFirestore(app, {
 }, firebaseConfig.firestoreDatabaseId);
 
 export const auth = getAuth(app);
+export const googleProvider = new GoogleAuthProvider();
 // Initialize Storage using the bucket from firebaseConfig (most robust)
 export const storage = getStorage(app);
-export { signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, signInAnonymously };
+export { signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, signInAnonymously, signInWithPopup };
 
 export enum OperationType {
   CREATE = 'create',
@@ -68,8 +69,12 @@ export function resetQuotaExceeded() {
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errorMessage = error instanceof Error ? error.message : String(error);
   if (errorMessage.includes('resource-exhausted')) {
-    isQuotaExceeded = true;
-    quotaListeners.forEach(l => l(true));
+    if (!isQuotaExceeded) {
+      isQuotaExceeded = true;
+      quotaListeners.forEach(l => l(true));
+      // Log it but don't necessarily alert immediately if it's a minor fetch
+      console.warn("Firestore Quota Exceeded. Entering Cached Mode.");
+    }
   }
   
   if (errorMessage.includes('client is offline')) {
@@ -95,6 +100,9 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     path
   }
   console.error('Firestore Error: ', JSON.stringify(errInfo));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('app-error', { detail: 'Firestore Error: ' + errInfo.error }));
+  }
   // Notice: We log the error but don't strictly throw here if it's a listener error
   // to avoid crashing the whole React tree, though React Query or Error Boundaries usually handle this.
   // In this app, we catch it in the listeners.

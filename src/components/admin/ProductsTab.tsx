@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Package, Plus, Search, X, Settings, 
-  Trash2, ToggleLeft, ToggleRight, 
+  Trash2, 
   RefreshCw, Save, Image as ImageIcon, 
   Sparkles, CheckCircle2, Clock, 
   AlertTriangle, Eye, ChevronRight,
@@ -24,6 +24,7 @@ interface ProductsTabProps {
   deleteProduct: (id: string) => Promise<void>;
   darkMode: boolean;
   t: (key: string) => string;
+  language: string;
   formatPrice: (price: number) => string;
   globalSearch?: string;
 }
@@ -51,7 +52,6 @@ function AddProductModal({
   const [loadingText, setLoadingText] = useState('Saving...');
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [useAI, setUseAI] = useState(true);
   const [formData, setFormData] = useState({
     name: '',
     price: '',
@@ -137,31 +137,8 @@ function AddProductModal({
     setLoading(true);
     setLoadingText('Saving product...');
     try {
-      let translations = {
-        mmName: formData.mmName,
-        thName: formData.thName,
-        zhName: formData.zhName,
-        msName: formData.msName
-      };
-
-      if (useAI && !product) {
-        setLoadingText('Translating product name...');
-        try {
-          const aiTranslations = await translateProductName(formData.name);
-          translations = {
-            mmName: aiTranslations.mmName || formData.name,
-            thName: aiTranslations.thName || formData.name,
-            zhName: aiTranslations.zhName || formData.name,
-            msName: aiTranslations.msName || formData.name
-          };
-        } catch (err) {
-          console.warn("AI Translation failed, using original names.");
-        }
-      }
-
       const productData = {
         ...formData,
-        ...translations,
         price: Number(formData.price),
         stock: Number(formData.stock),
         salePrice: formData.salePrice ? Number(formData.salePrice) : undefined,
@@ -376,45 +353,44 @@ function AddProductModal({
                 </Tabs.Content>
 
                 <Tabs.Content value="translations" className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="flex items-center justify-between p-4 rounded-2xl bg-primary/10 border border-primary/20 mb-4">
-                    <div className="flex items-center gap-3">
-                      <Sparkles className="text-primary" size={20} />
-                      <div>
-                        <p className="text-xs font-black">AI Auto-Translation</p>
-                        <p className="text-[10px] font-bold opacity-60">Generate translations automatically</p>
-                      </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelClasses}>Myanmar (Burmese)</label>
+                      <input 
+                        type="text" 
+                        value={formData.mmName}
+                        onChange={e => setFormData({...formData, mmName: e.target.value})}
+                        className={inputClasses}
+                      />
                     </div>
-                    <button 
-                      type="button"
-                      onClick={() => setUseAI(!useAI)}
-                      className={`w-12 h-6 rounded-full relative transition-all ${useAI ? 'bg-primary' : 'bg-gray-300 dark:bg-white/10'}`}
-                    >
-                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${useAI ? 'left-7' : 'left-1'}`} />
-                    </button>
+                    <div>
+                      <label className={labelClasses}>Chinese</label>
+                      <input 
+                        type="text" 
+                        value={formData.zhName}
+                        onChange={e => setFormData({...formData, zhName: e.target.value})}
+                        className={inputClasses}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClasses}>Thai</label>
+                      <input 
+                        type="text" 
+                        value={formData.thName}
+                        onChange={e => setFormData({...formData, thName: e.target.value})}
+                        className={inputClasses}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClasses}>Malay</label>
+                      <input 
+                        type="text" 
+                        value={formData.msName}
+                        onChange={e => setFormData({...formData, msName: e.target.value})}
+                        className={inputClasses}
+                      />
+                    </div>
                   </div>
-
-                  {!useAI && (
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className={labelClasses}>Myanmar (Burmese)</label>
-                        <input 
-                          type="text" 
-                          value={formData.mmName}
-                          onChange={e => setFormData({...formData, mmName: e.target.value})}
-                          className={inputClasses}
-                        />
-                      </div>
-                      <div>
-                        <label className={labelClasses}>Chinese</label>
-                        <input 
-                          type="text" 
-                          value={formData.zhName}
-                          onChange={e => setFormData({...formData, zhName: e.target.value})}
-                          className={inputClasses}
-                        />
-                      </div>
-                    </div>
-                  )}
                 </Tabs.Content>
 
                 <Tabs.Content value="advanced" className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -482,6 +458,7 @@ export default function ProductsTab({
   deleteProduct, 
   darkMode, 
   t, 
+  language,
   formatPrice, 
   globalSearch 
 }: ProductsTabProps) {
@@ -530,7 +507,7 @@ export default function ProductsTab({
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
       {/* Summary Stats - Matches Order Tab Style */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
         {[
           { label: 'Total Products', value: stats.total, icon: Package, color: 'text-blue-500', sub: 'Active in catalog' },
           { label: 'Published', value: stats.published, icon: CheckCircle2, color: 'text-emerald-500', sub: 'Visible to users' },
@@ -542,18 +519,18 @@ export default function ProductsTab({
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.05 }}
-            className={`p-6 rounded-[2.5rem] border relative overflow-hidden group ${
+            className={`p-4 rounded-2xl border relative overflow-hidden group ${
               darkMode ? 'bg-surface-container-high/40 border-white/5 shadow-2xl' : 'bg-white border-gray-100 shadow-sm'
             }`}
           >
             <div className={`absolute top-0 right-0 w-24 h-24 -mr-6 -mt-6 rounded-full blur-3xl opacity-5 transition-opacity group-hover:opacity-10 ${stat.color.replace('text-', 'bg-')}`} />
-            <div className="relative z-10 flex flex-col gap-3">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${darkMode ? 'bg-white/5' : 'bg-gray-50'}`}>
-                <stat.icon className={`w-5 h-5 ${stat.color}`} />
+            <div className="relative z-10 flex flex-col gap-1.5">
+              <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${darkMode ? 'bg-white/5' : 'bg-gray-50'}`}>
+                <stat.icon className={`w-4 h-4 ${stat.color}`} />
               </div>
               <div>
-                <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${darkMode ? 'text-on-surface-variant/40' : 'text-gray-400'}`}>{stat.label}</p>
-                <p className="text-2xl font-black tracking-tight">{stat.value}</p>
+                <p className={`text-[9px] font-black uppercase tracking-widest mb-0.5 ${darkMode ? 'text-on-surface-variant/40' : 'text-gray-400'}`}>{stat.label}</p>
+                <p className="text-xl font-black tracking-tight">{stat.value}</p>
                 <p className="text-[9px] font-bold opacity-30 mt-0.5 uppercase tracking-wider">{stat.sub}</p>
               </div>
             </div>
@@ -622,7 +599,7 @@ export default function ProductsTab({
           <AnimatePresence mode="popLayout">
             {filteredProducts.map((product, i) => (
               <motion.div 
-                key={product.id}
+                key={`${product.id}-${i}`}
                 layout
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -647,8 +624,19 @@ export default function ProductsTab({
                         {categories.find(c => c.id === product.category)?.name || product.category}
                       </span>
                     </div>
-                    <h4 className="font-black text-sm tracking-tight truncate max-w-[200px] sm:max-w-md">{product.name}</h4>
-                    <p className="text-[10px] font-bold opacity-40 truncate">{product.mmName || product.name}</p>
+                    <motion.h4 
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="font-black text-sm tracking-tight truncate max-w-[200px] sm:max-w-md">
+                      {product.name}
+                    </motion.h4>
+                    <motion.p 
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.1 }}
+                      className="text-[10px] font-bold opacity-40 truncate">
+                      {product.mmName || product.name}
+                    </motion.p>
                   </div>
                 </div>
 
@@ -674,28 +662,60 @@ export default function ProductsTab({
                   </div>
 
                   <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-on-surface/40">
+                        {product.isAvailable !== false ? 'Available' : 'Sold Out'}
+                      </span>
+                      <motion.button 
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const newStatus = product.isAvailable === false;
+                          toast.promise(updateProduct(product.id, { isAvailable: newStatus }), {
+                            loading: 'Updating...',
+                            success: `Product is now ${newStatus ? 'Available' : 'Sold Out'}`,
+                            error: 'Failed to update status'
+                          });
+                        }}
+                        className={`w-10 h-5 rounded-full p-0.5 transition-colors duration-300 ${
+                          product.isAvailable !== false ? 'bg-emerald-500' : 'bg-gray-300'
+                        }`}
+                      >
+                        <motion.div 
+                          className="w-4 h-4 bg-white rounded-full shadow-sm"
+                          animate={{ x: product.isAvailable !== false ? 18 : 0 }}
+                          transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                        />
+                      </motion.button>
+                    </div>
                     <motion.button 
-                      whileHover={{ scale: 1.1 }}
+                      whileHover={{ scale: 1.2, backgroundColor: 'rgba(244, 63, 94, 0.1)' }}
                       whileTap={{ scale: 0.9 }}
                       onClick={(e) => {
+                        e.preventDefault();
                         e.stopPropagation();
-                        updateProduct(product.id, { isAvailable: !product.isAvailable });
+                        
+                        toast(language === 'mm' ? 'ပစ္စည်းကို ဖျက်မှာ သေချာပါသလား?' : `Delete ${product.name}?`, {
+                          action: {
+                            label: language === 'mm' ? 'ဖျက်မည်' : 'Delete',
+                            onClick: () => {
+                              toast.promise(deleteProduct(product.id), {
+                                loading: 'Deleting...',
+                                success: 'Product deleted',
+                                error: 'Failed'
+                              });
+                            }
+                          },
+                          cancel: {
+                            label: 'Cancel'
+                          }
+                        });
                       }}
-                      className={`p-2 rounded-xl transition-colors ${product.isAvailable === false ? 'text-rose-500 bg-rose-500/10' : 'text-emerald-500 bg-emerald-500/10'}`}
-                      title={product.isAvailable === false ? 'Mark as Available' : 'Mark as Sold Out'}
+                      className="p-3 rounded-xl text-rose-500 transition-colors relative z-20"
+                      title="Delete Product"
                     >
-                      {product.isAvailable === false ? <ToggleLeft size={16} /> : <ToggleRight size={16} />}
-                    </motion.button>
-                    <motion.button 
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm(`Are you sure you want to delete ${product.name}?`)) deleteProduct(product.id);
-                      }}
-                      className="p-2 rounded-xl text-rose-500 hover:bg-rose-500/10 transition-colors"
-                    >
-                      <Trash2 size={16} />
+                      <Trash2 size={18} />
                     </motion.button>
                   </div>
                 </div>

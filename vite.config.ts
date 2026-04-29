@@ -8,7 +8,7 @@ export default defineConfig(({mode}) => {
   return {
     plugins: [react(), tailwindcss()],
     define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY || ""),
     },
     resolve: {
       alias: {
@@ -21,10 +21,10 @@ export default defineConfig(({mode}) => {
       emptyOutDir: true,
       rollupOptions: {
         output: {
-          manualChunks: {
-            'vendor': ['react', 'react-dom', 'react-router-dom'],
-            'firebase': ['firebase/app', 'firebase/firestore', 'firebase/auth', 'firebase/storage'],
-            'ui': ['lucide-react', 'recharts', 'motion', 'sonner'],
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              return 'vendor';
+            }
           }
         }
       }

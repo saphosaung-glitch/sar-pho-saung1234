@@ -110,7 +110,7 @@ export default function OrdersPage() {
                         <StatusIcon size={18} />
                       </div>
                       <div>
-                        <p className="text-xs font-black text-on-surface">Order #{order.id.slice(-6).toUpperCase().padStart(6, '0')}</p>
+                        <p className="text-xs font-black text-on-surface">Order #{order.id}</p>
                         <p className="text-[10px] font-bold text-on-surface-variant mt-0.5">
                           {new Date(order.timestamp).toLocaleDateString()}
                         </p>

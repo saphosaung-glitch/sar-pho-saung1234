@@ -8,29 +8,15 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
 export default function FavoritesPage() {
-  const { favorites, toggleFavorite, addToCart, cart, cartTotal, clearCart, t, darkMode, formatPrice, getMainName, getSecondaryName, isProfileLoaded } = useStore();
+  const { favorites, toggleFavorite, addToCart, cart, cartTotal, clearCart, t, darkMode, formatPrice, getMainName, getSecondaryName, isProfileLoaded, products } = useStore();
   const navigate = useNavigate();
-  const [products, setProducts] = useState<any[]>([]);
-  const [isProductsLoading, setIsProductsLoading] = useState(true);
 
   const handleBack = () => {
     navigate(-1);
   };
 
-  useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'products'), (querySnapshot) => {
-      const productsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setProducts(productsData);
-      setIsProductsLoading(false);
-    }, (error) => {
-      console.error("Error fetching products:", error);
-      setIsProductsLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
   const favoriteProducts = products.filter(p => favorites.includes(p.id) && p.isAvailable !== false);
-  const isLoading = isProductsLoading || !isProfileLoaded;
+  const isLoading = !isProfileLoaded;
 
   return (
     <div className={`min-h-screen pb-32 transition-colors duration-300 ${darkMode ? 'bg-surface' : 'bg-surface'}`}>

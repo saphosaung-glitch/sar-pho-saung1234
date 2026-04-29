@@ -14,7 +14,7 @@ function getAiClient() {
   return ai;
 }
 
-export async function translateProductName(englishName: string) {
+export async function translateProductName(englishName: string, retries = 3): Promise<{ mmName: string; thName: string; zhName: string; msName: string }> {
   const aiClient = getAiClient();
   if (!aiClient) {
     return {
@@ -49,7 +49,18 @@ export async function translateProductName(englishName: string) {
     const text = response.text;
     if (!text) throw new Error("No response from AI");
     return JSON.parse(text);
-  } catch (error) {
+  } catch (error: any) {
+    const isRateLimited = error.status === 429 || 
+                          error.code === 429 || 
+                          error.toString().includes("429") || 
+                          error.toString().includes("RESOURCE_EXHAUSTED");
+
+    if (retries > 0 && isRateLimited) {
+      const delay = Math.pow(2, 4 - retries) * 1000 + Math.random() * 1000;
+      console.warn(`Translation rate limited (code ${error.code || error.status}). Retrying in ${delay.toFixed(0)}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return translateProductName(englishName, retries - 1);
+    }
     console.error("Translation error:", error);
     // Fallback to empty strings if translation fails
     return {

@@ -19,10 +19,11 @@ import {
   writeBatch,
   Unsubscribe
 } from 'firebase/firestore';
-import { auth, db, handleFirestoreError, OperationType, getIsQuotaExceeded, onQuotaExceededChange, resetQuotaExceeded as resetQuota, signInAnonymously } from '../lib/firebase';
+import { auth, db, handleFirestoreError, OperationType, getIsQuotaExceeded, onQuotaExceededChange, resetQuotaExceeded as resetQuota, signInAnonymously, googleProvider, signInWithPopup } from '../lib/firebase';
 import { onAuthStateChanged, setPersistence, browserLocalPersistence, signOut } from 'firebase/auth';
 import { Address } from '../types';
 
+import { BroadcastToast } from '../components/ui/BroadcastToast';
 import { toast } from 'sonner';
 
 export interface Product {
@@ -153,6 +154,7 @@ export interface PromotionBanner {
   image: string;
   color: string;
   isActive: boolean;
+  priority: number;
 }
 
 export interface Deal {
@@ -190,6 +192,10 @@ interface StoreContextType {
   adminOrders: Order[];
   supportNumber: string;
   setSupportNumber: (num: string) => void;
+  shopPhone: string;
+  setShopPhone: (phone: string) => Promise<void>;
+  shopEmail: string;
+  setShopEmail: (email: string) => Promise<void>;
   bankName: string;
   setBankName: (name: string) => void;
   bankAccountNumber: string;
@@ -282,9 +288,10 @@ interface StoreContextType {
   promotionBanners: PromotionBanner[];
   deals: Deal[];
   bundles: Bundle[];
-  addPromotionBanner: (banner: Omit<PromotionBanner, 'id'>) => Promise<void>;
+  addPromotionBanner: (banner: Omit<PromotionBanner, 'id' | 'priority'>) => Promise<void>;
   updatePromotionBanner: (id: string, banner: Partial<PromotionBanner>) => Promise<void>;
   deletePromotionBanner: (id: string) => Promise<void>;
+  reorderPromotionBanners: (banners: PromotionBanner[]) => Promise<void>;
   addDeal: (deal: Omit<Deal, 'id'>) => Promise<void>;
   updateDeal: (id: string, deal: Partial<Deal>) => Promise<void>;
   deleteDeal: (id: string) => Promise<void>;
@@ -313,6 +320,11 @@ interface StoreContextType {
   deviceId: string;
   sessions: Session[];
   revokeSession: (sessionId: string) => Promise<void>;
+  refreshAllData: () => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
+  isBlocked: boolean;
+  blockMessage: string;
+  totalOrders: number;
 }
 
 export interface Notification {
@@ -382,6 +394,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
   const [roomNumber, setRoomNumber] = useState(() => localStorage.getItem('sp_room') || '');
   const [orders, setOrders] = useState<Order[]>(() => safeParse(localStorage.getItem('sp_orders'), []));
+  const [totalOrders, setTotalOrders] = useState<number>(0);
   const [adminOrders, setAdminOrders] = useState<Order[]>([]);
   const [estimatedDeliveryTime, setEstimatedDeliveryTimeState] = useState('8:00 AM - 10:00 AM');
   const [points, setPoints] = useState(() => {
@@ -390,16 +403,50 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return isNaN(parsed) ? 0 : parsed;
   });
   const [products, setProducts] = useState<any[]>(() => safeParse(localStorage.getItem('sp_products'), []));
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [blockMessage, setBlockMessage] = useState('');
+  
+  // Persist products to local storage
+  useEffect(() => {
+    if (products.length > 0) {
+      localStorage.setItem('sp_products', JSON.stringify(products));
+    }
+  }, [products]);
   const [addresses, setAddresses] = useState<Address[]>(() => safeParse(localStorage.getItem('sp_addresses'), []));
   const [selectedAddressId, setSelectedAddressIdState] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<string[]>(() => safeParse(localStorage.getItem('sp_favorites'), []));
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [promotionBanners, setPromotionBanners] = useState<PromotionBanner[]>([]);
-  const [deals, setDeals] = useState<Deal[]>([]);
-  const [bundles, setBundles] = useState<Bundle[]>([]);
+  const [categories, setCategories] = useState<Category[]>(() => safeParse(localStorage.getItem('sp_categories'), []));
+  
+  useEffect(() => {
+    if (categories.length > 0) {
+      localStorage.setItem('sp_categories', JSON.stringify(categories));
+    }
+  }, [categories]);
+  const [promotionBanners, setPromotionBanners] = useState<PromotionBanner[]>(() => safeParse(localStorage.getItem('sp_banners'), []));
+  
+  useEffect(() => {
+    if (promotionBanners.length > 0) {
+      localStorage.setItem('sp_banners', JSON.stringify(promotionBanners));
+    }
+  }, [promotionBanners]);
+  const [deals, setDeals] = useState<Deal[]>(() => safeParse(localStorage.getItem('sp_deals'), []));
+  
+  useEffect(() => {
+    if (deals.length > 0) {
+      localStorage.setItem('sp_deals', JSON.stringify(deals));
+    }
+  }, [deals]);
+  const [bundles, setBundles] = useState<Bundle[]>(() => safeParse(localStorage.getItem('sp_bundles'), []));
+  
+  useEffect(() => {
+    if (bundles.length > 0) {
+      localStorage.setItem('sp_bundles', JSON.stringify(bundles));
+    }
+  }, [bundles]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [broadcastNotifications, setBroadcastNotifications] = useState<BroadcastNotification[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>(() => safeParse(localStorage.getItem('sp_notifications'), []));
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -421,6 +468,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     resetQuota();
     setIsQuotaExceeded(false);
   };
+
+  const stateRef = useRef({
+    userName, userPhone, roomNumber, userAvatar, userEmail, userBirthday, points
+  });
+
+  useEffect(() => {
+    stateRef.current = {
+      userName, userPhone, roomNumber, userAvatar, userEmail, userBirthday, points
+    };
+  });
 
   // Listen for quota changes
   useEffect(() => {
@@ -574,8 +631,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     }
     
-    lastSyncedUidRef.current = uid;
+    if (!isNewUserSwitch && isProfileLoaded && (authUid === null || isMappingSynced)) {
+      console.log("StoreContext: Profile and mapping already synced for UID, skipping refresh.");
+      return;
+    }
 
+    lastSyncedUidRef.current = uid;
     setIsProfileLoaded(false);
     const userDocRef = doc(db, 'users', uid);
     const authMappingRef = authUid ? doc(db, 'authToPhone', authUid) : null;
@@ -747,16 +808,40 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const unsubscribeProfile = onSnapshot(userDocRef, (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        if (data.points !== undefined) setPoints(data.points || 0);
         
-        // Sync Profile details - Only override if server has data
-        if (data.name && data.name !== userName) {
+        // Use functional updates to prevent stale closure issues and redundant re-renders
+        if (data.points !== undefined) {
+          setPoints(prev => prev !== data.points ? (data.points || 0) : prev);
+        }
+        
+        // Sync Profile details - Only override if server has data and it's different
+        if (data.name && data.name !== stateRef.current.userName) {
           setUserName(data.name);
           localStorage.setItem('sp_user_name', data.name);
         }
-        if (data.room) setRoomNumber(data.room);
-        if (data.avatar) setUserAvatar(data.avatar);
-        if (data.email) setUserEmail(data.email);
+        
+        if (data.room !== undefined && data.room !== stateRef.current.roomNumber) {
+          setRoomNumber(data.room);
+        }
+        
+        if (data.avatar !== undefined && data.avatar !== stateRef.current.userAvatar) {
+          setUserAvatar(data.avatar);
+        }
+        
+        if (data.email !== undefined && data.email !== stateRef.current.userEmail) {
+          setUserEmail(data.email);
+        }
+
+        if (data.isBlocked !== undefined) {
+          setIsBlocked(data.isBlocked);
+        }
+        if (data.blockMessage !== undefined) {
+          setBlockMessage(data.blockMessage);
+        }
+        
+        if (data.totalOrders !== undefined) {
+          setTotalOrders(data.totalOrders);
+        }
 
         // Sync Cart - with stability check and PROTECTION against accidental wipes
         if (data.cart) {
@@ -938,17 +1023,35 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (broadcastNotifications.length > 0) localStorage.setItem('sp_broadcasts', JSON.stringify(broadcastNotifications));
   }, [broadcastNotifications]);
 
-  // Sync categories from Firestore
+  // Persistence Helpers
+  const getCacheTime = (key: string) => {
+    const time = localStorage.getItem(`sp_cache_time_${key}`);
+    return time ? parseInt(time, 10) : 0;
+  };
+
+  const setCacheTime = (key: string) => {
+    localStorage.setItem(`sp_cache_time_${key}`, Date.now().toString());
+  };
+
+  const isCacheValid = (key: string, ttlMs = 1800000) => { // Default 30 mins
+    const now = Date.now();
+    const lastSync = getCacheTime(key);
+    return (now - lastSync) < ttlMs;
+  };
+
+  // Sync categories from Firestore (Real-time)
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'categories'), (snapshot) => {
+    const q = query(collection(db, 'categories'), orderBy('order', 'asc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Category[];
-      // Stability Guard: Don't clear if snapshot is empty but we have data from cache/local
-      if (data.length > 0 || !snapshot.metadata.fromCache) {
-        setCategories(data.sort((a, b) => a.order - b.order));
-      }
+      setCategories(data);
+      localStorage.setItem('sp_categories', JSON.stringify(data));
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'categories');
+      if (!error.message?.includes('resource-exhausted')) {
+        handleFirestoreError(error, OperationType.LIST, 'categories');
+      }
     });
+
     return () => unsubscribe();
   }, []);
 
@@ -957,8 +1060,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       toast.error('Daily limit reached. Cannot update category.');
       return;
     }
+    
+    // Sanitize updates
+    const cleanUpdates = Object.entries(updates).reduce((acc, [key, value]) => {
+      if (value !== undefined) {
+        acc[key as keyof Category] = value as any;
+      }
+      return acc;
+    }, {} as any);
+
     try {
-      await updateDoc(doc(db, 'categories', id), updates);
+      await updateDoc(doc(db, 'categories', id), cleanUpdates);
       toast.success('Category updated');
     } catch (error) {
       toast.error('Failed to update category');
@@ -995,133 +1107,214 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  // Sync products from Firestore with real-time updates
+  // Sync products from Firestore with onSnapshot for real-time updates
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'products'), (snapshot) => {
-      const productsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    // If not admin and we have cache, we might want to stick to cache to save quota
+    // But user asked for real-time, so we'll use onSnapshot if quota allows
+    if (getIsQuotaExceeded()) return;
+
+    const q = query(collection(db, 'products'), limit(300));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const productsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Product[];
       
-      // Stability Guard: Only update if we have actual data or it's a confirmed empty cloud state
-      if (productsData.length > 0 || !snapshot.metadata.fromCache) {
-        console.log("StoreContext: Products sync update received (size:", productsData.length, ")");
+      if (productsData.length > 0) {
         setProducts(productsData);
-      }
-      
-      // Auto-seed only if the collection is completely empty and confirmed by server
-      if (snapshot.empty && !getIsQuotaExceeded() && !snapshot.metadata.fromCache) {
-        console.log("StoreContext: Products collection is empty, seeding database...");
+        setCacheTime('products');
+        localStorage.setItem('sp_products', JSON.stringify(productsData));
+      } else if (snapshot.empty && !getIsQuotaExceeded()) {
+        // Auto-seed only if truly empty
         import('../lib/seed').then(({ seedDatabase }) => {
-          seedDatabase().catch(err => {
-            handleFirestoreError(err, OperationType.WRITE, 'seedDatabase');
-          });
+          seedDatabase().catch(() => {});
         });
       }
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'products');
+      if (!error.message?.includes('resource-exhausted')) {
+        handleFirestoreError(error, OperationType.LIST, 'products');
+      }
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [isAdmin]); // Admins might need fresher data/permissions
 
   // Sync Coupons from Firestore
+  const syncingCoupons = useRef(false);
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'coupons'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Coupon[];
-      setCoupons(data);
-    }, (error) => {
-      console.error('Firestore coupons sync error:', error);
-    });
-    return () => unsubscribe();
+    const fetchCoupons = async () => {
+      if (coupons.length > 0 && isCacheValid('coupons', 3600000)) return;
+      if (syncingCoupons.current) return;
+      syncingCoupons.current = true;
+      try {
+        const q = query(collection(db, 'coupons'), limit(20));
+        const querySnapshot = await getDocs(q);
+        const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Coupon[];
+        setCoupons(data);
+        setCacheTime('coupons');
+      } catch (error) {
+      } finally {
+        syncingCoupons.current = false;
+      }
+    };
+    fetchCoupons();
   }, []);
 
   // Sync Audit Logs from Firestore
   useEffect(() => {
     if (!authUid || !isAdmin) return;
 
-    const q = query(collection(db, 'auditLogs'), orderBy('timestamp', 'desc'), limit(100));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as AuditLog[];
-      setAuditLogs(data);
-    }, (error) => {
-      console.error('Firestore auditLogs sync error:', error);
-    });
-    return () => unsubscribe();
+    const fetchAuditLogs = async () => {
+      try {
+        const q = query(collection(db, 'auditLogs'), orderBy('timestamp', 'desc'), limit(100));
+        const querySnapshot = await getDocs(q);
+        const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as AuditLog[];
+        setAuditLogs(data);
+      } catch (error) {
+        console.error('Firestore auditLogs fetch error:', error);
+      }
+    };
+    fetchAuditLogs();
   }, [authUid, isAdmin]);
 
-  // Sync Broadcast Notifications from Firestore
+  // Sync Broadcast Notifications from Firestore in Real-time
   useEffect(() => {
-    const q = query(collection(db, 'broadcastNotifications'), orderBy('timestamp', 'desc'));
+    const q = query(collection(db, 'broadcastNotifications'), orderBy('timestamp', 'desc'), limit(50));
+    
+    let isInitialLoad = true;
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any as BroadcastNotification[];
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as BroadcastNotification[];
       setBroadcastNotifications(data);
+
+      if (isInitialLoad) {
+        isInitialLoad = false;
+        return;
+      }
+
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'added') {
+          const broadcast = change.doc.data() as BroadcastNotification;
+          
+          toast.custom((t) => (
+            <BroadcastToast 
+              title={broadcast.title} 
+              message={broadcast.message} 
+              type={broadcast.type} 
+              t={t} 
+            />
+          ), { duration: 5000 });
+          
+          setNotifications(prev => {
+            const newNotification: Notification = {
+              title: broadcast.title,
+              message: broadcast.message,
+              type: 'offer',
+              id: `NT-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+              timestamp: Date.now(),
+              read: false
+            };
+            return [newNotification, ...prev].slice(0, 50);
+          });
+        }
+      });
     }, (error) => {
-      console.error('Firestore broadcastNotifications sync error:', error);
+      console.error('Firestore broadcastNotifications snapshot error:', error);
     });
+
     return () => unsubscribe();
   }, []);
 
-  // Sync Admins from Firestore
+  const addNotification = React.useCallback((notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
+    const newNotification: Notification = {
+      ...notification,
+      id: `NT-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: Date.now(),
+      read: false
+    };
+    setNotifications(prev => [newNotification, ...prev].slice(0, 50)); // Keep last 50
+  }, [setNotifications]);
+
   useEffect(() => {
     if (!authUid || !isAdmin) return;
 
-    const unsubscribe = onSnapshot(collection(db, 'admins'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() })) as any as AdminUser[];
-      setAdmins(data);
-    }, (error) => {
-      console.error('Firestore admins sync error:', error);
-    });
-    return () => unsubscribe();
+    const fetchAdmins = async () => {
+      try {
+        const querySnapshot = await getDocs(query(collection(db, 'admins'), limit(50)));
+        const data = querySnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() })) as any as AdminUser[];
+        setAdmins(data);
+      } catch (error) {
+        console.error('Firestore admins fetch error:', error);
+      }
+    };
+    fetchAdmins();
   }, [authUid, isAdmin]);
 
   // Sync All Users from Firestore (Admin only)
   useEffect(() => {
     if (!authUid || !isAdmin) return;
+    if (getIsQuotaExceeded()) return;
 
-    const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setUsers(data);
-    }, (error) => {
-      console.error('Firestore users sync error:', error);
-    });
-    return () => unsubscribe();
+    try {
+      const q = query(collection(db, 'users'), limit(50));
+      const unsubscribe = onSnapshot(q, (querySnapshot) => {
+        const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setUsers(data);
+      }, (error) => {
+        console.error('Firestore users fetch error:', error);
+      });
+      return () => unsubscribe();
+    } catch (e) {
+      console.error(e);
+    }
   }, [authUid, isAdmin]);
 
-  // Sync Promotion Banners from Firestore
+  // Sync Promotion Banners from Firestore with onSnapshot for real-time updates
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'promotionBanners'), (snapshot) => {
+    if (getIsQuotaExceeded()) return;
+
+    const q = query(collection(db, 'promotionBanners'), limit(20));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as PromotionBanner[];
-      if (data.length > 0 || !snapshot.metadata.fromCache) {
-        setPromotionBanners(data);
-      }
+      // Sort by priority locally as well to ensure consistent UI
+      const sortedData = data.sort((a, b) => (b.priority || 0) - (a.priority || 0));
+      setPromotionBanners(sortedData);
+      setCacheTime('banners');
+      localStorage.setItem('sp_banners', JSON.stringify(sortedData));
     }, (error) => {
-      console.error('Firestore promotionBanners sync error:', error);
+      if (!error.message?.includes('resource-exhausted')) {
+        handleFirestoreError(error, OperationType.LIST, 'promotionBanners');
+      }
     });
+
     return () => unsubscribe();
   }, []);
 
   // Sync Deals from Firestore
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'deals'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Deal[];
-      if (data.length > 0 || !snapshot.metadata.fromCache) {
+    const fetchDeals = async () => {
+      if (deals.length > 0 && isCacheValid('deals', 3600000)) return;
+      try {
+        const q = query(collection(db, 'deals'), limit(15));
+        const querySnapshot = await getDocs(q);
+        const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Deal[];
         setDeals(data);
-      }
-    }, (error) => {
-      console.error('Firestore deals sync error:', error);
-    });
-    return () => unsubscribe();
+        setCacheTime('deals');
+      } catch (error) {}
+    };
+    fetchDeals();
   }, []);
 
   // Sync Bundles from Firestore
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'bundles'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Bundle[];
-      if (data.length > 0 || !snapshot.metadata.fromCache) {
+    const fetchBundles = async () => {
+      if (bundles.length > 0 && isCacheValid('bundles', 3600000)) return;
+      try {
+        const q = query(collection(db, 'bundles'), limit(15));
+        const querySnapshot = await getDocs(q);
+        const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Bundle[];
         setBundles(data);
-      }
-    }, (error) => {
-      console.error('Firestore bundles sync error:', error);
-    });
-    return () => unsubscribe();
+        setCacheTime('bundles');
+      } catch (error) {}
+    };
+    fetchBundles();
   }, []);
 
   // Initialize Auth session
@@ -1250,7 +1443,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     console.log("Setting up admin snapshot listener for UID:", authUid);
     const unsub = onSnapshot(doc(db, 'admins', authUid), (snap) => {
       if (snap.exists()) {
-        console.log("Admin document found in Firestore for UID:", authUid);
+        const data = snap.data();
+        console.log("Admin document found in Firestore for UID:", authUid, "Permissions:", data.permissions);
         setIsAdmin(true);
       } else if (userEmail && !hardcodedAdmins.includes(userEmail)) {
         console.log("No admin document found and email not in hardcoded list. Revoking admin status.");
@@ -1459,7 +1653,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Admin specific fetch: fetch all orders separately to `adminOrders`
     let unsubAdminOrders = () => {};
     if (isAdmin && isProfileLoaded) {
-      const adminOrdersQuery = query(collection(db, 'orders'), orderBy('timestamp', 'desc'), limit(100));
+      const adminOrdersQuery = query(collection(db, 'orders'), orderBy('timestamp', 'desc'), limit(60));
       unsubAdminOrders = onSnapshot(adminOrdersQuery, (snapshot) => {
         const fetchedOrders = snapshot.docs.map(doc => {
           const data = doc.data();
@@ -1488,6 +1682,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [supportNumber, setSupportNumber] = useState(() => {
     return localStorage.getItem('sp_support_number') || '601128096366';
   });
+  const [shopPhone, setShopPhoneState] = useState(() => {
+    return localStorage.getItem('sp_shop_phone') || '+95 9 123 456 789';
+  });
+  const [shopEmail, setShopEmailState] = useState(() => {
+    return localStorage.getItem('sp_shop_email') || 'concierge@sartawset.com';
+  });
   const [bankName, setBankName] = useState(() => {
     return localStorage.getItem('sp_bank_name') || 'Maybank';
   });
@@ -1497,7 +1697,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [bankAccountName, setBankAccountName] = useState(() => {
     return localStorage.getItem('sp_bank_acc_name') || 'SAPHOSAUNG GROCERY';
   });
-  const [notifications, setNotifications] = useState<Notification[]>(() => safeParse(localStorage.getItem('sp_notifications'), []));
+
   const [emailNotificationsEnabled, setEmailNotificationsEnabled] = useState(() => {
     const saved = localStorage.getItem('sp_email_enabled');
     return saved === null ? true : saved === 'true';
@@ -1573,9 +1773,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       handleFirestoreError(error, OperationType.GET, 'settings/maintenance');
     });
 
+    const unsubscribeShop = onSnapshot(doc(db, 'settings', 'shop'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.phone) {
+          setShopPhoneState(data.phone);
+          localStorage.setItem('sp_shop_phone', data.phone);
+        }
+        if (data.email) {
+          setShopEmailState(data.email);
+          localStorage.setItem('sp_shop_email', data.email);
+        }
+      }
+    }, (error) => {
+      // Don't toast for shop settings fetch errors to avoid noise if doc doesn't exist yet
+      console.warn('Firestore shop settings sync error:', error);
+    });
+
     return () => {
       unsubscribe();
       unsubscribeMaintenance();
+      unsubscribeShop();
     };
   }, []);
 
@@ -1657,6 +1875,36 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       await setDoc(doc(db, 'settings', 'delivery'), { isBankEnabled: enabled }, { merge: true });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'settings/delivery');
+    }
+  };
+
+  const setShopPhone = async (phone: string) => {
+    if (!authUid) return;
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot update settings.');
+      return;
+    }
+    try {
+      await setDoc(doc(db, 'settings', 'shop'), { phone }, { merge: true });
+      setShopPhoneState(phone);
+      localStorage.setItem('sp_shop_phone', phone);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'settings/shop');
+    }
+  };
+
+  const setShopEmail = async (email: string) => {
+    if (!authUid) return;
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot update settings.');
+      return;
+    }
+    try {
+      await setDoc(doc(db, 'settings', 'shop'), { email }, { merge: true });
+      setShopEmailState(email);
+      localStorage.setItem('sp_shop_email', email);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'settings/shop');
     }
   };
 
@@ -1750,16 +1998,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const cartTotal = useMemo(() => cart.reduce((acc, item) => acc + (item.price * item.quantity), 0), [cart]);
 
-  const addNotification = (notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
-    const newNotification: Notification = {
-      ...notification,
-      id: `NT-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      timestamp: Date.now(),
-      read: false
-    };
-    setNotifications(prev => [newNotification, ...prev].slice(0, 50)); // Keep last 50
-  };
-
   const markNotificationAsRead = (id: string) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
   };
@@ -1814,8 +2052,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const orderPhoneId = details.phone.replace(/[^0-9]/g, '');
     if (!orderPhoneId) return null;
     
-    // Generate a more unique order ID
-    const orderId = `SP-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 1000)}`;
+    // Generate a strictly 8-digit numeric order ID
+    const orderId = Math.floor(10000000 + Math.random() * 90000000).toString();
     const earnedPoints = Math.floor(cartTotal * 10);
     const { date: deliveryDate, isToday } = getDeliveryDate();
     
@@ -1883,6 +2121,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
       
       if (authUid) userUpdate.authUid = authUid;
+      userUpdate.totalOrders = increment(1);
       if (details.pointsUsed > 0) {
         userUpdate.points = increment(-details.pointsUsed);
       }
@@ -2187,11 +2426,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setProducts(prev => prev.filter(p => p.id !== id));
     
     try {
-      const { deleteDoc } = await import('firebase/firestore');
       await deleteDoc(doc(db, 'products', id));
+      toast.success('Product deleted successfully');
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `products/${id}`);
-      // Re-sync will happen via onSnapshot
     }
   };
 
@@ -2226,8 +2464,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       toast.error('Daily limit reached. Cannot update coupon.');
       return;
     }
+
+    // Sanitize updates
+    const cleanCoupon = Object.entries(coupon).reduce((acc, [key, value]) => {
+      if (value !== undefined) {
+        acc[key as keyof Coupon] = value as any;
+      }
+      return acc;
+    }, {} as any);
+
     try {
-      await updateDoc(doc(db, 'coupons', id), coupon);
+      await updateDoc(doc(db, 'coupons', id), cleanCoupon);
       await logAudit('update_coupon', 'coupon', `Updated coupon ${id}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `coupons/${id}`);
@@ -2247,6 +2494,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const refreshAllData = async () => {
+    localStorage.removeItem('sp_cache_time_products');
+    localStorage.removeItem('sp_cache_time_categories');
+    localStorage.removeItem('sp_cache_time_coupons');
+    localStorage.removeItem('sp_cache_time_banners');
+    localStorage.removeItem('sp_cache_time_deals');
+    localStorage.removeItem('sp_cache_time_bundles');
+    
+    // Trigger effects by navigating back to 'all' or simply re-fetching
+    window.location.reload(); // Simplest way to re-trigger all mount effects
+  };
+
   const logAudit = async (action: string, target: string, details: string) => {
     // Audit logging disabled to save Firestore quota
     return;
@@ -2262,6 +2521,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         ...notification,
         createdAt: serverTimestamp(),
         timestamp: Date.now()
+      });
+      addNotification({
+        title: notification.title,
+        message: notification.message,
+        type: 'offer',
       });
       await logAudit('send_broadcast', 'notification', `Sent broadcast: ${notification.title}`);
     } catch (error) {
@@ -2348,18 +2612,41 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       toast.error('Daily limit reached. Cannot update product.');
       return;
     }
+    
+    // Sanitize updates to remove undefined values
+    const cleanUpdates = Object.entries(updates).reduce((acc, [key, value]) => {
+      if (value !== undefined) {
+        acc[key as keyof Product] = value as any;
+      }
+      return acc;
+    }, {} as any);
+
+    // Optimistic update
+    setProducts(prev => prev.map(p => p.id === id ? { ...p, ...cleanUpdates } : p));
+
     try {
-      await updateDoc(doc(db, 'products', id), updates);
+      await updateDoc(doc(db, 'products', id), cleanUpdates);
       await logAudit('update_product', 'product', `Updated product ${id}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `products/${id}`);
+      // Revert if update fails
+      // TODO: Fetch single doc to revert correctly? For now, we rely on onSnapshot to correct state later
     }
   };
 
-  const addPromotionBanner = async (banner: Omit<PromotionBanner, 'id'>) => {
+  const addPromotionBanner = async (banner: Omit<PromotionBanner, 'id' | 'priority'>) => {
     if (getIsQuotaExceeded()) return;
     try {
-      await addDoc(collection(db, 'promotionBanners'), banner);
+      // Auto-calculate priority to make it appear first by default
+      // Higher priority = earlier in the list
+      const maxPriority = promotionBanners.length > 0 
+        ? Math.max(...promotionBanners.map(b => b.priority || 0)) 
+        : 0;
+
+      await addDoc(collection(db, 'promotionBanners'), {
+        ...banner,
+        priority: maxPriority + 1
+      });
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'promotionBanners');
     }
@@ -2367,10 +2654,40 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const updatePromotionBanner = async (id: string, banner: Partial<PromotionBanner>) => {
     if (getIsQuotaExceeded()) return;
+    
+    // Sanitize updates
+    const cleanBanner = Object.entries(banner).reduce((acc, [key, value]) => {
+      if (value !== undefined) {
+        acc[key as keyof PromotionBanner] = value as any;
+      }
+      return acc;
+    }, {} as any);
+
     try {
-      await updateDoc(doc(db, 'promotionBanners', id), banner);
+      await updateDoc(doc(db, 'promotionBanners', id), cleanBanner);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `promotionBanners/${id}`);
+    }
+  };
+
+  const reorderPromotionBanners = async (reorderedBanners: PromotionBanner[]) => {
+    // Update priorities locally
+    const updatedBanners = reorderedBanners.map((banner, index) => ({
+      ...banner,
+      priority: reorderedBanners.length - index // Higher priority for earlier items in the list
+    }));
+    
+    setPromotionBanners(updatedBanners);
+    
+    try {
+      const { writeBatch, doc } = await import('firebase/firestore');
+      const batch = writeBatch(db);
+      updatedBanners.forEach(banner => {
+        batch.update(doc(db, 'promotionBanners', banner.id), { priority: banner.priority });
+      });
+      await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'promotionBanners/reorder');
     }
   };
 
@@ -2394,8 +2711,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const updateDeal = async (id: string, deal: Partial<Deal>) => {
     if (getIsQuotaExceeded()) return;
+    
+    // Sanitize updates
+    const cleanDeal = Object.entries(deal).reduce((acc, [key, value]) => {
+      if (value !== undefined) {
+        acc[key as keyof Deal] = value as any;
+      }
+      return acc;
+    }, {} as any);
+    
     try {
-      await updateDoc(doc(db, 'deals', id), deal);
+      await updateDoc(doc(db, 'deals', id), cleanDeal);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `deals/${id}`);
     }
@@ -2421,8 +2747,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const updateBundle = async (id: string, bundle: Partial<Bundle>) => {
     if (getIsQuotaExceeded()) return;
+    
+    // Sanitize updates
+    const cleanBundle = Object.entries(bundle).reduce((acc, [key, value]) => {
+      if (value !== undefined) {
+        acc[key as keyof Bundle] = value as any;
+      }
+      return acc;
+    }, {} as any);
+
     try {
-      await updateDoc(doc(db, 'bundles', id), bundle);
+      await updateDoc(doc(db, 'bundles', id), cleanBundle);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `bundles/${id}`);
     }
@@ -2586,6 +2921,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const signInWithGoogle = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+      console.error('Google Sign In Error:', error);
+      toast.error('Google Sign In Failed');
+    }
+  };
+
   const value = useMemo(() => ({
     cart, 
     addToCart, 
@@ -2649,26 +2993,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     getSecondaryName: (item: any) => {
       const en = item.name || item.title || '';
       const mm = item.mmName || item.titleMm || '';
-      const ms = item.msName || mm;
-      const th = item.thName || mm;
-      const zh = item.zhName || mm;
+      const ms = item.msName || '';
+      const th = item.thName || '';
+      const zh = item.zhName || '';
 
       switch (language) {
         case 'my':
-        case 'mm': // Handle both 'my' and 'mm' for Myanmar
-          return mm; // Myanmar selected -> Second is Myanmar
+        case 'mm': 
+          return en; 
         case 'th':
-          return th; // Thai selected -> Second is Thai
+          return th || en; 
         case 'zh':
-          return zh; // Chinese selected -> Second is Chinese
+          return zh || en; 
         case 'ms':
-          return ms; // Malay selected -> Second is Malay
+          return ms || en;
         case 'en':
+          return mm || en; 
         default:
-          return mm; // English selected or default -> Second is Myanmar
+          return en; 
       }
     },
-    getLocalizedName: (item: { mmName: string; msName?: string; thName?: string; zhName?: string }) => {
+    getLocalizedName: (item: any) => {
       switch (language) {
         case 'ms':
           return item.msName || item.mmName;
@@ -2677,6 +3022,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         case 'zh':
           return item.zhName || item.mmName;
         case 'en':
+          return item.name || item.title || item.mmName;
         case 'my':
         default:
           return item.mmName;
@@ -2700,6 +3046,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setCutoffTime,
     estimatedDeliveryTime,
     setEstimatedDeliveryTime,
+    shopPhone,
+    setShopPhone,
+    shopEmail,
+    setShopEmail,
     isBankEnabled,
     setIsBankEnabled,
     getDeliveryDate,
@@ -2730,6 +3080,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     addPromotionBanner,
     updatePromotionBanner,
     deletePromotionBanner,
+    reorderPromotionBanners,
     addDeal,
     updateDeal,
     deleteDeal,
@@ -2755,9 +3106,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     isAuthLoading,
     isQuotaExceeded,
     resetQuotaExceeded,
+    refreshAllData,
+    signInWithGoogle,
     deviceId,
     sessions,
-    revokeSession
+    revokeSession,
+    isBlocked,
+    blockMessage,
+    totalOrders
   }), [
     cart,
     userName,
@@ -2786,6 +3142,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     isMaintenanceMode,
     cutoffTime,
     estimatedDeliveryTime,
+    shopPhone,
+    shopEmail,
     isBankEnabled,
     isSyncing,
     isProfileLoaded,
@@ -2800,6 +3158,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     bundles,
     coupons,
     auditLogs,
+    reorderPromotionBanners,
     broadcastNotifications,
     admins,
     users,
@@ -2807,7 +3166,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     isAuthLoading,
     isQuotaExceeded,
     deviceId,
-    sessions
+    sessions,
+    isBlocked,
+    blockMessage,
+    totalOrders
   ]);
 
   return (

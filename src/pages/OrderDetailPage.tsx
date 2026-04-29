@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useStore } from '../context/StoreContext';
-import { ChevronLeft, Receipt, Clock, CheckCircle2, Package, MapPin, Phone, User, Home, Wallet, Calendar, ArrowRight, MessageCircle, RotateCcw, FileText } from 'lucide-react';
+import { ChevronLeft, Receipt, Clock, CheckCircle2, Package, MapPin, Phone, User, Home, Wallet, Calendar, ArrowRight, MessageCircle, MessageSquare, RotateCcw, FileText } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 
@@ -87,6 +87,16 @@ export default function OrderDetailPage() {
 
   const status = getStatusConfig(order.status);
 
+  const shareOrder = async (platform: 'whatsapp' | 'viber') => {
+    if (!order) return;
+    const { formatOrderForWhatsApp, getWhatsAppLink, getViberLink } = await import('../lib/messaging');
+    const message = formatOrderForWhatsApp(order, formatPrice);
+    const link = platform === 'whatsapp' 
+      ? getWhatsAppLink(supportNumber, message) 
+      : getViberLink(supportNumber, message);
+    window.open(link, '_blank');
+  };
+
   const handleWhatsApp = (isSupport: boolean) => {
     const message = isSupport 
       ? encodeURIComponent(t('whatsappSupportMsg').replace('{orderId}', order.id))
@@ -128,7 +138,7 @@ export default function OrderDetailPage() {
         </button>
         <div className="flex flex-col">
           <h2 className="text-lg font-black text-on-surface tracking-tight leading-tight">{t('orderDetails')}</h2>
-          <p className="text-[10px] font-black text-on-surface-variant/60 uppercase tracking-widest">#{order.id.slice(-6).toUpperCase().padStart(6, '0')}</p>
+          <p className="text-[10px] font-black text-on-surface-variant/60 uppercase tracking-widest">#{order.id}</p>
         </div>
       </header>
 
@@ -348,12 +358,30 @@ export default function OrderDetailPage() {
           )}
 
           {/* Right Support Button (Always visible) */}
-          <button 
-            onClick={() => handleWhatsApp(true)}
-            className={`w-12 h-10 border rounded-xl flex items-center justify-center transition-all active:scale-95 ${darkMode ? 'bg-surface-container-high border-on-surface/10 hover:bg-surface-container-highest' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
-          >
-            <MessageCircle size={18} className="text-[#25D366]" />
-          </button>
+          <div className={`flex items-center gap-0.5 p-1 rounded-xl border ${darkMode ? 'bg-surface-container-high border-on-surface/10' : 'bg-white border-slate-200 shadow-sm'}`}>
+            <button 
+              onClick={() => shareOrder('whatsapp')}
+              className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all active:scale-95 ${darkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}
+              title="Share via WhatsApp"
+            >
+              <MessageCircle size={18} className="text-[#25D366]" />
+            </button>
+            <button 
+              onClick={() => shareOrder('viber')}
+              className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all active:scale-95 ${darkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}
+              title="Share via Viber"
+            >
+              <MessageSquare size={18} className="text-purple-500" />
+            </button>
+            <div className={`w-[1px] h-4 mx-1 ${darkMode ? 'bg-white/10' : 'bg-slate-100'}`} />
+            <button 
+              onClick={() => handleWhatsApp(true)}
+              className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all active:scale-95 ${darkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}
+              title={t('contactSupport')}
+            >
+              <FileText size={18} className="text-primary" />
+            </button>
+          </div>
         </div>
         
         {/* Confirmation Modal */}

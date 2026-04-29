@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
-import { CheckCircle2, MessageCircle, ShoppingBag, MapPin, Clock, FileText, ChevronRight, Receipt, Check, Home, Copy, Wallet, Trophy } from 'lucide-react';
+import { CheckCircle2, MessageCircle, MessageSquare, ShoppingBag, MapPin, Clock, FileText, ChevronRight, Receipt, Check, Home, Copy, Wallet, Trophy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStore, Order } from '../context/StoreContext';
 import confetti from 'canvas-confetti';
@@ -45,9 +45,14 @@ export default function SuccessPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleWhatsApp = () => {
-    const message = encodeURIComponent(t('whatsappSupportMsg').replace('{orderId}', orderId || ''));
-    window.open(`https://wa.me/${supportNumber}?text=${message}`, '_blank');
+  const handleShare = async (platform: 'whatsapp' | 'viber') => {
+    if (!order) return;
+    const { formatOrderForWhatsApp, getWhatsAppLink, getViberLink } = await import('../lib/messaging');
+    const message = formatOrderForWhatsApp(order, formatPrice);
+    const link = platform === 'whatsapp' 
+      ? getWhatsAppLink(supportNumber, message) 
+      : getViberLink(supportNumber, message);
+    window.open(link, '_blank');
   };
 
   // Status mapping
@@ -176,7 +181,7 @@ export default function SuccessPage() {
               <Receipt size={14} className="text-primary" />
               <span className="text-[9px] font-black text-on-surface uppercase tracking-widest">{t('orderId')}</span>
             </div>
-            <span className="text-xs font-black text-primary font-mono bg-primary/10 px-2 py-0.5 rounded-md">#{(orderId || 'SP-8924').slice(-6).toUpperCase().padStart(6, '0')}</span>
+            <span className="text-xs font-black text-primary font-mono bg-primary/10 px-2 py-0.5 rounded-md">#{orderId || '........'}</span>
           </div>
           
           <div className="space-y-[1.5vh]">
@@ -247,19 +252,28 @@ export default function SuccessPage() {
           </button>
           
           <div className="grid grid-cols-2 gap-2">
+            <div className="flex gap-1">
+              <button 
+                onClick={() => handleShare('whatsapp')}
+                className={`flex-1 text-on-surface border border-on-surface/10 py-2.5 rounded-2xl transition-all active:scale-95 flex items-center justify-center ${darkMode ? 'bg-surface-container-highest hover:bg-surface-container-high' : 'bg-surface-container-low hover:bg-surface-container-high'}`}
+                title="Send via WhatsApp"
+              >
+                <MessageCircle size={18} className="text-[#25D366]" />
+              </button>
+              <button 
+                onClick={() => handleShare('viber')}
+                className={`flex-1 text-on-surface border border-on-surface/10 py-2.5 rounded-2xl transition-all active:scale-95 flex items-center justify-center ${darkMode ? 'bg-surface-container-highest hover:bg-surface-container-high' : 'bg-surface-container-low hover:bg-surface-container-high'}`}
+                title="Send via Viber"
+              >
+                <MessageSquare size={18} className="text-purple-500" />
+              </button>
+            </div>
             <button 
               onClick={() => navigate('/menu')}
               className={`text-on-surface border border-on-surface/10 py-2.5 rounded-2xl font-black text-[10px] transition-all active:scale-95 flex items-center justify-center gap-1.5 ${darkMode ? 'bg-surface-container-highest hover:bg-surface-container-high' : 'bg-surface-container-low hover:bg-surface-container-high'}`}
             >
               <ShoppingBag size={14} className="text-primary" />
               <span className="truncate">{t('continueShopping')}</span>
-            </button>
-            <button 
-              onClick={handleWhatsApp}
-              className={`text-on-surface border border-on-surface/10 py-2.5 rounded-2xl font-black text-[10px] transition-all active:scale-95 flex items-center justify-center gap-1.5 ${darkMode ? 'bg-surface-container-highest hover:bg-surface-container-high' : 'bg-surface-container-low hover:bg-surface-container-high'}`}
-            >
-              <MessageCircle size={14} className="text-[#25D366]" />
-              <span className="truncate">{t('contactSupport')}</span>
             </button>
           </div>
         </motion.div>

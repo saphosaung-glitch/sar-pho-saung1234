@@ -20,7 +20,7 @@ export default function ProfilePage() {
     points, language, setLanguage, t,
     darkMode, setDarkMode, formatPrice,
     logout, forceSync, isSyncing, uid, addresses, orders, userAvatar,
-    userEmail, userBirthday, isAdmin, isQuotaExceeded, resetQuotaExceeded
+    userEmail, userBirthday, isAdmin, isQuotaExceeded, resetQuotaExceeded, totalOrders
   } = useStore();
   const navigate = useNavigate();
   const [showSuccess, setShowSuccess] = useState(false);
@@ -168,7 +168,7 @@ export default function ProfilePage() {
                   onClick={() => navigate('/orders', { state: { from: 'profile' } })}
                 >
                   <p className="text-[8px] font-black text-on-surface-variant/40 uppercase tracking-widest">{t('orders')}</p>
-                  <p className="text-sm font-black text-on-surface tracking-tight">{orders.length}</p>
+                  <p className="text-sm font-black text-on-surface tracking-tight">{totalOrders || orders.length}</p>
                 </div>
                 <div className="w-px h-6 bg-on-surface/5 self-end mb-1" />
                 <div 
@@ -217,7 +217,7 @@ export default function ProfilePage() {
                       </div>
                       <div>
                         <p className="text-[8px] font-black text-on-surface-variant/40 uppercase tracking-widest">{t('recentOrder')}</p>
-                        <p className="text-[10px] font-bold text-on-surface">#{recentOrder.id.slice(-6).toUpperCase().padStart(6, '0')}</p>
+                        <p className="text-[10px] font-bold text-on-surface">#{recentOrder.id}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">

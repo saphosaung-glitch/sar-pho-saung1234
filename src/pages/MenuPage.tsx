@@ -1,7 +1,13 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useStore } from '../context/StoreContext';
-import { ShoppingCart, Search, Menu as MenuIcon, Plus, Store, Receipt, User, Settings, X, Sliders, Camera, Heart, Bell, Trash2, CheckCircle2, Sparkles } from 'lucide-react';
+import { 
+  ShoppingCart, Search, Menu as MenuIcon, Plus, Store, Receipt, User, Settings, X, 
+  Sliders, Camera, Heart, Bell, Trash2, CheckCircle2, Sparkles, Zap, LayoutDashboard, 
+  Snowflake, Coffee, Cookie, Utensils, Baby, Dog, Home, Briefcase, Pill, Smile,
+  Fish, Beef, Carrot, Egg, Soup, Wheat, UtensilsCrossed, Flame, Wine, Candy
+} from 'lucide-react';
+
 import { AddToCartButton } from '../components/AddToCartButton';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, onSnapshot, query, orderBy, doc, updateDoc } from 'firebase/firestore';
@@ -20,7 +26,9 @@ export default function MenuPage() {
   const navigate = useNavigate();
 
   const activeBanners = useMemo(() => {
-    return promotionBanners.filter(b => b.isActive);
+    return [...promotionBanners]
+      .filter(b => b.isActive)
+      .sort((a, b) => (b.priority || 0) - (a.priority || 0));
   }, [promotionBanners]);
 
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -49,22 +57,111 @@ export default function MenuPage() {
     if (room) setRoomNumber(room);
   }, [searchParams, setRoomNumber]);
 
-  const activeCategories = useMemo(() => {
-    return categories.filter(c => c.isActive);
-  }, [categories]);
+  const activeBundles = useMemo(() => bundles.filter(b => b.isActive), [bundles]);
+  const activeDeals = useMemo(() => deals.filter(d => d.isActive), [deals]);
+
+  const getCategoryIcon = (key: string) => {
+    const iconSize = 12;
+    switch (key) {
+      case 'all': return <LayoutDashboard size={iconSize} />;
+      case 'deals': return <Zap size={iconSize} className="fill-orange-500 text-orange-500" />;
+      case 'bundles': return <Sparkles size={iconSize} className="text-cyan-500" />;
+      
+      // Core food categories
+      case 'meat': 
+      case 'poultry':
+      case 'meat-poultry': return <Beef size={iconSize} />;
+      case 'seafood': 
+      case 'fish': return <Fish size={iconSize} />;
+      case 'vegetables': 
+      case 'fresh-produce': 
+      case 'fruits': return <Carrot size={iconSize} />;
+      case 'dairy':
+      case 'eggs':
+      case 'dairy-eggs':
+      case 'dairyAndEggs': return <Egg size={iconSize} />;
+      case 'ready-to-eat':
+      case 'readyToEat': 
+      case 'prepared-meals': return <Soup size={iconSize} />;
+      case 'dry-goods':
+      case 'pantry':
+      case 'dryGoods': return <Wheat size={iconSize} />;
+      case 'kitchen': 
+      case 'home-essentials': return <UtensilsCrossed size={iconSize} />;
+      case 'spices': 
+      case 'seasonings': return <Flame size={iconSize} className="text-orange-600" />;
+      case 'beverages': 
+      case 'drinks': return <Wine size={iconSize} />;
+      case 'snacks': 
+      case 'confectionery': return <Candy size={iconSize} />;
+      
+      // Legacy/Misc categories
+      case 'frozen-foods': return <Snowflake size={iconSize} />;
+      case 'baby-care': return <Baby size={iconSize} />;
+      case 'pet-care': return <Dog size={iconSize} />;
+      case 'household': return <Home size={iconSize} />;
+      case 'personal-care': return <Smile size={iconSize} />;
+      case 'health-wellness': return <Pill size={iconSize} />;
+      case 'office-supplies': return <Briefcase size={iconSize} />;
+      
+      default: return <Store size={iconSize} />;
+    }
+  };
+
+  const categoriesWithSpecials = useMemo(() => {
+    // Start with the 'all' category if it exists, otherwise create it
+    const allCat = categories.find(c => c.id === 'all') || { id: 'all', key: 'all', name: 'All Items', isActive: true };
+    
+    const list = [allCat];
+    
+    // Add Deals if any are active AND the category itself is active
+    const dealsCat = categories.find(c => c.key === 'deals' || c.id === 'deals');
+    if (activeDeals.length > 0 && (!dealsCat || dealsCat.isActive !== false)) {
+      list.push({ id: 'deals', name: 'Flash Deals', nameMm: 'အထူးဈေး', key: 'deals', isActive: true, translationKey: 'deals' });
+    }
+    
+    // Add Bundles if any are active AND the category itself is active
+    const bundlesCat = categories.find(c => c.key === 'bundles' || c.id === 'bundles');
+    if (activeBundles.length > 0 && (!bundlesCat || bundlesCat.isActive !== false)) {
+      list.push({ id: 'bundles', name: 'Combo Bundles', nameMm: 'တွဲဖက်', key: 'bundles', isActive: true, translationKey: 'bundles' });
+    }
+
+    // Add remaining active categories (filtered to avoid duplicates)
+    const others = categories.filter(c => 
+      c.isActive !== false && 
+      c.id !== 'all' && 
+      c.id !== 'deals' && 
+      c.id !== 'bundles'
+    ).sort((a, b) => (a.order || 0) - (b.order || 0));
+
+    return [...list, ...others];
+  }, [categories, activeDeals, activeBundles]);
 
   const filteredItems = useMemo(() => {
+    // Get IDs of active categories for filtering products in 'all' view
+    const activeCategoryIds = new Set(categoriesWithSpecials.map(c => c.id));
+
     if (selectedCategory === 'deals') {
-      return deals.filter(d => d.isActive).map(d => ({ ...d, isDeal: true }));
+      return activeDeals.map(d => ({ ...d, isDeal: true }));
     }
     if (selectedCategory === 'bundles') {
-      return bundles.filter(b => b.isActive).map(b => ({ ...b, isBundle: true }));
+      return activeBundles.map(b => ({ ...b, isBundle: true }));
     }
+    
     return products.filter(product => {
+      // 1. Must match selected category (or be 'all')
       const matchesCategory = selectedCategory === 'all' || product.category === selectedCategory;
-      return matchesCategory;
+      if (!matchesCategory) return false;
+
+      // 2. If viewing 'all', hide products from categories that are disabled
+      if (selectedCategory === 'all') {
+        const isFromActiveCategory = activeCategoryIds.has(product.category);
+        if (!isFromActiveCategory) return false;
+      }
+      
+      return true;
     });
-  }, [selectedCategory, products, deals, bundles]);
+  }, [selectedCategory, products, activeDeals, activeBundles, categoriesWithSpecials]);
 
   return (
     <div className={`min-h-screen pb-32 transition-colors duration-300 ${darkMode ? 'bg-surface' : 'bg-surface'}`}>
@@ -149,6 +246,13 @@ export default function MenuPage() {
                           referrerPolicy="no-referrer"
                           alt={banner.title}
                         />
+                        {banner.title && (
+                          <div className="absolute bottom-0 left-0 w-full p-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
+                            <h3 className="text-white text-xs font-black uppercase tracking-widest drop-shadow-lg">
+                              {banner.title}
+                            </h3>
+                          </div>
+                        )}
                       </div>
                     ))}
                     
@@ -191,37 +295,32 @@ export default function MenuPage() {
         </div>
 
         <section 
-          className="sticky z-40 transition-all duration-300 h-7 flex items-center overflow-hidden mt-2"
+          className="sticky z-40 transition-all duration-300 h-10 flex items-center overflow-hidden mt-3"
           style={{ top: '72px' }}
         >
-          <div className="flex overflow-x-auto overflow-y-hidden no-scrollbar gap-2 px-4 w-full items-center h-full">
-            <button
-              onClick={() => {
-                setSelectedCategory('all');
-                productGridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              }}
-              className={`flex-none px-4 py-1 rounded-full font-black text-[9px] uppercase tracking-widest whitespace-nowrap transition-all duration-300 shadow-sm flex items-center justify-center ${
-                selectedCategory === 'all'
-                  ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-105'
-                  : `${darkMode ? 'bg-surface-container-high text-on-surface-variant' : 'bg-surface-container-lowest text-on-surface-variant'} border border-on-surface/5 hover:bg-surface-container-low`
-              }`}
-            >
-              {t('all')}
-            </button>
-            {activeCategories.filter(c => c.id !== 'all').map((cat) => (
+          <div className="flex overflow-x-auto overflow-y-hidden no-scrollbar gap-1.5 px-4 w-full items-center h-full">
+            {categoriesWithSpecials.map((cat) => (
               <button
                 key={cat.id}
                 onClick={() => {
                   setSelectedCategory(cat.id);
                   productGridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }}
-                className={`flex-none px-4 py-1 rounded-full font-black text-[9px] uppercase tracking-widest whitespace-nowrap transition-all duration-300 shadow-sm flex items-center justify-center ${
+                className={`flex-none px-3 py-1.5 rounded-xl font-black text-[10px] uppercase tracking-wider whitespace-nowrap transition-all duration-300 shadow-sm flex items-center gap-1.5 border ${
                   selectedCategory === cat.id
-                    ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-105'
-                    : `${darkMode ? 'bg-surface-container-high text-on-surface-variant' : 'bg-surface-container-lowest text-on-surface-variant'} border border-on-surface/5 hover:bg-surface-container-low`
+                    ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20'
+                    : `${darkMode ? 'bg-surface-container-high text-on-surface-variant' : 'bg-white text-on-surface-variant'} border-on-surface/5 hover:bg-on-surface/5`
                 }`}
               >
-                {t(cat.key)}
+                <span className={selectedCategory === cat.id ? 'scale-110' : 'opacity-60'}>
+                  {getCategoryIcon(cat.key || cat.id)}
+                </span>
+                {(() => {
+                  const isMm = language === 'mm';
+                  if (isMm && cat.nameMm) return cat.nameMm;
+                  if (!isMm && cat.nameEn) return cat.nameEn;
+                  return cat.key ? t(cat.key) : cat.name;
+                })()}
               </button>
             ))}
           </div>
@@ -233,9 +332,9 @@ export default function MenuPage() {
             <h3 className={`text-base font-black tracking-tighter ${darkMode ? 'text-on-surface-variant' : 'text-on-surface-variant'}`}>
               {selectedCategory === 'all' 
                 ? t('all') 
-                : (activeCategories.find(c => c.id === selectedCategory)?.key 
-                    ? t(activeCategories.find(c => c.id === selectedCategory)!.key) 
-                    : t('dailyEssentials'))}
+                : (categoriesWithSpecials.find(c => c.id === selectedCategory)?.key 
+                    ? t(categoriesWithSpecials.find(c => c.id === selectedCategory)!.key) 
+                    : (categoriesWithSpecials.find(c => c.id === selectedCategory)?.name || t('dailyEssentials')))}
             </h3>
             <span className="text-[9px] font-bold text-on-surface-variant/40 uppercase tracking-widest">
               {filteredItems.length} {t('items')}
