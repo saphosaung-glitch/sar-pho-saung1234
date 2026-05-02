@@ -1,5 +1,5 @@
 import React from 'react';
-import { QRCodeSVG } from 'qrcode.react';
+import { QRCodeSVG, QRCodeCanvas } from 'qrcode.react';
 import { X, Download, Share2, Copy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
@@ -13,34 +13,81 @@ interface QRCodeModalProps {
   darkMode?: boolean;
 }
 
+const BRAND_LOGO = "https://scontent.fkul7-2.fna.fbcdn.net/v/t39.30808-6/684505557_122097016515302120_6150026231108406984_n.jpg?_nc_cat=104&ccb=1-7&_nc_sid=1d70fc&_nc_ohc=65onKQ3wqrwQ7kNvwH-5Tn-&_nc_oc=AdoS-wVrlfKZ1ez9KNNdnG2zrOlHcnj7uHcGjRb3mW6fp1oguy8-8wQ1-pXhxzE26ke-vq-3N92HeuXbHTYkvevu&_nc_zt=23&_nc_ht=scontent.fkul7-2.fna&_nc_gid=lCsMSE2No98znYrLT3N7sg&_nc_ss=7b2a8&oh=00_Af4X8z6JL4VX10-1XWuFqPcF1kQfsivurJR7gMP3HKIQ7Q&oe=69FC4851";
+
 export function QRCodeModal({ isOpen, onClose, url, title, subtitle, darkMode }: QRCodeModalProps) {
+  const [logoDataUrl, setLogoDataUrl] = React.useState<string>(BRAND_LOGO);
+
+  React.useEffect(() => {
+    // Attempt to pre-load logo as data URL to avoid CORS/Tainting issues during download
+    if (isOpen) {
+      const fetchLogo = async () => {
+        try {
+          const response = await fetch(BRAND_LOGO);
+          if (!response.ok) throw new Error('Network response was not ok');
+          const blob = await response.blob();
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            setLogoDataUrl(reader.result as string);
+          };
+          reader.readAsDataURL(blob);
+        } catch (err) {
+          console.warn('Failed to fetch brand logo for QR, using direct URL:', err);
+          setLogoDataUrl(BRAND_LOGO);
+        }
+      };
+      fetchLogo();
+    }
+  }, [isOpen]);
+
   const downloadQR = () => {
-    const svg = document.querySelector('#app-qr-code') as SVGElement;
-    if (!svg) return;
+    const canvas = document.getElementById('app-qr-canvas') as HTMLCanvasElement;
+    if (!canvas) {
+      toast.error('Failed to generate download');
+      return;
+    }
     
-    const svgData = new XMLSerializer().serializeToString(svg);
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    const img = new Image();
-    
-    img.onload = () => {
-      canvas.width = img.width + 40;
-      canvas.height = img.height + 40;
+    try {
+      // Create a final canvas with padding and high quality
+      const finalCanvas = document.createElement('canvas');
+      const padding = 80;
+      finalCanvas.width = canvas.width + padding;
+      finalCanvas.height = canvas.height + padding;
+      const ctx = finalCanvas.getContext('2d');
+      
       if (ctx) {
+        // High quality background
         ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 20, 20);
+        ctx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
         
-        const pngFile = canvas.toDataURL('image/png');
+        // Soft shadow for the QR code
+        ctx.shadowColor = 'rgba(0,0,0,0.1)';
+        ctx.shadowBlur = 40;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 20;
+        
+        // Draw QR code from high-res hidden canvas
+        ctx.drawImage(canvas, padding/2, padding/2);
+        
+        // Optional: Add branding text to the bottom
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#0f172a';
+        ctx.font = '900 24px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.letterSpacing = '2px';
+        // ctx.fillText('SAR TAW SET', finalCanvas.width / 2, finalCanvas.height - 25);
+        
+        const pngFile = finalCanvas.toDataURL('image/png');
         const downloadLink = document.createElement('a');
-        downloadLink.download = `${title || 'qr-code'}.png`;
+        downloadLink.download = `${title?.toLowerCase().replace(/\s+/g, '-') || 'qr-code'}.png`;
         downloadLink.href = pngFile;
         downloadLink.click();
-        toast.success('QR Code downloaded');
+        toast.success('QR Code with Logo downloaded');
       }
-    };
-    
-    img.src = 'data:image/svg+xml;base64,' + btoa(svgData);
+    } catch (error) {
+      console.error('QR Download Error:', error);
+      toast.error('Could not generate image. Please try again.');
+    }
   };
 
   const copyUrl = () => {
@@ -68,6 +115,23 @@ export function QRCodeModal({ isOpen, onClose, url, title, subtitle, darkMode }:
               darkMode ? 'bg-slate-900 text-white' : 'bg-white text-slate-900 shadow-xl'
             }`}
           >
+            {/* Hidden Canvas for Downloads */}
+            <div className="hidden">
+              <QRCodeCanvas
+                id="app-qr-canvas"
+                value={url}
+                size={1024}
+                level="H"
+                includeMargin={false}
+                imageSettings={{
+                  src: logoDataUrl,
+                  height: 200,
+                  width: 200,
+                  excavate: true,
+                }}
+              />
+            </div>
+
             {/* Header */}
             <div className={`p-6 border-b flex items-center justify-between ${
               darkMode ? 'border-white/5' : 'border-slate-100'
@@ -96,9 +160,7 @@ export function QRCodeModal({ isOpen, onClose, url, title, subtitle, darkMode }:
                   level="H"
                   includeMargin={false}
                   imageSettings={{
-                    src: "https://scontent.fkul7-2.fna.fbcdn.net/v/t39.30808-6/684505557_122097016515302120_6150026231108406984_n.jpg?_nc_cat=104&ccb=1-7&_nc_sid=1d70fc&_nc_ohc=65onKQ3wqrwQ7kNvwH-5Tn-&_nc_oc=AdoS-wVrlfKZ1ez9KNNdnG2zrOlHcnj7uHcGjRb3mW6fp1oguy8-8wQ1-pXhxzE26ke-vq-3N92HeuXbHTYkvevu&_nc_zt=23&_nc_ht=scontent.fkul7-2.fna&_nc_gid=lCsMSE2No98znYrLT3N7sg&_nc_ss=7b2a8&oh=00_Af4X8z6JL4VX10-1XWuFqPcF1kQfsivurJR7gMP3HKIQ7Q&oe=69FC4851", // Using custom uploaded logo
-                    x: undefined,
-                    y: undefined,
+                    src: BRAND_LOGO,
                     height: 36,
                     width: 36,
                     excavate: true,
