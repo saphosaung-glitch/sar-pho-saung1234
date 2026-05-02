@@ -10,7 +10,8 @@ const app = initializeApp(firebaseConfig);
 
 // Initialize Firestore with long polling to resolve connectivity issues in iframe/sandboxed environments
 export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true
+  experimentalForceLongPolling: true,
+  ignoreUndefinedProperties: true
 }, firebaseConfig.firestoreDatabaseId);
 
 export const auth = getAuth(app);

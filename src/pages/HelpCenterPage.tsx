@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Search, HelpCircle, Book, MessageCircle, ChevronDown, ChevronUp, FileText, User } from 'lucide-react';
+import { 
+  ChevronLeft, Search, HelpCircle, Book, MessageCircle, ChevronDown, ChevronUp, 
+  FileText, User, Info, XCircle, ShoppingCart, MessageSquare, ArrowLeft 
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useStore } from '../context/StoreContext';
+import { useStore, SupportContact } from '../context/StoreContext';
 
 export default function HelpCenterPage() {
   const navigate = useNavigate();
-  const { supportNumber, darkMode, t } = useStore();
+  const { supportNumber, supportContacts, darkMode, t, language } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'faq' | 'guides'>('faq');
   const [expandedFaq, setExpandedFaq] = useState<string | null>(null);
@@ -42,6 +45,15 @@ export default function HelpCenterPage() {
       answer: t('faq5Answer')
     }
   ];
+
+  const getIconForType = (type: SupportContact['type']) => {
+    switch(type) {
+      case 'help': return <Info size={20} />;
+      case 'order': return <ShoppingCart size={20} />;
+      case 'cancellation': return <XCircle size={20} />;
+      default: return <MessageSquare size={20} />;
+    }
+  };
 
   const guides = [
     {
@@ -206,30 +218,53 @@ export default function HelpCenterPage() {
         </div>
 
         {/* Contact Support Banner */}
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mt-8 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-3xl p-6 text-white shadow-lg shadow-emerald-500/20 relative overflow-hidden"
-        >
-          <div className="absolute -top-24 -right-24 w-48 h-48 bg-white/10 rounded-full blur-2xl" />
-          <div className="relative z-10 flex flex-col items-center text-center space-y-4">
-            <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center">
-              <MessageCircle size={32} className="text-white" />
+        <div className="space-y-4 mt-8">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-3xl p-6 text-white shadow-lg shadow-emerald-500/20 relative overflow-hidden"
+          >
+            <div className="absolute -top-24 -right-24 w-48 h-48 bg-white/10 rounded-full blur-2xl" />
+            <div className="relative z-10 flex flex-col items-center text-center space-y-4">
+              <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center">
+                <MessageCircle size={32} className="text-white" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black mb-1">{t('stillNeedHelp')}</h3>
+                <p className="text-emerald-50 text-sm font-medium max-w-xs mx-auto">
+                  {t('supportTeamReady')}
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-lg font-black mb-1">{t('stillNeedHelp')}</h3>
-              <p className="text-emerald-50 text-sm font-medium max-w-xs mx-auto">
-                {t('supportTeamReady')}
-              </p>
-            </div>
-            <button 
-              onClick={handleContactSupport}
-              className="mt-2 bg-white text-emerald-600 px-8 py-3 rounded-full font-black text-xs uppercase tracking-widest shadow-lg hover:scale-105 transition-transform active:scale-95"
-            >
-              {t('chatWhatsApp')}
-            </button>
+          </motion.div>
+
+          <div className="grid grid-cols-1 gap-3 px-2">
+            {supportContacts.map((contact) => (
+              <motion.button 
+                key={contact.id}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                onClick={() => {
+                  const message = encodeURIComponent(t('supportMessage'));
+                  window.open(`https://wa.me/${contact.phone}?text=${message}`, '_blank');
+                }}
+                className={`w-full p-4 rounded-2xl border flex items-center gap-4 transition-all active:scale-95 ${
+                  darkMode ? 'bg-surface-container-high border-white/5' : 'bg-white border-slate-200/60 shadow-sm'
+                }`}
+              >
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                  {getIconForType(contact.type)}
+                </div>
+                <div className="text-left">
+                  <p className={`text-xs font-black uppercase tracking-widest ${darkMode ? 'text-on-surface' : 'text-slate-900'}`}>
+                    {language === 'en' ? contact.labelEn : (contact.labelMm || contact.labelEn)}
+                  </p>
+                  <p className="text-[10px] font-bold opacity-40">Contact via WhatsApp</p>
+                </div>
+              </motion.button>
+            ))}
           </div>
-        </motion.div>
+        </div>
       </main>
     </div>
   );

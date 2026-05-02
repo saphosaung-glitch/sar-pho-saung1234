@@ -22,7 +22,7 @@ export default function CheckoutPage() {
     addresses,
     selectedAddressId, setSelectedAddressId,
     isDeliveryEnabled, getDeliveryDate, estimatedDeliveryTime, deliveryFee, isBankEnabled,
-    t, darkMode, formatPrice, getMainName, getSecondaryName
+    t, darkMode, formatPrice, getMainName, getSecondaryName, getCategoryName
   } = useStore();
 
   const { date: deliveryDate, isToday } = getDeliveryDate();
@@ -343,7 +343,10 @@ export default function CheckoutPage() {
                           <img src={item.image} alt={item.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                           <div className="absolute inset-0 ring-1 ring-inset ring-black/5 rounded-xl"></div>
                         </div>
-                        <div className="flex-grow flex flex-col justify-center">
+                        <div className="flex-grow min-w-0">
+                          <p className={`text-[8px] font-black uppercase tracking-[0.2em] mb-0.5 ${darkMode ? 'text-primary/60' : 'text-primary'}`}>
+                            {getCategoryName(item.category)}
+                          </p>
                           <p className={`font-black text-xs leading-tight mb-0.5 ${darkMode ? 'text-white' : 'text-on-surface'}`}>{getMainName(item)}</p>
                           <p className={`text-[9px] font-bold leading-tight mb-0.5 ${darkMode ? 'text-white/40' : 'text-on-surface-variant'}`}>{getSecondaryName(item)}</p>
                           <p className={`text-[9px] font-bold text-primary mb-1`}>{t('qty')}: {item.quantity} {item.unit}</p>

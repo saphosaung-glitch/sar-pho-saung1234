@@ -20,8 +20,25 @@ import {
   Unsubscribe
 } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType, getIsQuotaExceeded, onQuotaExceededChange, resetQuotaExceeded as resetQuota, signInAnonymously, googleProvider, signInWithPopup } from '../lib/firebase';
-import { onAuthStateChanged, setPersistence, browserLocalPersistence, signOut } from 'firebase/auth';
-import { Address } from '../types';
+import { onAuthStateChanged, setPersistence, browserLocalPersistence, signOut, createUserWithEmailAndPassword as createAuthUser } from 'firebase/auth';
+import { initializeApp, getApp, getApps } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+// Fix: Use absolute-like relative path and ensure it's imported correctly
+import firebaseConfig from '../../firebase-applet-config.json';
+
+const getSecondaryAuth = () => {
+  const secondaryAppName = 'SecondaryAuth';
+  try {
+    const existingApp = getApps().find(app => app.name === secondaryAppName);
+    const secondaryApp = existingApp || initializeApp(firebaseConfig as any, secondaryAppName);
+    return getAuth(secondaryApp);
+  } catch (error) {
+    console.error("Secondary Auth Init Error:", error);
+    // Fallback to primary if secondary fails, though this might cause sign-out
+    return auth;
+  }
+};
+import { Address, ServiceArea } from '../types';
 
 import { BroadcastToast } from '../components/ui/BroadcastToast';
 import { toast } from 'sonner';
@@ -141,8 +158,14 @@ export interface AdminUser {
 export interface Category {
   id: string;
   key: string;
+  nameEn: string;
+  nameMm: string;
+  nameMs?: string;
+  nameTh?: string;
+  nameZh?: string;
   isActive: boolean;
   order: number;
+  supportPhone?: string;
 }
 
 export interface PromotionBanner {
@@ -174,6 +197,14 @@ export interface Deal {
   isActive: boolean;
 }
 
+export interface SupportContact {
+  id: string;
+  type: 'general' | 'order' | 'cancellation' | 'help' | 'other';
+  labelEn: string;
+  labelMm: string;
+  phone: string;
+}
+
 interface StoreContextType {
   cart: CartItem[];
   addToCart: (item: Omit<CartItem, 'quantity'>) => void;
@@ -192,6 +223,8 @@ interface StoreContextType {
   adminOrders: Order[];
   supportNumber: string;
   setSupportNumber: (num: string) => void;
+  supportContacts: SupportContact[];
+  setSupportContacts: (contacts: SupportContact[]) => Promise<void>;
   shopPhone: string;
   setShopPhone: (phone: string) => Promise<void>;
   shopEmail: string;
@@ -247,6 +280,7 @@ interface StoreContextType {
   currency: 'RM' | 'MMK';
   setCurrency: (currency: 'RM' | 'MMK') => void;
   formatPrice: (price: number) => string;
+  getCategoryName: (categoryId: string) => string;
   getMainName: (item: any) => string;
   getSecondaryName: (item: any) => string;
   getLocalizedName: (item: any) => string;
@@ -309,6 +343,7 @@ interface StoreContextType {
   sendBroadcast: (notification: Omit<BroadcastNotification, 'id' | 'createdAt'>) => Promise<void>;
   admins: AdminUser[];
   addAdmin: (admin: Omit<AdminUser, 'createdAt'>) => Promise<void>;
+  createNewAdmin: (email: string, password: string, name: string, role: AdminUser['role']) => Promise<void>;
   updateAdminRole: (uid: string, role: AdminUser['role']) => Promise<void>;
   removeAdmin: (uid: string) => Promise<void>;
   users: any[];
@@ -325,6 +360,10 @@ interface StoreContextType {
   isBlocked: boolean;
   blockMessage: string;
   totalOrders: number;
+  serviceAreas: ServiceArea[];
+  addServiceArea: (area: Omit<ServiceArea, 'id'>) => Promise<void>;
+  updateServiceArea: (id: string, updates: Partial<ServiceArea>) => Promise<void>;
+  deleteServiceArea: (id: string) => Promise<void>;
 }
 
 export interface Notification {
@@ -357,7 +396,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const [cart, setCart] = useState<CartItem[]>(() => safeParse(localStorage.getItem('sp_cart'), []));
+  const [cart, setCart] = useState<CartItem[]>(() => safeParse(sessionStorage.getItem('sp_cart'), []));
 
   const [authUid, setAuthUid] = useState<string | null>(null);
   const [userName, setUserName] = useState(() => {
@@ -446,6 +485,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [broadcastNotifications, setBroadcastNotifications] = useState<BroadcastNotification[]>([]);
+  const [serviceAreas, setServiceAreas] = useState<ServiceArea[]>(() => safeParse(localStorage.getItem('sp_serviceAreas'), []));
+  
+  useEffect(() => {
+    if (serviceAreas.length > 0) {
+      localStorage.setItem('sp_serviceAreas', JSON.stringify(serviceAreas));
+    }
+  }, [serviceAreas]);
   const [notifications, setNotifications] = useState<Notification[]>(() => safeParse(localStorage.getItem('sp_notifications'), []));
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [users, setUsers] = useState<any[]>([]);
@@ -501,6 +547,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return userPhone.replace(/[^0-9]/g, '');
   }, [userPhone]);
 
+  const logAudit = useCallback(async (action: string, target: string, details: string) => {
+    // Audit logging disabled to save Firestore quota
+    return;
+  }, [isAdmin, uid]);
+
   const lastSyncedCartRef = useRef<string>('');
   const lastSyncedFavoritesRef = useRef<string>('');
   const lastSyncedUidRef = useRef<string | null>(null);
@@ -531,6 +582,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     
     keysToClear.forEach(key => localStorage.removeItem(key));
+    sessionStorage.removeItem('sp_cart');
     
     // Reset state
     setUserName('');
@@ -1055,6 +1107,63 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => unsubscribe();
   }, []);
 
+  // Sync serviceAreas from Firestore
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'serviceAreas'), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as ServiceArea[];
+      setServiceAreas(data);
+      localStorage.setItem('sp_serviceAreas', JSON.stringify(data));
+    }, (error) => {
+      if (!error.message?.includes('resource-exhausted')) {
+        handleFirestoreError(error, OperationType.LIST, 'serviceAreas');
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const addServiceArea = async (area: Omit<ServiceArea, 'id'>) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot add service area.');
+      return;
+    }
+    try {
+      await addDoc(collection(db, 'serviceAreas'), area);
+      toast.success('Service area added');
+    } catch (error) {
+      toast.error('Failed to add service area');
+      handleFirestoreError(error, OperationType.CREATE, 'serviceAreas');
+    }
+  };
+
+  const updateServiceArea = async (id: string, updates: Partial<ServiceArea>) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot update service area.');
+      return;
+    }
+    try {
+      await updateDoc(doc(db, 'serviceAreas', id), updates);
+      toast.success('Service area updated');
+    } catch (error) {
+      toast.error('Failed to update service area');
+      handleFirestoreError(error, OperationType.UPDATE, `serviceAreas/${id}`);
+    }
+  };
+
+  const deleteServiceArea = async (id: string) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot delete service area.');
+      return;
+    }
+    try {
+      await deleteDoc(doc(db, 'serviceAreas', id));
+      toast.success('Service area deleted');
+    } catch (error) {
+      toast.error('Failed to delete service area');
+      handleFirestoreError(error, OperationType.DELETE, `serviceAreas/${id}`);
+    }
+  };
+
   const updateCategory = async (id: string, updates: Partial<Category>) => {
     if (getIsQuotaExceeded()) {
       toast.error('Daily limit reached. Cannot update category.');
@@ -1434,7 +1543,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     // Hardcoded check for initial setup/dev
-    const hardcodedAdmins = ['saphosaung@gmail.com', 'yelwinaung9981@gmail.com'];
+    const hardcodedAdmins = ['sartawset@gmail.com', 'yelwinaung9981@gmail.com'];
     if (userEmail && hardcodedAdmins.includes(userEmail)) {
       console.log("User email matches hardcoded admin list:", userEmail);
       setIsAdmin(true);
@@ -1510,7 +1619,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       localStorage.removeItem('isAdmin');
       localStorage.removeItem('sp_user_phone');
       localStorage.removeItem('sp_favorites');
-      localStorage.removeItem('sp_cart');
+      sessionStorage.removeItem('sp_cart');
       
       setAuthUid(null);
       clearUserData();
@@ -1551,7 +1660,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
            });
            setCart(mergedCart);
            lastSyncedCartRef.current = JSON.stringify(mergedCart);
-           localStorage.setItem('sp_cart', JSON.stringify(mergedCart));
+           sessionStorage.setItem('sp_cart', JSON.stringify(mergedCart));
         }
         if (data.points !== undefined) setPoints(data.points);
         if (data.name) setUserName(data.name);
@@ -1682,6 +1791,44 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [supportNumber, setSupportNumber] = useState(() => {
     return localStorage.getItem('sp_support_number') || '601128096366';
   });
+  const [supportContacts, setSupportContactsState] = useState<SupportContact[]>(() => {
+    const saved = localStorage.getItem('sp_support_contacts');
+    if (saved) return JSON.parse(saved);
+    return [
+      { id: 'help', type: 'help', labelEn: 'Help Center', labelMm: 'အကူအညီဗဟိုဌာန', phone: '601128096366' },
+      { id: 'support', type: 'general', labelEn: 'General Support', labelMm: 'အထွေထွေ အကူအညီ', phone: '601128096366' },
+      { id: 'cancel', type: 'cancellation', labelEn: 'Cancellation Request', labelMm: 'အော်ဒါပယ်ဖျက်ရန်', phone: '601128096366' },
+      { id: 'order', type: 'order', labelEn: 'Order Inquiries', labelMm: 'အောဒါမေးမြန်းမှုများ', phone: '601128096366' }
+    ];
+  });
+
+  const setSupportContacts = async (contacts: SupportContact[]) => {
+    setSupportContactsState(contacts);
+    localStorage.setItem('sp_support_contacts', JSON.stringify(contacts));
+    
+    // Also sync to firestore if admin
+    if (isAdmin && !getIsQuotaExceeded()) {
+      try {
+        await setDoc(doc(db, 'settings', 'support'), { contacts }, { merge: true });
+      } catch (err) {
+        console.error("Failed to sync support contacts:", err);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (isAdmin && !getIsQuotaExceeded()) {
+      const unsub = onSnapshot(doc(db, 'settings', 'support'), (snap) => {
+        if (snap.exists() && snap.data().contacts) {
+          const data = snap.data().contacts;
+          setSupportContactsState(data);
+          localStorage.setItem('sp_support_contacts', JSON.stringify(data));
+        }
+      });
+      return () => unsub();
+    }
+  }, [isAdmin]);
+
   const [shopPhone, setShopPhoneState] = useState(() => {
     return localStorage.getItem('sp_shop_phone') || '+95 9 123 456 789';
   });
@@ -1695,7 +1842,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return localStorage.getItem('sp_bank_acc_num') || '1234 5678 9012';
   });
   const [bankAccountName, setBankAccountName] = useState(() => {
-    return localStorage.getItem('sp_bank_acc_name') || 'SAPHOSAUNG GROCERY';
+    return localStorage.getItem('sp_bank_acc_name') || 'SAR TAW SET GROCERY';
   });
 
   const [emailNotificationsEnabled, setEmailNotificationsEnabled] = useState(() => {
@@ -1703,7 +1850,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return saved === null ? true : saved === 'true';
   });
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(() => safeParse(localStorage.getItem('sp_payment_methods'), [
-    { id: 'pm-1', type: 'visa', last4: '4242', expiry: '12/26', cardHolder: 'SAPHOSAUNG', isDefault: true }
+    { id: 'pm-1', type: 'visa', last4: '4242', expiry: '12/26', cardHolder: 'SAR TAW SET', isDefault: true }
   ]));
   const [language, setLanguage] = useState(() => {
     const saved = localStorage.getItem('sp_language') || 'en';
@@ -1963,7 +2110,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const clearCart = () => {
     setCart([]);
-    localStorage.removeItem('sp_cart');
+    sessionStorage.removeItem('sp_cart');
   };
 
   // Persist cart to localStorage and Firestore
@@ -1972,9 +2119,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     
     // 1. Local Persistence
     if (cart.length > 0) {
-      localStorage.setItem('sp_cart', cartString);
+      sessionStorage.setItem('sp_cart', cartString);
     } else {
-      localStorage.removeItem('sp_cart');
+      sessionStorage.removeItem('sp_cart');
     }
 
     // 2. Cloud Persistence (Sync up)
@@ -2144,9 +2291,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       Object.values(mergedCartItems).forEach((item: CartItem) => {
         const productRef = doc(db, 'products', item.id);
-        batch.update(productRef, {
+        batch.set(productRef, {
           stock: increment(-item.quantity)
-        });
+        }, { merge: true });
       });
 
       // 5. BACKGROUND SYNC: We don't 'await' the commit to make the UI instant
@@ -2207,27 +2354,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (status === 'cancelled' && oldStatus !== 'cancelled') {
         for (const item of order.items) {
           const productRef = doc(db, 'products', item.id);
-          await updateDoc(productRef, {
+          await setDoc(productRef, {
             stock: increment(item.quantity)
-          });
+          }, { merge: true });
         }
       }
       // Deduct stock if order was cancelled and is now being restored (rare but possible)
       else if (oldStatus === 'cancelled' && status !== 'cancelled') {
         for (const item of order.items) {
           const productRef = doc(db, 'products', item.id);
-          await updateDoc(productRef, {
+          await setDoc(productRef, {
             stock: increment(-item.quantity)
-          });
+          }, { merge: true });
         }
       }
 
       // Points logic: Add earned points only when marked as 'delivered'
       const earnedPts = order.earnedPoints || 0;
       if (status === 'delivered' && oldStatus !== 'delivered' && order.uid && earnedPts > 0) {
-        await updateDoc(doc(db, 'users', order.uid), {
+        await setDoc(doc(db, 'users', order.uid), {
           points: increment(earnedPts)
-        });
+        }, { merge: true });
         
         // Add point transaction record
         const transactionId = `TX-${Date.now()}`;
@@ -2243,9 +2390,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       } 
       // Revert points if order status changes FROM delivered to something else
       else if (oldStatus === 'delivered' && status !== 'delivered' && order.uid && earnedPts > 0) {
-        await updateDoc(doc(db, 'users', order.uid), {
+        await setDoc(doc(db, 'users', order.uid), {
           points: increment(-earnedPts)
-        });
+        }, { merge: true });
         
         const transactionId = `TX-${Date.now()}`;
         await setDoc(doc(db, 'users', order.uid, 'pointTransactions', transactionId), {
@@ -2313,15 +2460,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!order || order.status === 'cancelled') return;
 
     try {
-      await updateDoc(doc(db, 'orders', id), { status: 'cancelled' });
+      await setDoc(doc(db, 'orders', id), { status: 'cancelled' }, { merge: true });
       
       // If order is cancelled:
       // 1. Refund points used
       if (order.pointsUsed > 0 && order.uid) {
-        await updateDoc(doc(db, 'users', order.uid), {
+        await setDoc(doc(db, 'users', order.uid), {
           points: increment(order.pointsUsed),
           lastActive: serverTimestamp()
-        });
+        }, { merge: true });
 
         // Add refund transaction record
         const transactionId = `TX-REF-${Date.now()}`;
@@ -2417,7 +2564,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   };
 
-  const deleteProduct = async (id: string) => {
+  const deleteProduct = useCallback(async (id: string) => {
     if (getIsQuotaExceeded()) {
       toast.error('Daily limit reached. Cannot delete product.');
       return;
@@ -2428,10 +2575,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       await deleteDoc(doc(db, 'products', id));
       toast.success('Product deleted successfully');
+      await logAudit('delete_product', 'product', `Deleted product ${id}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `products/${id}`);
     }
-  };
+  }, [logAudit]);
 
   const updateProductStock = async (productId: string, newStock: number) => {
     if (getIsQuotaExceeded()) {
@@ -2439,7 +2587,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return;
     }
     try {
-      await updateDoc(doc(db, 'products', productId), { stock: newStock });
+      await setDoc(doc(db, 'products', productId), { stock: newStock }, { merge: true });
       await logAudit('update_stock', 'product', `Updated stock for ${productId} to ${newStock}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `products/${productId}`);
@@ -2506,11 +2654,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     window.location.reload(); // Simplest way to re-trigger all mount effects
   };
 
-  const logAudit = async (action: string, target: string, details: string) => {
-    // Audit logging disabled to save Firestore quota
-    return;
-  };
-
   const sendBroadcast = async (notification: Omit<BroadcastNotification, 'id' | 'createdAt'>) => {
     if (getIsQuotaExceeded()) {
       toast.error('Daily limit reached. Cannot send broadcast.');
@@ -2546,6 +2689,36 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       await logAudit('add_admin', 'admin', `Added admin ${admin.email}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `admins/${admin.uid}`);
+    }
+  };
+
+  const createNewAdmin = async (email: string, password: string, name: string, role: AdminUser['role']) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot create admin.');
+      return;
+    }
+    try {
+      const secondaryAuth = getSecondaryAuth();
+      const userCredential = await createAuthUser(secondaryAuth, email, password);
+      const uid = userCredential.user.uid;
+
+      await setDoc(doc(db, 'admins', uid), {
+        uid,
+        email,
+        name,
+        role,
+        createdAt: serverTimestamp()
+      });
+      
+      await logAudit('create_admin', 'admin', `Created and added admin ${email}`);
+      
+      // Sign out from the secondary instance immediately to avoid session confusion
+      await secondaryAuth.signOut();
+      
+      toast.success('Admin user created successfully');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to create admin user');
+      console.error('Create Admin Error:', error);
     }
   };
 
@@ -2588,13 +2761,29 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const addProduct = async (product: Omit<Product, 'id'>) => {
+  const addProduct = useCallback(async (product: Omit<Product, 'id'>) => {
     if (getIsQuotaExceeded()) {
       toast.error('Daily limit reached. Cannot add product.');
       return;
     }
-    const productId = product.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-    const newProduct = { ...product, id: productId };
+    
+    // Sanitize updates to remove undefined values
+    const cleanProduct = Object.entries(product).reduce((acc, [key, value]) => {
+      if (value !== undefined) acc[key] = value;
+      return acc;
+    }, {} as any);
+
+    let productId = (product.name || '').toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    
+    // If name is non-latin (like Myanmar), the slug might be empty. Use a random ID in that case.
+    if (!productId || productId.length < 2) {
+      productId = `prod-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    } else {
+      // Add a small random suffix to avoid collisions even with same names
+      productId = `${productId}-${Math.random().toString(36).substring(2, 5)}`;
+    }
+    
+    const newProduct = { ...cleanProduct, id: productId };
     
     // Optimistic add
     setProducts(prev => [...prev, newProduct]);
@@ -2604,10 +2793,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       await logAudit('add_product', 'product', `Added product ${product.name}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `products/${productId}`);
+      // Revert if write fails
+      setProducts(prev => prev.filter(p => p.id !== productId));
     }
-  };
+  }, [logAudit]);
 
-  const updateProduct = async (id: string, updates: Partial<Product>) => {
+  const updateProduct = useCallback(async (id: string, updates: Partial<Product>) => {
     if (getIsQuotaExceeded()) {
       toast.error('Daily limit reached. Cannot update product.');
       return;
@@ -2625,14 +2816,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setProducts(prev => prev.map(p => p.id === id ? { ...p, ...cleanUpdates } : p));
 
     try {
-      await updateDoc(doc(db, 'products', id), cleanUpdates);
+      await setDoc(doc(db, 'products', id), cleanUpdates, { merge: true });
       await logAudit('update_product', 'product', `Updated product ${id}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `products/${id}`);
       // Revert if update fails
       // TODO: Fetch single doc to revert correctly? For now, we rely on onSnapshot to correct state later
     }
-  };
+  }, [logAudit]);
 
   const addPromotionBanner = async (banner: Omit<PromotionBanner, 'id' | 'priority'>) => {
     if (getIsQuotaExceeded()) return;
@@ -2794,17 +2985,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setAddresses([...updatedAddresses, newAddress]);
 
     try {
+      const batch = writeBatch(db);
+      
       if (newAddress.isDefault) {
-        const batch: any[] = [];
         previousAddresses.forEach(a => {
           if (a.isDefault) {
-            batch.push(updateDoc(doc(db, 'users', uid, 'addresses', a.id), { isDefault: false }));
+            batch.update(doc(db, 'users', uid, 'addresses', a.id), { isDefault: false });
           }
         });
-        await Promise.all(batch);
       }
 
-      await setDoc(doc(db, 'users', uid, 'addresses', addressId), newAddress);
+      batch.set(doc(db, 'users', uid, 'addresses', addressId), newAddress);
+      await batch.commit();
+      
       toast.success(translations[language === 'mm' ? 'mm' : 'en'].addressSaved || 'Address saved successfully');
     } catch (error: any) {
       setAddresses(previousAddresses); // Rollback
@@ -2840,16 +3033,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setAddresses(updatedAddresses);
 
     try {
+      const batch = writeBatch(db);
+      
       if (address.isDefault) {
-        const batch: any[] = [];
         previousAddresses.forEach(a => {
           if (a.isDefault && a.id !== id) {
-            batch.push(updateDoc(doc(db, 'users', uid, 'addresses', a.id), { isDefault: false }));
+            batch.update(doc(db, 'users', uid, 'addresses', a.id), { isDefault: false });
           }
         });
-        await Promise.all(batch);
       }
-      await updateDoc(doc(db, 'users', uid, 'addresses', id), address);
+      
+      batch.update(doc(db, 'users', uid, 'addresses', id), address);
+      await batch.commit();
+      
       toast.success(translations[language === 'mm' ? 'mm' : 'en'].addressUpdated || 'Address updated successfully');
     } catch (error: any) {
       setAddresses(previousAddresses); // Rollback
@@ -2889,11 +3085,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     try {
-      await deleteDoc(doc(db, 'users', uid, 'addresses', id));
+      const batch = writeBatch(db);
+      batch.delete(doc(db, 'users', uid, 'addresses', id));
       
       if (deletedAddress?.isDefault && updatedAddresses.length > 0) {
-        await updateDoc(doc(db, 'users', uid, 'addresses', updatedAddresses[0].id), { isDefault: true });
+        batch.update(doc(db, 'users', uid, 'addresses', updatedAddresses[0].id), { isDefault: true });
       }
+      
+      await batch.commit();
       toast.success(translations[language === 'mm' ? 'mm' : 'en'].addressDeleted || 'Address deleted successfully');
     } catch (error) {
       setAddresses(previousAddresses); // Rollback
@@ -2908,15 +3107,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       toast.error('Daily limit reached. Cannot set default address.');
       return;
     }
+
+    const previousAddresses = [...addresses];
+    const updatedAddresses = addresses.map(a => ({
+      ...a,
+      isDefault: a.id === id
+    }));
+    setAddresses(updatedAddresses);
+
     try {
-      const batch: any[] = [];
+      const batch = writeBatch(db);
       addresses.forEach(a => {
-        batch.push(updateDoc(doc(db, 'users', uid, 'addresses', a.id), { 
-          isDefault: a.id === id 
-        }));
+        if (a.isDefault && a.id !== id) {
+          batch.update(doc(db, 'users', uid, 'addresses', a.id), { isDefault: false });
+        }
+        if (a.id === id && !a.isDefault) {
+          batch.update(doc(db, 'users', uid, 'addresses', a.id), { isDefault: true });
+        }
       });
-      await Promise.all(batch);
+      await batch.commit();
     } catch (error) {
+      setAddresses(previousAddresses);
       handleFirestoreError(error, OperationType.UPDATE, `users/${uid}/addresses`);
     }
   };
@@ -2930,110 +3141,136 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const t = useCallback((key: string) => {
+    if (!translations) return key;
+    return translations[language]?.[key] || translations['en']?.[key] || key;
+  }, [language]);
+
+  const formatPrice = useCallback((price: number) => {
+    const safePrice = Number(price) || 0;
+    if (currency === 'RM') {
+      return `RM ${safePrice.toFixed(2)}`;
+    }
+    return `${safePrice.toLocaleString()} Ks`;
+  }, [currency]);
+
+  const getCategoryName = useCallback((categoryId: string) => {
+    const cat = (categories || []).find(c => c.id === categoryId || c.key === categoryId);
+    if (!cat) return categoryId;
+    
+    if (language === 'my' && cat.nameMm) return cat.nameMm;
+    if (language === 'ms' && cat.nameMs) return cat.nameMs;
+    if (language === 'th' && cat.nameTh) return cat.nameTh;
+    if (language === 'zh' && cat.nameZh) return cat.nameZh;
+    if (cat.nameEn) return cat.nameEn;
+    return cat.key ? t(cat.key) : cat.name;
+  }, [categories, language, t]);
+
+  const getMainName = useCallback((item: any) => {
+    return item.name || item.title || '';
+  }, []);
+
+  const getSecondaryName = useCallback((item: any) => {
+    const en = item.name || item.title || '';
+    const mm = item.mmName || item.titleMm || '';
+    const ms = item.msName || '';
+    const th = item.thName || '';
+    const zh = item.zhName || '';
+
+    switch (language) {
+      case 'en':
+        return mm || en;
+      case 'my':
+      case 'mm':
+        return mm || en;
+      case 'th':
+        return th || mm || en;
+      case 'zh':
+        return zh || mm || en;
+      case 'ms':
+        return ms || mm || en;
+      default:
+        return mm || en;
+    }
+  }, [language]);
+
+  const getLocalizedName = useCallback((item: any) => {
+    switch (language) {
+      case 'ms':
+        return item.msName || item.mmName;
+      case 'th':
+        return item.thName || item.mmName;
+      case 'zh':
+        return item.zhName || item.mmName;
+      case 'en':
+        return item.name || item.title || item.mmName;
+      case 'my':
+      default:
+        return item.mmName;
+    }
+  }, [language]);
+
   const value = useMemo(() => ({
     cart, 
-    addToCart, 
-    updateQuantity, 
-    clearCart,
-    cartTotal, 
-    userName,
-    setUserName,
-    userPhone,
-    setUserPhone,
-    roomNumber, 
-    setRoomNumber, 
-    orders,
-    adminOrders,
-    supportNumber,
-    setSupportNumber,
-    bankName,
-    setBankName,
-    bankAccountNumber,
-    setBankAccountNumber,
-    bankAccountName,
-    setBankAccountName,
-    userAvatar,
-    setUserAvatar,
-    userEmail,
-    setUserEmail,
-    userBirthday,
-    setUserBirthday,
-    updateUserProfile,
-    placeOrder, 
-    updateOrderStatus,
-    cancelOrder,
-    reorder,
-    favorites,
-    toggleFavorite,
-    notifications,
-    addNotification,
-    markNotificationAsRead,
-    clearNotifications,
-    emailNotificationsEnabled,
-    setEmailNotificationsEnabled,
-    paymentMethods,
-    addPaymentMethod,
-    removePaymentMethod,
-    setDefaultPaymentMethod,
-    points,
-    setPoints,
-    language,
-    setLanguage,
-    currency,
-    setCurrency,
-    formatPrice: (price: number) => {
-      if (currency === 'RM') {
-        return `RM ${price.toFixed(2)}`;
-      }
-      return `${price.toLocaleString()} Ks`;
-    },
-    getMainName: (item: any) => {
-      return item.name || item.title || '';
-    },
-    getSecondaryName: (item: any) => {
-      const en = item.name || item.title || '';
-      const mm = item.mmName || item.titleMm || '';
-      const ms = item.msName || '';
-      const th = item.thName || '';
-      const zh = item.zhName || '';
-
-      switch (language) {
-        case 'my':
-        case 'mm': 
-          return en; 
-        case 'th':
-          return th || en; 
-        case 'zh':
-          return zh || en; 
-        case 'ms':
-          return ms || en;
-        case 'en':
-          return mm || en; 
-        default:
-          return en; 
-      }
-    },
-    getLocalizedName: (item: any) => {
-      switch (language) {
-        case 'ms':
-          return item.msName || item.mmName;
-        case 'th':
-          return item.thName || item.mmName;
-        case 'zh':
-          return item.zhName || item.mmName;
-        case 'en':
-          return item.name || item.title || item.mmName;
-        case 'my':
-        default:
-          return item.mmName;
-      }
-    },
-    t: (key: string) => {
-      if (!translations) return key;
-      return translations[language]?.[key] || translations['en']?.[key] || key;
-    },
-    darkMode,
-    setDarkMode,
+      addToCart, 
+      updateQuantity, 
+      clearCart,
+      cartTotal, 
+      userName,
+      setUserName,
+      userPhone,
+      setUserPhone,
+      roomNumber, 
+      setRoomNumber, 
+      orders,
+      adminOrders,
+      supportNumber,
+      setSupportNumber,
+      supportContacts,
+      setSupportContacts,
+      bankName,
+      setBankName,
+      bankAccountNumber,
+      setBankAccountNumber,
+      bankAccountName,
+      setBankAccountName,
+      userAvatar,
+      setUserAvatar,
+      userEmail,
+      setUserEmail,
+      userBirthday,
+      setUserBirthday,
+      updateUserProfile,
+      placeOrder, 
+      updateOrderStatus,
+      cancelOrder,
+      reorder,
+      favorites,
+      toggleFavorite,
+      notifications,
+      addNotification,
+      markNotificationAsRead,
+      clearNotifications,
+      emailNotificationsEnabled,
+      setEmailNotificationsEnabled,
+      paymentMethods,
+      addPaymentMethod,
+      removePaymentMethod,
+      setDefaultPaymentMethod,
+      points,
+      setPoints,
+      language,
+      setLanguage,
+      currency,
+      setCurrency,
+      formatPrice,
+      getCategoryName,
+      getMainName,
+      getSecondaryName,
+      getLocalizedName,
+      t,
+      darkMode,
+      setDarkMode,
     isDeliveryEnabled,
     setIsDeliveryEnabled,
     deliveryFee,
@@ -3098,6 +3335,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     sendBroadcast,
     admins,
     addAdmin,
+    createNewAdmin,
     updateAdminRole,
     removeAdmin,
     users,
@@ -3113,7 +3351,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     revokeSession,
     isBlocked,
     blockMessage,
-    totalOrders
+    totalOrders,
+    serviceAreas,
+    addServiceArea,
+    updateServiceArea,
+    deleteServiceArea
   }), [
     cart,
     userName,
@@ -3122,6 +3364,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     orders,
     adminOrders,
     supportNumber,
+    supportContacts,
     bankName,
     bankAccountNumber,
     bankAccountName,
@@ -3169,7 +3412,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     sessions,
     isBlocked,
     blockMessage,
-    totalOrders
+    totalOrders,
+    serviceAreas,
+    addProduct,
+    updateProduct,
+    deleteProduct,
+    logAudit
   ]);
 
   return (

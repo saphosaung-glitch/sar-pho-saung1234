@@ -304,7 +304,7 @@ export default function PaymentMethodsPage() {
                         <div className="space-y-1">
                           <p className="text-[9px] font-bold uppercase tracking-[0.3em] opacity-50">Card Holder</p>
                           <p className="text-xs font-bold tracking-tight uppercase truncate max-w-[180px]">
-                            {newCard.cardHolder || 'SAPHOSAUNG'}
+                            {newCard.cardHolder || 'SAR TAW SET'}
                           </p>
                         </div>
                         <div className="text-right space-y-1">

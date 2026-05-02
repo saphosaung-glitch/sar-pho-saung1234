@@ -5,7 +5,7 @@ service cloud.firestore {
     function isSignedIn() { return request.auth != null; }
     function isAdmin() { 
       return isSignedIn() && (
-        request.auth.token.email == "saphosaung@gmail.com" || 
+        request.auth.token.email == "sartawset@gmail.com" || 
         request.auth.token.email == "yelwinaung9981@gmail.com" ||
         exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
@@ -43,14 +43,22 @@ service cloud.firestore {
       allow create, delete: if isAdmin();
     }
     match /categories/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /serviceAreas/{id} { allow read: if true; allow write: if isAdmin(); }
     match /settings/{id} { allow read: if true; allow write: if isAdmin(); }
     match /coupons/{id} { allow read: if true; allow write: if isAdmin(); }
     match /deals/{id} { allow read: if true; allow write: if isAdmin(); }
     match /bundles/{id} { allow read: if true; allow write: if isAdmin(); }
     match /broadcastNotifications/{id} { allow read: if true; allow write: if isAdmin(); }
     match /promotionBanners/{id} { allow read: if true; allow write: if isAdmin(); }
-    match /admins/{id} { allow get: if isSignedIn(); allow list, write: if isAdmin(); }
-    match /auditLogs/{id} { allow read, write: if isAdmin(); }
+    match /admins/{id} { 
+      allow get: if isSignedIn(); 
+      allow list: if isAdmin();
+      allow write: if isAdmin() && (id == incoming().uid || id == request.auth.uid);
+    }
+    match /auditLogs/{id} { 
+      allow read: if isAdmin();
+      allow create: if isAdmin() && incoming().createdAt == request.time;
+    }
     match /test/{id} { allow read: if true; }
   }
 }

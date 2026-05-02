@@ -5,7 +5,8 @@ import {
   ShoppingCart, Search, Menu as MenuIcon, Plus, Store, Receipt, User, Settings, X, 
   Sliders, Camera, Heart, Bell, Trash2, CheckCircle2, Sparkles, Zap, LayoutDashboard, 
   Snowflake, Coffee, Cookie, Utensils, Baby, Dog, Home, Briefcase, Pill, Smile,
-  Fish, Beef, Carrot, Egg, Soup, Wheat, UtensilsCrossed, Flame, Wine, Candy
+  Fish, Beef, Carrot, Egg, Soup, Wheat, UtensilsCrossed, Flame, Wine, Candy, MessageCircle,
+  QrCode, Share2
 } from 'lucide-react';
 
 import { AddToCartButton } from '../components/AddToCartButton';
@@ -14,13 +15,14 @@ import { collection, onSnapshot, query, orderBy, doc, updateDoc } from 'firebase
 import { db } from '../lib/firebase';
 import { PRODUCTS } from '../lib/seed';
 import { CATEGORIES } from '../constants';
+import { QRCodeModal } from '../components/ui/QRCodeModal';
 
 export default function MenuPage() {
   const [searchParams] = useSearchParams();
   const { 
     setRoomNumber, addToCart, cartTotal, cart, roomNumber, clearCart,
     favorites, toggleFavorite, notifications, markNotificationAsRead, clearNotifications,
-    t, darkMode, language, formatPrice, getMainName, getSecondaryName, products,
+    t, darkMode, language, formatPrice, getMainName, getSecondaryName, getCategoryName, products,
     promotionBanners, categories, deals, bundles
   } = useStore();
   const navigate = useNavigate();
@@ -34,6 +36,7 @@ export default function MenuPage() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [showHeaderSearch, setShowHeaderSearch] = useState(false);
+  const [qrItem, setQrItem] = useState<{ id: string; name: string } | null>(null);
   const productGridRef = useRef<HTMLDivElement>(null);
   const searchBoxRef = useRef<HTMLDivElement>(null);
 
@@ -59,6 +62,17 @@ export default function MenuPage() {
 
   const activeBundles = useMemo(() => bundles.filter(b => b.isActive), [bundles]);
   const activeDeals = useMemo(() => deals.filter(d => d.isActive), [deals]);
+
+  const activeCategoryData = useMemo(() => {
+    return categories.find(c => c.key === selectedCategory);
+  }, [categories, selectedCategory]);
+
+  const handleCategorySupport = () => {
+    if (activeCategoryData?.supportPhone) {
+      const message = encodeURIComponent(`Hi, I need help with ${activeCategoryData.nameEn} category.`);
+      window.open(`https://wa.me/${activeCategoryData.supportPhone}?text=${message}`, '_blank');
+    }
+  };
 
   const getCategoryIcon = (key: string) => {
     const iconSize = 12;
@@ -153,12 +167,6 @@ export default function MenuPage() {
       const matchesCategory = selectedCategory === 'all' || product.category === selectedCategory;
       if (!matchesCategory) return false;
 
-      // 2. If viewing 'all', hide products from categories that are disabled
-      if (selectedCategory === 'all') {
-        const isFromActiveCategory = activeCategoryIds.has(product.category);
-        if (!isFromActiveCategory) return false;
-      }
-      
       return true;
     });
   }, [selectedCategory, products, activeDeals, activeBundles, categoriesWithSpecials]);
@@ -169,8 +177,13 @@ export default function MenuPage() {
       <header className={`fixed top-0 w-full z-50 px-4 flex flex-col justify-center border-b border-on-surface/5 transition-all duration-300 h-[72px] ${darkMode ? 'bg-surface/80 backdrop-blur-xl' : 'bg-surface/80 backdrop-blur-xl'}`}>
         <div className="flex items-center justify-between w-full">
           <div className="flex items-center gap-2 sm:gap-3 max-w-[60%]">
-            <div className={`flex-shrink-0 p-2 rounded-xl transition-colors ${darkMode ? 'bg-primary/20' : 'bg-primary/10'}`}>
-              <Store size={20} className="text-primary" />
+            <div className={`flex-shrink-0 w-8 h-8 rounded-lg overflow-hidden transition-all shadow-sm ${darkMode ? 'bg-primary/20' : 'bg-primary/10'}`}>
+              <img 
+                src="https://scontent.fkul7-2.fna.fbcdn.net/v/t39.30808-6/684505557_122097016515302120_6150026231108406984_n.jpg?_nc_cat=104&ccb=1-7&_nc_sid=1d70fc&_nc_ohc=65onKQ3wqrwQ7kNvwH-5Tn-&_nc_oc=AdoS-wVrlfKZ1ez9KNNdnG2zrOlHcnj7uHcGjRb3mW6fp1oguy8-8wQ1-pXhxzE26ke-vq-3N92HeuXbHTYkvevu&_nc_zt=23&_nc_ht=scontent.fkul7-2.fna&_nc_gid=lCsMSE2No98znYrLT3N7sg&_nc_ss=7b2a8&oh=00_Af4X8z6JL4VX10-1XWuFqPcF1kQfsivurJR7gMP3HKIQ7Q&oe=69FC4851" 
+                alt="Logo" 
+                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
+              />
             </div>
             <div className="flex flex-col min-w-0 py-1">
               <h1 className="text-lg font-black text-primary leading-tight tracking-tight">စားတော်ဆက်</h1>
@@ -295,7 +308,7 @@ export default function MenuPage() {
         </div>
 
         <section 
-          className="sticky z-40 transition-all duration-300 h-10 flex items-center overflow-hidden mt-3"
+          className="sticky z-40 transition-all duration-300 h-9 flex items-center overflow-hidden mt-2"
           style={{ top: '72px' }}
         >
           <div className="flex overflow-x-auto overflow-y-hidden no-scrollbar gap-1.5 px-4 w-full items-center h-full">
@@ -315,32 +328,52 @@ export default function MenuPage() {
                 <span className={selectedCategory === cat.id ? 'scale-110' : 'opacity-60'}>
                   {getCategoryIcon(cat.key || cat.id)}
                 </span>
-                {(() => {
-                  const isMm = language === 'mm';
-                  if (isMm && cat.nameMm) return cat.nameMm;
-                  if (!isMm && cat.nameEn) return cat.nameEn;
-                  return cat.key ? t(cat.key) : cat.name;
-                })()}
+                {getCategoryName(cat.id)}
               </button>
             ))}
           </div>
         </section>
 
+        {/* Support Banner for Categories */}
+        <AnimatePresence>
+          {activeCategoryData?.supportPhone && selectedCategory !== 'all' && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="px-4 mb-4"
+            >
+              <div 
+                className={`p-4 rounded-2xl flex items-center justify-between gap-4 border ${
+                  darkMode ? 'bg-primary/10 border-primary/20' : 'bg-emerald-50 border-emerald-100'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-primary/20 text-primary flex items-center justify-center">
+                    <MessageCircle size={20} />
+                  </div>
+                  <div>
+                    <p className={`text-[10px] font-black uppercase tracking-widest leading-none mb-1 ${darkMode ? 'text-primary' : 'text-emerald-700'}`}>
+                      {language === 'en' ? 'Category Expert' : 'ကဏ္ဍအလိုက် အကူအညီ'}
+                    </p>
+                    <p className={`text-[9px] font-bold opacity-60 ${darkMode ? 'text-on-surface' : 'text-slate-600'}`}>
+                      {language === 'en' ? `Need help with ${activeCategoryData.nameEn}?` : `${activeCategoryData.nameMm} အတွက် အကူအညီလိုပါသလား?`}
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={handleCategorySupport}
+                  className="px-4 py-2 bg-primary text-white text-[9px] font-black uppercase tracking-widest rounded-xl shadow-lg shadow-primary/20 active:scale-95 transition-all"
+                >
+                  {language === 'en' ? 'Chat Now' : 'ပြောဆိုမည်'}
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Product Grid */}
-        <section ref={productGridRef} className="mt-1 px-4 min-h-[70vh] scroll-mt-[104px]">
-          <div className="flex items-baseline justify-between mb-2">
-            <h3 className={`text-base font-black tracking-tighter ${darkMode ? 'text-on-surface-variant' : 'text-on-surface-variant'}`}>
-              {selectedCategory === 'all' 
-                ? t('all') 
-                : (categoriesWithSpecials.find(c => c.id === selectedCategory)?.key 
-                    ? t(categoriesWithSpecials.find(c => c.id === selectedCategory)!.key) 
-                    : (categoriesWithSpecials.find(c => c.id === selectedCategory)?.name || t('dailyEssentials')))}
-            </h3>
-            <span className="text-[9px] font-bold text-on-surface-variant/40 uppercase tracking-widest">
-              {filteredItems.length} {t('items')}
-            </span>
-          </div>
-          
+        <section ref={productGridRef} className="mt-1 px-4 min-h-[70vh] scroll-mt-[112px]">
           {filteredItems.length > 0 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
               {filteredItems.map((item: any) => (
@@ -394,10 +427,10 @@ export default function MenuPage() {
                   <div className="p-2 flex flex-col flex-1 justify-between gap-1">
                     <div className="space-y-1">
                       <div className="flex flex-col">
-                        <h4 className="text-on-surface font-black text-xs leading-tight line-clamp-1 tracking-tight group-hover:text-primary transition-colors duration-300">
+                        <h4 className="text-on-surface font-black text-xs leading-tight tracking-tight group-hover:text-primary transition-colors duration-300 truncate">
                           {getMainName(item)}
                         </h4>
-                        <p className="text-on-surface-variant/60 text-[10px] font-medium leading-tight mt-0.5">
+                        <p className="text-on-surface-variant/60 text-[10px] font-medium leading-tight truncate mt-0.5">
                           {getSecondaryName(item)}
                         </p>
                       </div>
@@ -482,6 +515,15 @@ export default function MenuPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <QRCodeModal 
+        isOpen={!!qrItem} 
+        onClose={() => setQrItem(null)} 
+        url={`${window.location.origin}/#/search?q=${qrItem ? encodeURIComponent(qrItem.name) : ''}`}
+        title={qrItem?.name || 'Product'}
+        subtitle="Item QR Code"
+        darkMode={darkMode}
+      />
     </div>
   );
 }

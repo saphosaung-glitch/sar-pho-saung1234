@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useStore, Product, Order } from "../context/StoreContext";
 import OrdersTab from "../components/admin/OrdersTab";
 import ProductsTab from "../components/admin/ProductsTab";
+import { SettingsTab } from "../components/admin/SettingsTab";
 import { NotificationsTab } from "../components/admin/NotificationsTab";
 import { OrderNotifications } from "../components/admin/OrderNotifications";
 import {
@@ -48,7 +49,6 @@ import {
   Download,
   Bell,
   Edit2,
-  Ticket,
   History,
   MessageSquare,
   MessageCircle,
@@ -105,7 +105,7 @@ import {
 } from "firebase/firestore";
 import { db, auth } from "../lib/firebase";
 import { translateProductName } from "../services/translationService";
-import { formatAdminNotifyMessage, getWhatsAppLink, getViberLink } from "../lib/messaging";
+import { formatAdminNotifyMessage, getWhatsAppLink, openWhatsApp } from "../lib/messaging";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
@@ -133,6 +133,7 @@ function AnalyticsTab({
   formatPrice,
   isLowStockAlertEnabled,
   t,
+  categories,
 }: {
   orders: Order[];
   products: Product[];
@@ -141,6 +142,7 @@ function AnalyticsTab({
   formatPrice: (p: number) => string;
   isLowStockAlertEnabled: boolean;
   t: (key: string) => string;
+  categories: any[];
 }) {
   const chartData = useMemo(() => {
     const dailyData: Record<
@@ -183,7 +185,7 @@ function AnalyticsTab({
     const cancellationRate =
       orders.length > 0 ? (cancelledOrders.length / orders.length) * 100 : 0;
     const inventoryValue = products.reduce(
-      (acc, p) => acc + p.price * p.stock,
+      (acc, p) => acc + (Number(p.price) || 0) * (Number(p.stock) || 0),
       0,
     );
 
@@ -246,11 +248,15 @@ function AnalyticsTab({
     orders.forEach((order) => {
       order.items.forEach((item) => {
         cats[item.category] =
-          (cats[item.category] || 0) + item.price * item.quantity;
+          (cats[item.category] || 0) + (Number(item.price) || 0) * (Number(item.quantity) || 0);
       });
     });
-    return Object.entries(cats).map(([name, value]) => ({ name, value }));
-  }, [orders]);
+    return Object.entries(cats).map(([id, value]) => {
+      const cat = categories.find(c => c.id === id || c.key === id);
+      const name = cat ? (cat.nameEn || cat.name || id) : id;
+      return { name, value };
+    });
+  }, [orders, categories]);
 
   const topProducts = useMemo(() => {
     const counts: Record<
@@ -260,10 +266,10 @@ function AnalyticsTab({
     orders.forEach((order) => {
       order.items.forEach((item) => {
         if (!counts[item.id]) {
-          counts[item.id] = { name: item.name, quantity: 0, revenue: 0 };
+          counts[item.id] = { name: item.name || 'Unknown', quantity: 0, revenue: 0 };
         }
-        counts[item.id].quantity += item.quantity;
-        counts[item.id].revenue += item.price * item.quantity;
+        counts[item.id].quantity += (Number(item.quantity) || 0);
+        counts[item.id].revenue += (Number(item.price) || 0) * (Number(item.quantity) || 0);
       });
     });
     return Object.values(counts)
@@ -676,6 +682,7 @@ function OrderDetailModal({
   formatPrice,
   updateStatus,
   t,
+  isMenuOpen,
 }: {
   order: Order | null;
   isOpen: boolean;
@@ -684,8 +691,9 @@ function OrderDetailModal({
   formatPrice: (p: number) => string;
   updateStatus: (id: string, s: any) => Promise<void>;
   t: any;
+  isMenuOpen: boolean;
 }) {
-  const { shopPhone, shopEmail } = useStore();
+  const { shopPhone, shopEmail, getCategoryName } = useStore();
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
   const [isPrintMenuOpen, setIsPrintMenuOpen] = useState(false);
   
@@ -1223,22 +1231,35 @@ function OrderDetailModal({
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[100]">
+        <div className="fixed inset-0 z-[40]">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={onClose}
+            className="absolute inset-0 bg-black/20 backdrop-blur-[2px]"
           />
           <motion.div
-            initial={{ y: "100%" }}
-            animate={{ y: 0 }}
-            exit={{ y: "100%" }}
+            initial={{ x: "100%", opacity: 0 }}
+            animate={{ 
+              x: 0, 
+              opacity: 1,
+              left: isMenuOpen ? 300 : 120 
+            }}
+            exit={{ x: "100%", opacity: 0 }}
             transition={{ type: "spring", damping: 30, stiffness: 300 }}
-            onClick={(e) => e.stopPropagation()}
-            className={`relative w-full h-full overflow-hidden flex flex-col lg:flex-row ${
-              darkMode ? "bg-[#0f1111]" : "bg-[#fdfdfd]"
+            onClick={(e) => {
+              e.stopPropagation();
+            }}
+            className={`fixed top-[110px] bottom-[40px] z-[41] rounded-xl border shadow-2xl overflow-hidden flex flex-col lg:flex-row ${
+              darkMode ? "bg-[#0f1111] border-white/10" : "bg-[#fdfdfd] border-gray-200"
             }`}
+            style={{ 
+              left: isMenuOpen ? '260px' : '90px',
+              right: '20px',
+              maxWidth: '1350px',
+              margin: '0 auto'
+            }}
           >
             {/* Left Side: Order Info & Status (Compact vertical bar) */}
             <div
@@ -1263,9 +1284,9 @@ function OrderDetailModal({
                   {statusConfig[order.status].label}
                 </div>
                 <h2
-                  className={`text-2xl font-black tracking-tighter mb-1 ${darkMode ? "text-on-surface" : "text-emerald-950"}`}
+                  className={`text-xl font-black tracking-tighter mb-1 ${darkMode ? "text-on-surface" : "text-emerald-950"}`}
                 >
-                  #{order.id}
+                  Order ID: {order.id.slice(-8)}
                 </h2>
                 <div className="flex items-center gap-2 opacity-40">
                   <Calendar size={10} />
@@ -1280,47 +1301,47 @@ function OrderDetailModal({
               </div>
 
               {/* Scrollable Details */}
-              <div className="flex-grow overflow-y-auto no-scrollbar p-4 pt-1 space-y-2.5">
+              <div className="flex-grow overflow-y-auto no-scrollbar p-3 pt-1 space-y-1.5">
                 {/* Customer Section */}
                 <section>
                   <p className="text-[8px] font-black uppercase tracking-[0.3em] opacity-30 mb-1.5 ml-1">
                     Customer
                   </p>
                   <div className="space-y-2">
-                    <div className="flex items-start gap-3">
-                      <div
-                        className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${darkMode ? "bg-white/5 text-primary" : "bg-white shadow-sm text-emerald-700"}`}
+                    <div className="flex items-start gap-2">
+                       <div
+                        className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${darkMode ? "bg-white/5 text-primary" : "bg-white shadow-sm text-emerald-700"}`}
                       >
-                        <User size={14} />
+                        <User size={12} />
                       </div>
                       <div>
-                        <p className="font-black text-sm tracking-tight leading-tight mb-0.5">
+                        <p className="font-black text-xs tracking-tight leading-tight mb-0.5">
                           {order.customerName}
                         </p>
                         <p
-                          className={`text-[9px] font-bold font-mono opacity-50`}
+                          className={`text-[8px] font-bold font-mono opacity-50`}
                         >
                           {order.customerPhone}
                         </p>
                       </div>
                     </div>
 
-                    <div className="flex items-start gap-3">
+                    <div className="flex items-start gap-2">
                       <div
-                        className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${darkMode ? "bg-white/5 text-primary" : "bg-white shadow-sm text-emerald-700"}`}
+                        className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${darkMode ? "bg-white/5 text-primary" : "bg-white shadow-sm text-emerald-700"}`}
                       >
-                        <MapPin size={14} />
+                        <MapPin size={12} />
                       </div>
                       <div>
-                        <p className="text-[8px] font-black uppercase tracking-widest opacity-30 mb-0.5 leading-none">
+                        <p className="text-[7px] font-black uppercase tracking-widest opacity-30 mb-0.5 leading-none">
                           Location
                         </p>
-                        <p className="font-bold text-xs tracking-tight">
+                        <p className="font-bold text-[10px] tracking-tight">
                           Room {order.roomNumber}
                         </p>
                         {order.address && (
                           <p
-                            className={`text-[9px] font-medium mt-0.5 leading-relaxed opacity-60`}
+                            className={`text-[8px] font-medium mt-0.5 leading-relaxed opacity-60`}
                           >
                             {order.address}
                           </p>
@@ -1328,17 +1349,17 @@ function OrderDetailModal({
                       </div>
                     </div>
 
-                    <div className="flex items-start gap-3">
+                    <div className="flex items-start gap-2">
                       <div
-                        className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${darkMode ? "bg-white/5 text-primary" : "bg-white shadow-sm text-emerald-700"}`}
+                        className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${darkMode ? "bg-white/5 text-primary" : "bg-white shadow-sm text-emerald-700"}`}
                       >
-                        <CreditCard size={14} />
+                        <CreditCard size={12} />
                       </div>
                       <div>
-                        <p className="text-[8px] font-black uppercase tracking-widest opacity-30 mb-0.5 leading-none">
+                        <p className="text-[7px] font-black uppercase tracking-widest opacity-30 mb-0.5 leading-none">
                           Payment
                         </p>
-                        <p className="font-bold text-xs tracking-tight uppercase">
+                        <p className="font-bold text-[10px] tracking-tight uppercase">
                           {order.paymentMethod}
                         </p>
                       </div>
@@ -1406,35 +1427,25 @@ function OrderDetailModal({
 
               {/* Customer Contact at bottom of sidebar */}
               <div
-                className={`p-3 border-t ${darkMode ? "border-white/5 bg-white/[0.01]" : "border-gray-100 bg-gray-50/50"}`}
+                className={`p-2 border-t ${darkMode ? "border-white/5 bg-white/[0.01]" : "border-gray-100 bg-gray-50/50"}`}
               >
-                  <div className={`grid grid-cols-3 gap-1 p-1 rounded-2xl border ${darkMode ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"}`}>
+                  <div className={`grid grid-cols-2 gap-1 p-1 rounded-2xl border ${darkMode ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"}`}>
                     <button
                       onClick={() => {
                         const message = formatAdminNotifyMessage(order, formatPrice);
-                        window.open(getWhatsAppLink(order.customerPhone, message), "_blank");
+                        openWhatsApp(order.customerPhone, message);
                       }}
-                      className={`flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl transition-all active:scale-95 ${darkMode ? "hover:bg-emerald-500/10 text-emerald-500" : "bg-white text-emerald-700 shadow-sm hover:bg-emerald-50"}`}
+                      className={`flex flex-col items-center justify-center gap-1 py-1.5 rounded-xl transition-all active:scale-95 ${darkMode ? "hover:bg-emerald-500/10 text-emerald-500" : "bg-white text-emerald-700 shadow-sm hover:bg-emerald-50"}`}
                     >
-                      <MessageCircle size={18} />
-                      <span className="text-[8px] font-black uppercase tracking-widest">WhatsApp</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        const message = formatAdminNotifyMessage(order, formatPrice);
-                        window.open(getViberLink(order.customerPhone, message), "_blank");
-                      }}
-                      className={`flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl transition-all active:scale-95 ${darkMode ? "hover:bg-purple-500/10 text-purple-400" : "bg-white text-purple-700 shadow-sm hover:bg-purple-50"}`}
-                    >
-                      <MessageSquare size={18} />
-                      <span className="text-[8px] font-black uppercase tracking-widest">Viber</span>
+                      <MessageCircle size={14} />
+                      <span className="text-[7px] font-black uppercase tracking-widest">WhatsApp</span>
                     </button>
                     <a
                       href={`tel:${order.customerPhone}`}
-                      className={`flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl transition-all active:scale-95 ${darkMode ? "hover:bg-blue-500/10 text-blue-400" : "bg-white text-blue-700 shadow-sm hover:bg-blue-50"}`}
+                      className={`flex flex-col items-center justify-center gap-1 py-1.5 rounded-xl transition-all active:scale-95 ${darkMode ? "hover:bg-blue-500/10 text-blue-400" : "bg-white text-blue-700 shadow-sm hover:bg-blue-50"}`}
                     >
-                      <Phone size={18} />
-                      <span className="text-[8px] font-black uppercase tracking-widest">Call</span>
+                      <Phone size={14} />
+                      <span className="text-[7px] font-black uppercase tracking-widest">Call</span>
                     </a>
                   </div>
               </div>
@@ -1513,7 +1524,7 @@ function OrderDetailModal({
                               : "hover:bg-emerald-50 text-emerald-950"
                           }`}
                         >
-                          <Ticket
+                          <FileText
                             size={14}
                             className={
                               darkMode ? "text-white/50" : "text-emerald-700/50"
@@ -1566,7 +1577,10 @@ function OrderDetailModal({
                       </div>
 
                       <div className="flex-grow min-w-0">
-                        <div className="flex items-center gap-1.5 mb-0.5">
+                        <div className="flex items-center justify-between mb-1">
+                          <p className={`text-[7px] font-black uppercase tracking-[0.2em] ${darkMode ? "text-primary/60" : "text-emerald-600"}`}>
+                            {getCategoryName(item.category)}
+                          </p>
                           <span
                             className={`px-1.5 py-0.5 rounded-md text-[7px] font-black uppercase tracking-widest ${darkMode ? "bg-white/10 text-on-surface-variant" : "bg-emerald-100/50 text-emerald-800"}`}
                           >
@@ -1599,25 +1613,25 @@ function OrderDetailModal({
 
               {/* Order total footer */}
               <div
-                className={`px-6 py-2 border-t mt-auto ${darkMode ? "border-white/5 bg-white/[0.01]" : "border-gray-100 bg-gray-50/30"}`}
+                className={`px-6 py-1.5 border-t mt-auto ${darkMode ? "border-white/5 bg-white/[0.01]" : "border-gray-100 bg-gray-50/30"}`}
               >
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-                  <div className="space-y-2">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2">
+                  <div className="space-y-1">
                     {order.note && (
                       <div className="max-w-md">
-                        <p className="text-[8px] font-black uppercase tracking-[0.3em] opacity-30 mb-1">
+                        <p className="text-[7px] font-black uppercase tracking-[0.3em] opacity-30 mb-0.5">
                           Note from Customer
                         </p>
-                        <p className="text-xs font-bold opacity-70 leading-relaxed italic line-clamp-1">
+                        <p className="text-[10px] font-bold opacity-70 leading-relaxed italic line-clamp-1">
                           "{order.note}"
                         </p>
                       </div>
                     )}
-                    <div className={`flex items-center w-full lg:w-auto p-1.5 rounded-2xl border shadow-sm transition-colors ${darkMode ? "bg-surface-container-high border-on-surface/10" : "bg-white border-slate-200"}`}>
+                    <div className={`flex items-center w-full lg:w-auto p-0.5 rounded-xl border shadow-sm transition-colors gap-0.5 ${darkMode ? "bg-surface-container-high border-on-surface/10" : "bg-white border-slate-200"}`}>
                       <button
                         onClick={() => handleStatusUpdate(order.id, "cancelled")}
                         disabled={isUpdating !== null}
-                        className={`flex-1 lg:flex-none px-4 h-10 rounded-xl flex items-center justify-center gap-1.5 transition-all font-black text-[10px] uppercase tracking-widest ${
+                        className={`flex-1 lg:flex-none px-2 h-7 rounded-[10px] flex items-center justify-center gap-1 transition-all font-black text-[8px] uppercase tracking-widest ${
                           order.status === "cancelled"
                             ? "bg-rose-600 text-white shadow-md shadow-rose-600/20"
                             : darkMode
@@ -1626,19 +1640,17 @@ function OrderDetailModal({
                         }`}
                       >
                         {isUpdating === "cancelled" ? (
-                          <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
                         ) : (
-                          <X size={14} />
+                          <X size={10} />
                         )}
                         <span className="hidden sm:inline">Cancel</span>
                       </button>
                       
-                      <div className={`w-[1px] h-5 mx-1 ${darkMode ? "bg-on-surface/10" : "bg-slate-200"}`} />
-                      
                       <button
                         onClick={() => handleStatusUpdate(order.id, order.status === "pending" ? "packing" : "pending")}
                         disabled={isUpdating !== null}
-                        className={`flex-1 lg:flex-none px-4 h-10 rounded-xl flex items-center justify-center gap-1.5 transition-all font-black text-[10px] uppercase tracking-widest ${
+                        className={`flex-1 lg:flex-none px-2 h-7 rounded-[10px] flex items-center justify-center gap-1 transition-all font-black text-[8px] uppercase tracking-widest ${
                           order.status === "pending"
                             ? "bg-amber-500 text-white shadow-md shadow-amber-500/20"
                             : darkMode
@@ -1647,9 +1659,9 @@ function OrderDetailModal({
                         }`}
                       >
                         {isUpdating === "pending" ? (
-                          <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
                         ) : (
-                          <Clock size={14} />
+                          <Clock size={10} />
                         )}
                         <span className="hidden sm:inline">Hold</span>
                       </button>
@@ -1657,7 +1669,7 @@ function OrderDetailModal({
                       <button
                         onClick={() => handleStatusUpdate(order.id, order.status === "packing" ? "delivered" : "packing")}
                         disabled={isUpdating !== null}
-                        className={`flex-1 lg:flex-none px-4 h-10 rounded-xl flex items-center justify-center gap-1.5 transition-all font-black text-[10px] uppercase tracking-widest ${
+                        className={`flex-1 lg:flex-none px-2 h-7 rounded-[10px] flex items-center justify-center gap-1 transition-all font-black text-[8px] uppercase tracking-widest ${
                           order.status === "packing"
                             ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
                             : darkMode
@@ -1666,9 +1678,9 @@ function OrderDetailModal({
                         }`}
                       >
                         {isUpdating === "packing" ? (
-                          <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
                         ) : (
-                          <Package size={14} />
+                          <Package size={10} />
                         )}
                         <span className="hidden sm:inline">Ready</span>
                       </button>
@@ -1676,7 +1688,7 @@ function OrderDetailModal({
                       <button
                         onClick={() => handleStatusUpdate(order.id, "delivered")}
                         disabled={isUpdating !== null}
-                        className={`flex-1 lg:flex-none px-4 h-10 rounded-xl flex items-center justify-center gap-1.5 transition-all font-black text-[10px] uppercase tracking-widest ${
+                        className={`flex-1 lg:flex-none px-2 h-7 rounded-[10px] flex items-center justify-center gap-1 transition-all font-black text-[8px] uppercase tracking-widest ${
                           order.status === "delivered"
                             ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/20"
                             : darkMode
@@ -1685,9 +1697,9 @@ function OrderDetailModal({
                         }`}
                       >
                         {isUpdating === "delivered" ? (
-                          <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
                         ) : (
-                          <CheckCircle2 size={14} />
+                          <CheckCircle2 size={10} />
                         )}
                         <span className="hidden sm:inline">Done</span>
                       </button>
@@ -2759,7 +2771,13 @@ function CategoriesTab({
   const filteredCategories = categories.filter((c) => {
     const s = globalSearch?.toLowerCase() || "";
     return (
-      c.key.toLowerCase().includes(s) || t(c.key).toLowerCase().includes(s)
+      c.key.toLowerCase().includes(s) || 
+      t(c.key).toLowerCase().includes(s) ||
+      c.nameEn?.toLowerCase().includes(s) ||
+      c.nameMm?.toLowerCase().includes(s) ||
+      c.nameMs?.toLowerCase().includes(s) ||
+      c.nameTh?.toLowerCase().includes(s) ||
+      c.nameZh?.toLowerCase().includes(s)
     );
   });
 
@@ -2769,7 +2787,11 @@ function CategoriesTab({
     key: "",
     nameEn: "",
     nameMm: "",
+    nameMs: "",
+    nameTh: "",
+    nameZh: "",
     order: categories.length,
+    supportPhone: "",
   });
 
   const handleAdd = async (e: React.FormEvent) => {
@@ -2781,7 +2803,11 @@ function CategoriesTab({
         key: newCategory.key,
         nameEn: newCategory.nameEn,
         nameMm: newCategory.nameMm,
+        nameMs: newCategory.nameMs,
+        nameTh: newCategory.nameTh,
+        nameZh: newCategory.nameZh,
         order: Number(newCategory.order),
+        supportPhone: newCategory.supportPhone,
       });
       setEditingCategory(null);
     } else {
@@ -2789,12 +2815,25 @@ function CategoriesTab({
         key: newCategory.key,
         nameEn: newCategory.nameEn,
         nameMm: newCategory.nameMm,
+        nameMs: newCategory.nameMs,
+        nameTh: newCategory.nameTh,
+        nameZh: newCategory.nameZh,
         isActive: true,
         order: Number(newCategory.order),
+        supportPhone: newCategory.supportPhone,
       });
     }
     
-    setNewCategory({ key: "", nameEn: "", nameMm: "", order: categories.length + 1 });
+    setNewCategory({ 
+      key: "", 
+      nameEn: "", 
+      nameMm: "", 
+      nameMs: "",
+      nameTh: "",
+      nameZh: "",
+      order: categories.length + 1,
+      supportPhone: "",
+    });
     setShowAdd(false);
   };
 
@@ -2804,7 +2843,11 @@ function CategoriesTab({
       key: cat.key,
       nameEn: cat.nameEn || "",
       nameMm: cat.nameMm || "",
+      nameMs: cat.nameMs || "",
+      nameTh: cat.nameTh || "",
+      nameZh: cat.nameZh || "",
       order: cat.order,
+      supportPhone: cat.supportPhone || "",
     });
     setShowAdd(true);
   };
@@ -2990,8 +3033,8 @@ function CategoriesTab({
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-[9px] font-black uppercase tracking-widest opacity-40 ml-2">Name (English)</label>
-                      <input
+                       <label className="text-[9px] font-black uppercase tracking-widest opacity-40 ml-2">Name (English)</label>
+                       <input
                         className={`w-full p-4 rounded-xl border font-black text-xs outline-none transition-all ${darkMode ? "bg-white/5 border-white/10 focus:border-primary" : "bg-white border-gray-200 focus:border-emerald-500"}`}
                         placeholder="Fresh Fruit"
                         value={newCategory.nameEn}
@@ -3005,6 +3048,42 @@ function CategoriesTab({
                         placeholder="လတ်ဆတ်သော သစ်သီးများ"
                         value={newCategory.nameMm}
                         onChange={(e) => setNewCategory({ ...newCategory, nameMm: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-black uppercase tracking-widest opacity-40 ml-2">Name (Malay)</label>
+                      <input
+                        className={`w-full p-4 rounded-xl border font-black text-xs outline-none transition-all ${darkMode ? "bg-white/5 border-white/10 focus:border-primary" : "bg-white border-gray-200 focus:border-emerald-500"}`}
+                        placeholder="Buah-buahan Segar"
+                        value={newCategory.nameMs}
+                        onChange={(e) => setNewCategory({ ...newCategory, nameMs: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-black uppercase tracking-widest opacity-40 ml-2">Name (Thai)</label>
+                      <input
+                        className={`w-full p-4 rounded-xl border font-black text-xs outline-none transition-all ${darkMode ? "bg-white/5 border-white/10 focus:border-primary" : "bg-white border-gray-200 focus:border-emerald-500"}`}
+                        placeholder="ผลไม้สด"
+                        value={newCategory.nameTh}
+                        onChange={(e) => setNewCategory({ ...newCategory, nameTh: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-black uppercase tracking-widest opacity-40 ml-2">Name (Chinese)</label>
+                      <input
+                        className={`w-full p-4 rounded-xl border font-black text-xs outline-none transition-all ${darkMode ? "bg-white/5 border-white/10 focus:border-primary" : "bg-white border-gray-200 focus:border-emerald-500"}`}
+                        placeholder="新鲜水果"
+                        value={newCategory.nameZh}
+                        onChange={(e) => setNewCategory({ ...newCategory, nameZh: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-black uppercase tracking-widest opacity-40 ml-2">Support Phone (Optional)</label>
+                      <input
+                        className={`w-full p-4 rounded-xl border font-black text-xs outline-none transition-all ${darkMode ? "bg-white/5 border-white/10 focus:border-primary" : "bg-white border-gray-200 focus:border-emerald-500"}`}
+                        placeholder="e.g. 60112345678"
+                        value={newCategory.supportPhone}
+                        onChange={(e) => setNewCategory({ ...newCategory, supportPhone: e.target.value })}
                       />
                     </div>
                   </div>
@@ -3043,7 +3122,10 @@ function CategoriesTab({
                           </div>
                           <div>
                             <h4 className="font-black text-[11px] uppercase tracking-widest truncate max-w-[120px]">
-                              {t(cat.key)}
+                              {(() => {
+                                if (cat.nameEn) return cat.nameEn;
+                                return cat.key ? t(cat.key) : cat.name;
+                              })()}
                             </h4>
                             <div className="flex items-center gap-2">
                               <p className="text-[8px] opacity-40 font-bold tracking-widest leading-none mt-0.5">
@@ -3313,15 +3395,6 @@ function UsersTab({
                     >
                       <MessageCircle size={12} />
                     </a>
-                    <a
-                      href={`viber://chat?number=${formatPhoneNumber(user.phone)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className={`p-1 rounded-md transition-colors ${darkMode ? "hover:bg-purple-500/20 text-purple-400/70 hover:text-purple-300" : "hover:bg-purple-100 text-purple-600/70 hover:text-purple-700"}`}
-                      title="Viber"
-                    >
-                      <MessageSquare size={12} />
-                    </a>
                   </div>
                 )}
               </div>
@@ -3448,220 +3521,6 @@ function UsersTab({
   );
 }
 
-function CouponsTab({
-  coupons,
-  addCoupon,
-  updateCoupon,
-  deleteCoupon,
-  darkMode,
-  formatPrice,
-  globalSearch,
-}: {
-  coupons: any[];
-  addCoupon: any;
-  updateCoupon: any;
-  deleteCoupon: any;
-  darkMode: boolean;
-  formatPrice: any;
-  globalSearch?: string;
-}) {
-  const filteredCoupons = coupons.filter((c) => {
-    const s = globalSearch?.toLowerCase() || "";
-    return c.code.toLowerCase().includes(s);
-  });
-
-  const [isAdding, setIsAdding] = useState(false);
-  const [newCoupon, setNewCoupon] = useState({
-    code: "",
-    type: "percentage" as "percentage" | "fixed",
-    value: 0,
-    minOrderAmount: 0,
-    maxDiscount: 0,
-    expiryDate: "",
-    usageLimit: 0,
-    isActive: true,
-  });
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await addCoupon(newCoupon);
-    setIsAdding(false);
-    setNewCoupon({
-      code: "",
-      type: "percentage",
-      value: 0,
-      minOrderAmount: 0,
-      maxDiscount: 0,
-      expiryDate: "",
-      usageLimit: 0,
-      isActive: true,
-    });
-    toast.success("Coupon added successfully");
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-black tracking-tight">
-            Coupons & Discounts
-          </h2>
-          <p className="text-sm opacity-40 font-bold uppercase tracking-widest">
-            {coupons.length} Active Coupons
-          </p>
-        </div>
-        <button
-          onClick={() => setIsAdding(true)}
-          className={`px-6 py-3 rounded-none font-bold text-sm flex items-center gap-2 transition-all ${
-            darkMode
-              ? "bg-primary text-surface"
-              : "bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-200"
-          }`}
-        >
-          <Plus size={18} />
-          Create Coupon
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredCoupons.map((coupon) => (
-          <div
-            key={coupon.id}
-            className={`p-6 rounded-[2rem] border relative overflow-hidden ${darkMode ? "bg-white/5 border-white/10" : "bg-white border-gray-100 shadow-sm"}`}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div
-                className={`px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${darkMode ? "bg-primary/20 text-primary" : "bg-emerald-100 text-emerald-700"}`}
-              >
-                {coupon.code}
-              </div>
-              <button
-                onClick={() => deleteCoupon(coupon.id)}
-                className="p-2 rounded-none text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
-              >
-                <Trash2 size={16} />
-              </button>
-            </div>
-            <div className="mb-4">
-              <p className="text-3xl font-black">
-                {coupon.type === "percentage"
-                  ? `${coupon.value}%`
-                  : formatPrice(coupon.value)}
-                <span className="text-sm opacity-40 ml-2 font-bold uppercase tracking-widest">
-                  OFF
-                </span>
-              </p>
-              <p className="text-xs opacity-40 font-bold mt-1">
-                Min. Order: {formatPrice(coupon.minOrderAmount)}
-              </p>
-            </div>
-            <div className="flex items-center justify-between pt-4 border-t border-gray-50 dark:border-white/5">
-              <div className="text-[10px] font-bold opacity-40 uppercase tracking-widest">
-                Used: {coupon.usageCount || 0} / {coupon.usageLimit || "∞"}
-              </div>
-              <div
-                className={`w-2 h-2 rounded-full ${coupon.isActive ? "bg-emerald-500" : "bg-red-500"}`}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <AnimatePresence>
-        {isAdding && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className={`w-full max-w-md p-8 rounded-[2.5rem] ${darkMode ? "bg-surface-container-high text-on-surface" : "bg-white text-gray-900"}`}
-            >
-              <div className="flex items-center justify-between mb-8">
-                <h3 className="text-xl font-black tracking-tight">
-                  New Coupon
-                </h3>
-                <button
-                  onClick={() => setIsAdding(false)}
-                  className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-[10px] font-black uppercase tracking-widest opacity-40 mb-2 ml-2">
-                    Coupon Code
-                  </label>
-                  <input
-                    required
-                    type="text"
-                    placeholder="SUMMER20"
-                    value={newCoupon.code}
-                    onChange={(e) =>
-                      setNewCoupon({
-                        ...newCoupon,
-                        code: e.target.value.toUpperCase(),
-                      })
-                    }
-                    className={`w-full px-6 py-3 rounded-none border font-bold outline-none focus:border-primary transition-all ${darkMode ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-100"}`}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-black uppercase tracking-widest opacity-40 mb-2 ml-2">
-                      Type
-                    </label>
-                    <select
-                      value={newCoupon.type}
-                      onChange={(e) =>
-                        setNewCoupon({
-                          ...newCoupon,
-                          type: e.target.value as any,
-                        })
-                      }
-                      className={`w-full px-6 py-3 rounded-none border font-bold outline-none focus:border-primary transition-all ${darkMode ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-100"}`}
-                    >
-                      <option value="percentage">Percentage</option>
-                      <option value="fixed">Fixed Amount</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black uppercase tracking-widest opacity-40 mb-2 ml-2">
-                      Value
-                    </label>
-                    <input
-                      required
-                      type="number"
-                      value={newCoupon.value}
-                      onChange={(e) =>
-                        setNewCoupon({
-                          ...newCoupon,
-                          value: parseFloat(e.target.value),
-                        })
-                      }
-                      className={`w-full px-6 py-3 rounded-none border font-bold outline-none focus:border-primary transition-all ${darkMode ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-100"}`}
-                    />
-                  </div>
-                </div>
-                <button
-                  type="submit"
-                  className={`w-full py-4 rounded-none font-black text-sm transition-all mt-4 ${
-                    darkMode
-                      ? "bg-primary text-surface"
-                      : "bg-emerald-600 text-white hover:bg-emerald-700"
-                  }`}
-                >
-                  Create Coupon
-                </button>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
 
 function _DeprecatedNotificationsTab({
   sendBroadcast,
@@ -3908,83 +3767,109 @@ function AuditLogsTab({
     );
   });
 
+  const getActionStyles = (action: string) => {
+    const act = action.toLowerCase();
+    if (act.includes("delete") || act.includes("remove"))
+      return {
+        bg: darkMode ? "bg-red-500/10" : "bg-red-50",
+        text: "text-red-500",
+        border: darkMode ? "border-red-500/20" : "border-red-100",
+      };
+    if (act.includes("add") || act.includes("create"))
+      return {
+        bg: darkMode ? "bg-emerald-500/10" : "bg-emerald-50",
+        text: "text-emerald-500",
+        border: darkMode ? "border-emerald-500/20" : "border-emerald-100",
+      };
+    if (act.includes("update") || act.includes("edit"))
+      return {
+        bg: darkMode ? "bg-amber-500/10" : "bg-amber-50",
+        text: "text-amber-500",
+        border: darkMode ? "border-amber-500/20" : "border-amber-100",
+      };
+    return {
+      bg: darkMode ? "bg-blue-500/10" : "bg-blue-50",
+      text: "text-blue-500",
+      border: darkMode ? "border-blue-500/20" : "border-blue-100",
+    };
+  };
+
+  const formatTime = (createdAt: any) => {
+    if (!createdAt?.seconds) return "Just now";
+    const date = new Date(createdAt.seconds * 1000);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' ' + date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
+
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-black tracking-tight">Audit Logs</h2>
-        <p className="text-sm opacity-40 font-bold uppercase tracking-widest">
-          Track administrative actions
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-black tracking-tight">Audit Logs</h2>
+          <p className="text-sm opacity-40 font-bold uppercase tracking-widest">
+            {filteredLogs.length} Actions Tracked
+          </p>
+        </div>
       </div>
 
-      <div
-        className={`rounded-[2.5rem] border overflow-hidden ${darkMode ? "bg-white/5 border-white/10" : "bg-white border-gray-100 shadow-sm"}`}
-      >
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr
-                className={`border-b ${darkMode ? "border-white/5" : "border-gray-50"}`}
+      <div className="grid grid-cols-1 gap-3">
+        {filteredLogs.length > 0 ? (
+          filteredLogs.map((log) => {
+            const styles = getActionStyles(log.action);
+            return (
+              <div
+                key={log.id}
+                className={`group p-4 rounded-3xl border transition-all duration-300 hover:scale-[1.01] ${
+                  darkMode
+                    ? "bg-white/5 border-white/10 hover:bg-white/[0.07]"
+                    : "bg-white border-on-surface/5 hover:border-primary/20 shadow-sm"
+                }`}
               >
-                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest opacity-40">
-                  Admin
-                </th>
-                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest opacity-40">
-                  Action
-                </th>
-                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest opacity-40">
-                  Target
-                </th>
-                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest opacity-40">
-                  Time
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50 dark:divide-white/5">
-              {filteredLogs.map((log) => (
-                <tr
-                  key={log.id}
-                  className="hover:bg-gray-50/50 dark:hover:bg-white/5 transition-colors"
-                >
-                  <td className="px-8 py-4">
-                    <p className="font-black text-sm">{log.adminName}</p>
-                    <p className="text-[10px] opacity-40 font-bold">
-                      {log.adminId}
-                    </p>
-                  </td>
-                  <td className="px-8 py-4">
-                    <span
-                      className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest ${
-                        log.action.includes("delete")
-                          ? "bg-red-100 text-red-700"
-                          : log.action.includes("add")
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-blue-100 text-blue-700"
-                      }`}
-                    >
-                      {log.action.replace("_", " ")}
-                    </span>
-                  </td>
-                  <td className="px-8 py-4">
-                    <p className="font-bold text-sm">{log.target}</p>
-                    <p className="text-[10px] opacity-40 font-bold truncate max-w-[200px]">
-                      {log.details}
-                    </p>
-                  </td>
-                  <td className="px-8 py-4">
-                    <p className="text-xs font-bold opacity-60">
-                      {log.createdAt?.seconds
-                        ? new Date(
-                            log.createdAt.seconds * 1000,
-                          ).toLocaleString()
-                        : "Just now"}
-                    </p>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-start gap-4">
+                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border ${styles.bg} ${styles.border}`}>
+                      <History size={18} className={styles.text} />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${styles.bg} ${styles.text} ${styles.border}`}>
+                          {log.action.replace("_", " ")}
+                        </span>
+                        <span className="text-xs font-black text-on-surface tracking-tight">
+                          {log.target}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-on-surface-variant font-medium leading-relaxed max-w-xl">
+                        {log.details || "No additional details available."}
+                      </p>
+                      <div className="flex items-center gap-3 pt-1">
+                        <div className="flex items-center gap-1.5 opacity-60">
+                          <User size={10} />
+                          <span className="text-[10px] font-bold uppercase tracking-wider">{log.adminName}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 opacity-40">
+                          <Clock size={10} />
+                          <span className="text-[10px] font-bold uppercase tracking-wider">{formatTime(log.createdAt)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className={`p-12 rounded-[2.5rem] border border-dashed flex flex-col items-center justify-center text-center space-y-3 ${
+            darkMode ? "border-white/10" : "border-gray-200"
+          }`}>
+            <div className="w-16 h-16 rounded-full bg-on-surface/5 flex items-center justify-center">
+              <History size={32} className="opacity-20" />
+            </div>
+            <div>
+              <p className="font-black text-lg">No logs found</p>
+              <p className="text-sm opacity-40">Try adjusting your search query</p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -3993,6 +3878,7 @@ function AuditLogsTab({
 function AdminsTab({
   admins,
   addAdmin,
+  createNewAdmin,
   updateAdminRole,
   removeAdmin,
   darkMode,
@@ -4000,6 +3886,7 @@ function AdminsTab({
 }: {
   admins: any[];
   addAdmin: any;
+  createNewAdmin: any;
   updateAdminRole: any;
   removeAdmin: any;
   darkMode: boolean;
@@ -4014,19 +3901,48 @@ function AdminsTab({
   });
 
   const [isAdding, setIsAdding] = useState(false);
+  const [addMode, setAddMode] = useState<"create" | "uid">("create");
   const [newAdmin, setNewAdmin] = useState({
     uid: "",
     email: "",
+    password: "",
     name: "",
     role: "staff" as "superadmin" | "staff",
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await addAdmin(newAdmin);
+    if (addMode === "create") {
+      await createNewAdmin(
+        newAdmin.email,
+        newAdmin.password,
+        newAdmin.name,
+        newAdmin.role,
+      );
+    } else {
+      await addAdmin({
+        uid: newAdmin.uid,
+        email: newAdmin.email,
+        name: newAdmin.name,
+        role: newAdmin.role,
+      });
+    }
     setIsAdding(false);
-    setNewAdmin({ uid: "", email: "", name: "", role: "staff" });
-    toast.success("Admin added successfully");
+    setNewAdmin({ uid: "", email: "", password: "", name: "", role: "staff" });
+  };
+
+  const getRoleStyles = (role: string) => {
+    if (role === "superadmin")
+      return {
+        bg: darkMode ? "bg-purple-500/10" : "bg-purple-50",
+        text: "text-purple-500",
+        border: darkMode ? "border-purple-500/20" : "border-purple-100",
+      };
+    return {
+      bg: darkMode ? "bg-blue-500/10" : "bg-blue-50",
+      text: "text-blue-500",
+      border: darkMode ? "border-blue-500/20" : "border-blue-100",
+    };
   };
 
   return (
@@ -4042,49 +3958,79 @@ function AdminsTab({
         </div>
         <button
           onClick={() => setIsAdding(true)}
-          className={`px-6 py-3 rounded-none font-bold text-sm flex items-center gap-2 transition-all ${
+          className={`px-5 py-2.5 rounded-2xl font-black text-xs flex items-center gap-2 transition-all active:scale-95 ${
             darkMode
               ? "bg-primary text-surface"
               : "bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-200"
           }`}
         >
-          <ShieldCheck size={18} />
+          <Plus size={18} />
           Add Admin
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredAdmins.map((admin) => (
-          <div
-            key={admin.uid}
-            className={`p-6 rounded-[2rem] border ${darkMode ? "bg-white/5 border-white/10" : "bg-white border-gray-100 shadow-sm"}`}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 rounded-none bg-primary/10 flex items-center justify-center">
-                <ShieldCheck size={24} className="text-primary" />
-              </div>
-              <span
-                className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                  admin.role === "superadmin"
-                    ? "bg-purple-100 text-purple-700"
-                    : "bg-blue-100 text-blue-700"
+      <div className="grid grid-cols-1 gap-3">
+        {filteredAdmins.length > 0 ? (
+          filteredAdmins.map((admin) => {
+            const roleStyles = getRoleStyles(admin.role);
+            return (
+              <div
+                key={admin.uid}
+                className={`group p-4 rounded-3xl border transition-all duration-300 hover:scale-[1.01] ${
+                  darkMode
+                    ? "bg-white/5 border-white/10 hover:bg-white/[0.07]"
+                    : "bg-white border-on-surface/5 hover:border-primary/20 shadow-sm"
                 }`}
               >
-                {admin.role}
-              </span>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border ${roleStyles.bg} ${roleStyles.border}`}>
+                      <ShieldCheck size={18} className={roleStyles.text} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <h4 className="font-black text-sm text-on-surface truncate">
+                          {admin.name || "Admin User"}
+                        </h4>
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${roleStyles.bg} ${roleStyles.text} ${roleStyles.border}`}>
+                          {admin.role}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1.5 opacity-40">
+                          <Mail size={10} />
+                          <p className="text-[10px] font-bold truncate max-w-[200px]">{admin.email}</p>
+                        </div>
+                        <div className="flex items-center gap-1.5 opacity-20">
+                          <span className="text-[10px] font-mono">{admin.uid.slice(0, 8)}...</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => removeAdmin(admin.uid)}
+                    className="p-2.5 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors shrink-0"
+                    title="Remove Admin"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className={`p-12 rounded-[2.5rem] border border-dashed flex flex-col items-center justify-center text-center space-y-3 ${
+            darkMode ? "border-white/10" : "border-gray-200"
+          }`}>
+            <div className="w-16 h-16 rounded-full bg-on-surface/5 flex items-center justify-center">
+              <ShieldCheck size={32} className="opacity-20" />
             </div>
-            <h4 className="font-black text-lg">{admin.name || "Admin User"}</h4>
-            <p className="text-sm opacity-40 font-bold mb-6">{admin.email}</p>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => removeAdmin(admin.uid)}
-                className="flex-grow py-2 rounded-none text-xs font-black uppercase tracking-widest bg-red-50 text-red-600 dark:bg-red-500/10 hover:bg-red-100 transition-colors"
-              >
-                Remove
-              </button>
+            <div>
+              <p className="font-black text-lg">No admins found</p>
+              <p className="text-sm opacity-40 text-on-surface-variant">Try adjusting your search query</p>
             </div>
           </div>
-        ))}
+        )}
       </div>
 
       <AnimatePresence>
@@ -4094,77 +4040,188 @@ function AdminsTab({
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className={`w-full max-w-md p-8 rounded-[2.5rem] ${darkMode ? "bg-surface-container-high text-on-surface" : "bg-white text-gray-900"}`}
+              className={`w-full max-w-2xl p-6 md:p-8 rounded-[2.5rem] border ${darkMode ? "bg-surface-container-high border-white/10" : "bg-white border-gray-100 shadow-2xl"}`}
             >
-              <div className="flex items-center justify-between mb-8">
-                <h3 className="text-xl font-black tracking-tight">
-                  Add New Admin
-                </h3>
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-4">
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${darkMode ? "bg-primary/10 text-primary" : "bg-primary/5 text-primary"}`}>
+                    <Plus size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black tracking-tight leading-none">Add New Admin</h3>
+                    <p className="text-[10px] font-bold opacity-40 uppercase tracking-widest mt-1 italic">Configure administrator access</p>
+                  </div>
+                </div>
                 <button
                   onClick={() => setIsAdding(false)}
-                  className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5"
+                  className="w-10 h-10 rounded-full bg-on-surface/5 flex items-center justify-center hover:bg-on-surface/10 transition-colors"
                 >
                   <X size={20} />
                 </button>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-[10px] font-black uppercase tracking-widest opacity-40 mb-2 ml-2">
-                    UID
-                  </label>
-                  <input
-                    required
-                    type="text"
-                    placeholder="Firebase User UID"
-                    value={newAdmin.uid}
-                    onChange={(e) =>
-                      setNewAdmin({ ...newAdmin, uid: e.target.value })
-                    }
-                    className={`w-full px-6 py-3 rounded-none border font-bold outline-none focus:border-primary transition-all ${darkMode ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-100"}`}
-                  />
+              <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-6">
+                {/* Mode Selection Sidebar */}
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setAddMode("create")}
+                      className={`w-full p-3 rounded-2xl border text-left transition-all ${
+                        addMode === "create"
+                          ? "bg-primary text-surface border-primary shadow-lg shadow-primary/20"
+                          : "bg-on-surface/5 border-transparent text-on-surface/60 hover:bg-on-surface/10"
+                      }`}
+                    >
+                      <p className="text-[10px] font-black uppercase tracking-widest leading-none mb-1">New Account</p>
+                      <p className="text-[9px] font-medium opacity-60 leading-tight">Create a fresh admin login</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAddMode("uid")}
+                      className={`w-full p-3 rounded-2xl border text-left transition-all ${
+                        addMode === "uid"
+                          ? "bg-primary text-surface border-primary shadow-lg shadow-primary/20"
+                          : "bg-on-surface/5 border-transparent text-on-surface/60 hover:bg-on-surface/10"
+                      }`}
+                    >
+                      <p className="text-[10px] font-black uppercase tracking-widest leading-none mb-1">Existing UID</p>
+                      <p className="text-[9px] font-medium opacity-60 leading-tight">Promote an existing customer</p>
+                    </button>
+                  </div>
+
+                  <div className={`p-3 rounded-2xl border border-dashed ${darkMode ? "border-white/10 bg-white/5" : "border-gray-200 bg-gray-50"}`}>
+                    <p className="text-[9px] font-bold opacity-40 leading-relaxed italic">
+                      {addMode === "create" 
+                        ? "Admin will receive their credentials via the email provided." 
+                        : "You need the specific Firebase UID from the user's profile."}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[10px] font-black uppercase tracking-widest opacity-40 mb-2 ml-2">
-                    Email
-                  </label>
-                  <input
-                    required
-                    type="email"
-                    placeholder="admin@example.com"
-                    value={newAdmin.email}
-                    onChange={(e) =>
-                      setNewAdmin({ ...newAdmin, email: e.target.value })
-                    }
-                    className={`w-full px-6 py-3 rounded-none border font-bold outline-none focus:border-primary transition-all ${darkMode ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-100"}`}
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black uppercase tracking-widest opacity-40 mb-2 ml-2">
-                    Role
-                  </label>
-                  <select
-                    value={newAdmin.role}
-                    onChange={(e) =>
-                      setNewAdmin({ ...newAdmin, role: e.target.value as any })
-                    }
-                    className={`w-full px-6 py-3 rounded-none border font-bold outline-none focus:border-primary transition-all ${darkMode ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-100"}`}
+
+                {/* Form Fields */}
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {addMode === "uid" ? (
+                      <div className="space-y-1 sm:col-span-2">
+                        <label className="block text-[10px] font-black uppercase tracking-widest opacity-40 ml-2 italic">
+                          Firebase UID
+                        </label>
+                        <input
+                          required
+                          type="text"
+                          placeholder="Paste User UID here..."
+                          value={newAdmin.uid}
+                          onChange={(e) =>
+                            setNewAdmin({ ...newAdmin, uid: e.target.value })
+                          }
+                          className={`w-full px-4 py-2.5 rounded-xl border text-xs font-bold outline-none focus:border-primary transition-all ${darkMode ? "bg-white/5 border-white/10" : "bg-gray-50 border-on-surface/5"}`}
+                        />
+                      </div>
+                    ) : (
+                      <div className="space-y-1 sm:col-span-2">
+                        <label className="block text-[10px] font-black uppercase tracking-widest opacity-40 ml-2 italic">
+                          Full Name
+                        </label>
+                        <input
+                          required
+                          type="text"
+                          placeholder="e.g. Mg Mg"
+                          value={newAdmin.name}
+                          onChange={(e) =>
+                            setNewAdmin({ ...newAdmin, name: e.target.value })
+                          }
+                          className={`w-full px-4 py-2.5 rounded-xl border text-xs font-bold outline-none focus:border-primary transition-all ${darkMode ? "bg-white/5 border-white/10" : "bg-gray-50 border-on-surface/5"}`}
+                        />
+                      </div>
+                    )}
+                    
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-black uppercase tracking-widest opacity-40 ml-2 italic">
+                        Email Address
+                      </label>
+                      <input
+                        required
+                        type="email"
+                        placeholder="admin@example.com"
+                        value={newAdmin.email}
+                        onChange={(e) =>
+                          setNewAdmin({ ...newAdmin, email: e.target.value })
+                        }
+                        className={`w-full px-4 py-2.5 rounded-xl border text-xs font-bold outline-none focus:border-primary transition-all ${darkMode ? "bg-white/5 border-white/10" : "bg-gray-50 border-on-surface/5"}`}
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-black uppercase tracking-widest opacity-40 ml-2 italic">
+                        {addMode === "create" ? "Initial Password" : "Role"}
+                      </label>
+                      {addMode === "create" ? (
+                        <input
+                          required
+                          type="password"
+                          placeholder="Min. 6 chars"
+                          value={newAdmin.password}
+                          onChange={(e) =>
+                            setNewAdmin({ ...newAdmin, password: e.target.value })
+                          }
+                          className={`w-full px-4 py-2.5 rounded-xl border text-xs font-bold outline-none focus:border-primary transition-all ${darkMode ? "bg-white/5 border-white/10" : "bg-gray-50 border-on-surface/5"}`}
+                        />
+                      ) : (
+                        <div className="relative">
+                          <select
+                            value={newAdmin.role}
+                            onChange={(e) =>
+                              setNewAdmin({ ...newAdmin, role: e.target.value as any })
+                            }
+                            className={`w-full px-4 py-2.5 rounded-xl border text-xs font-bold outline-none focus:border-primary transition-all appearance-none cursor-pointer ${darkMode ? "bg-white/5 border-white/10" : "bg-gray-50 border-on-surface/5"}`}
+                          >
+                            <option value="staff">Staff Member</option>
+                            <option value="superadmin">Super Admin</option>
+                          </select>
+                          <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none opacity-40">
+                            <ShieldCheck size={14} />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {addMode === "create" && (
+                      <div className="space-y-1 sm:col-span-2">
+                        <label className="block text-[10px] font-black uppercase tracking-widest opacity-40 ml-2 italic">
+                          Permission Level
+                        </label>
+                        <div className="relative">
+                          <select
+                            value={newAdmin.role}
+                            onChange={(e) =>
+                              setNewAdmin({ ...newAdmin, role: e.target.value as any })
+                            }
+                            className={`w-full px-4 py-2.5 rounded-xl border text-xs font-bold outline-none focus:border-primary transition-all appearance-none cursor-pointer ${darkMode ? "bg-white/5 border-white/10" : "bg-gray-50 border-on-surface/5"}`}
+                          >
+                            <option value="staff">Staff Member</option>
+                            <option value="superadmin">Super Admin</option>
+                          </select>
+                          <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none opacity-40">
+                            <ShieldCheck size={14} />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <button
+                    type="submit"
+                    className={`w-full py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all active:scale-95 flex items-center justify-center gap-2 ${
+                      darkMode
+                        ? "bg-primary text-surface shadow-lg shadow-primary/20"
+                        : "bg-emerald-600 text-white hover:bg-emerald-700 shadow-xl shadow-emerald-600/20"
+                    }`}
                   >
-                    <option value="staff">Staff</option>
-                    <option value="superadmin">Super Admin</option>
-                  </select>
-                </div>
-                <button
-                  type="submit"
-                  className={`w-full py-4 rounded-none font-black text-sm transition-all mt-4 ${
-                    darkMode
-                      ? "bg-primary text-surface"
-                      : "bg-emerald-600 text-white hover:bg-emerald-700"
-                  }`}
-                >
-                  Grant Access
-                </button>
-              </form>
+                    Confirm & Grant Access
+                  </button>
+                </form>
+              </div>
             </motion.div>
           </div>
         )}
@@ -4210,16 +4267,13 @@ export default function AdminDashboard() {
     userEmail,
     users,
     updateUserPoints,
-    coupons,
-    addCoupon,
-    updateCoupon,
-    deleteCoupon,
     auditLogs,
     logAudit,
     broadcastNotifications,
     sendBroadcast,
     admins,
     addAdmin,
+    createNewAdmin,
     updateAdminRole,
     removeAdmin,
     isAdmin,
@@ -4233,6 +4287,9 @@ export default function AdminDashboard() {
     deleteProduct,
     isQuotaExceeded,
     resetQuotaExceeded,
+    getCategoryName,
+    getMainName,
+    getSecondaryName,
     refreshAllData,
     shopPhone,
     setShopPhone,
@@ -4240,6 +4297,10 @@ export default function AdminDashboard() {
     setShopEmail,
     language,
   } = useStore();
+
+  const currentAdmin = admins.find((a) => a.uid === auth.currentUser?.uid);
+  const isSuperAdmin = currentAdmin?.role === "superadmin" || auth.currentUser?.email === "yelwinaung9981@gmail.com";
+
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<
     | "orders"
@@ -4251,29 +4312,15 @@ export default function AdminDashboard() {
     | "settings"
     | "analytics"
     | "users"
-    | "coupons"
     | "notifications"
     | "audit"
     | "admins"
-  >("analytics");
-  const [tempSupportNumber, setTempSupportNumber] = useState(supportNumber);
-  const [tempCutoffTime, setTempCutoffTime] = useState(cutoffTime);
-  const [tempEstimatedDeliveryTime, setTempEstimatedDeliveryTime] = useState(
-    estimatedDeliveryTime,
-  );
-  const [tempDeliveryFee, setTempDeliveryFee] = useState(deliveryFee || 0);
-  const [tempShopPhone, setTempShopPhone] = useState(shopPhone);
-  const [tempShopEmail, setTempShopEmail] = useState(shopEmail);
+  >("orders");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(true);
   const [isSeeding, setIsSeeding] = useState(false);
   const [isMigrating, setIsMigrating] = useState(false);
-  const [tempBankDetails, setTempBankDetails] = useState({
-    name: bankName,
-    number: bankAccountNumber,
-    accountName: bankAccountName,
-  });
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -4281,6 +4328,51 @@ export default function AdminDashboard() {
     start: "",
     end: "",
   });
+
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ current: "", new: "", confirm: "" });
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passwordForm.new !== passwordForm.confirm) {
+      toast.error("New passwords do not match.");
+      return;
+    }
+    if (passwordForm.new.length < 6) {
+      toast.error("Password should be at least 6 characters.");
+      return;
+    }
+
+    try {
+      setIsChangingPassword(true);
+      const { EmailAuthProvider, reauthenticateWithCredential, updatePassword } = await import("firebase/auth");
+      
+      if (auth.currentUser?.email) {
+        const credential = EmailAuthProvider.credential(auth.currentUser.email, passwordForm.current);
+        await reauthenticateWithCredential(auth.currentUser, credential);
+        
+        await updatePassword(auth.currentUser, passwordForm.new);
+        toast.success("Password updated successfully!");
+        setIsPasswordModalOpen(false);
+        setPasswordForm({ current: "", new: "", confirm: "" });
+      } else {
+        toast.error("Could not determine user email.");
+      }
+    } catch (error: any) {
+      console.error(error);
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+        toast.error("Incorrect current password.");
+      } else if (error.code === 'auth/requires-recent-login') {
+        toast.error("Session expired. Please log out and log back in.");
+      } else {
+        toast.error(error.message || "Failed to update password.");
+      }
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
 
   // Sync selected order with latest order data from context to reflect status changes immediately
   useEffect(() => {
@@ -4326,6 +4418,14 @@ export default function AdminDashboard() {
 
     return result;
   }, [orders, statusFilter, selectedDateFilter, searchQuery]);
+
+  // Redirect Staff if on forbidden tab
+  useEffect(() => {
+    const forbiddenTabs = ["analytics", "audit", "admins", "settings"];
+    if (isSuperAdmin === false && forbiddenTabs.includes(activeTab)) {
+      setActiveTab("orders");
+    }
+  }, [isSuperAdmin, activeTab]);
 
   // Real-time Notification for new orders
   useEffect(() => {
@@ -4600,19 +4700,20 @@ export default function AdminDashboard() {
         formatPrice={formatPrice}
         updateStatus={updateOrderStatus}
         t={t}
+        isMenuOpen={isMenuOpen}
       />
 
       {/* Header - Full Width Top */}
       <header
-        className={`fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 md:px-8 py-2 border-b ${darkMode ? "bg-[#0c0e0e]/80 backdrop-blur-md border-white/5" : "bg-white/80 backdrop-blur-md border-gray-100"}`}
+        className={`fixed top-0 left-0 right-0 z-60 flex items-center justify-between px-4 md:px-8 py-2 border-b ${darkMode ? "bg-[#0c0e0e]/80 backdrop-blur-md border-white/5" : "bg-white/80 backdrop-blur-md border-gray-100"}`}
       >
         {/* Logo Left */}
         <div className="flex items-center gap-3">
             <button 
               onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className={`w-8 h-8 rounded-xl flex items-center justify-center font-black transition-transform active:scale-95 ${darkMode ? "bg-primary text-white hover:bg-primary/90" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}
+              className={`w-8 h-8 rounded-xl flex items-center justify-center overflow-hidden transition-transform active:scale-95`}
             >
-                S
+                <img src="https://scontent.fkul7-2.fna.fbcdn.net/v/t39.30808-6/684505557_122097016515302120_6150026231108406984_n.jpg?_nc_cat=104&ccb=1-7&_nc_sid=1d70fc&_nc_ohc=65onKQ3wqrwQ7kNvwH-5Tn-&_nc_oc=AdoS-wVrlfKZ1ez9KNNdnG2zrOlHcnj7uHcGjRb3mW6fp1oguy8-8wQ1-pXhxzE26ke-vq-3N92HeuXbHTYkvevu&_nc_zt=23&_nc_ht=scontent.fkul7-2.fna&_nc_gid=lCsMSE2No98znYrLT3N7sg&_nc_ss=7b2a8&oh=00_Af4X8z6JL4VX10-1XWuFqPcF1kQfsivurJR7gMP3HKIQ7Q&oe=69FC4851" alt="Logo" className="w-full h-full object-cover" />
             </button>
             <h1 className={`text-lg font-black tracking-tight ${darkMode ? "text-on-surface" : "text-emerald-950"}`}>
                 Sar Taw Set
@@ -4685,9 +4786,75 @@ export default function AdminDashboard() {
           </button>
           
           {/* User Profile */}
-          <button className={`p-2 rounded-full transition-colors ${darkMode ? "text-on-surface-variant/60 hover:bg-white/5" : "text-gray-400 hover:bg-gray-100"}`}>
-            <User size={20} />
-          </button>
+          <Popover.Root open={isProfileMenuOpen} onOpenChange={setIsProfileMenuOpen}>
+            <Popover.Trigger asChild>
+              <button className="flex items-center gap-2 px-2 py-1 rounded-2xl transition-all cursor-pointer hover:opacity-80">
+                {currentAdmin && (
+                  <div className="hidden lg:flex flex-col items-end mr-1 text-right">
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? "text-primary" : "text-emerald-700"}`}>
+                      {currentAdmin.role}
+                    </span>
+                    <span className="text-[9px] font-bold opacity-40 uppercase truncate max-w-[100px]">
+                      {currentAdmin.name || "Admin"}
+                    </span>
+                  </div>
+                )}
+                <div className={`p-2 rounded-full ${darkMode ? "bg-white/5 text-primary" : "bg-gray-100 text-gray-600"}`}>
+                  <User size={18} />
+                </div>
+              </button>
+            </Popover.Trigger>
+            <Popover.Portal>
+              <Popover.Content
+                align="end"
+                sideOffset={8}
+                className={`z-50 w-56 rounded-2xl border shadow-xl p-2 ${
+                  darkMode
+                    ? "bg-[#0f1111] border-white/10"
+                    : "bg-white border-gray-100"
+                }`}
+              >
+                <div className="px-3 py-2 border-b mb-2 pb-3 opacity-80 min-w-0">
+                  <p className="font-bold text-sm truncate">{currentAdmin?.name || auth.currentUser?.email || "Admin"}</p>
+                  <p className="text-[10px] truncate opacity-50 mt-0.5">{auth.currentUser?.email}</p>
+                </div>
+                
+                <button
+                  onClick={() => {
+                    setIsProfileMenuOpen(false);
+                    if (auth.currentUser?.providerData.some(p => p.providerId === 'google.com')) {
+                       toast.error("Google accounts cannot change password here.");
+                       return;
+                    }
+                    setIsPasswordModalOpen(true);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                    darkMode
+                      ? "hover:bg-white/5 text-on-surface"
+                      : "hover:bg-gray-50 text-gray-700"
+                  }`}
+                >
+                  <KeyRound size={16} />
+                  Change Password
+                </button>
+                
+                <button
+                  onClick={() => {
+                    setIsProfileMenuOpen(false);
+                    handleLogout();
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all mt-1 ${
+                    darkMode
+                      ? "hover:bg-rose-500/10 text-rose-400"
+                      : "hover:bg-rose-50 text-rose-600"
+                  }`}
+                >
+                  <LogOut size={16} />
+                  {t("logout")}
+                </button>
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover.Root>
         </div>
       </header>
 
@@ -4701,7 +4868,7 @@ export default function AdminDashboard() {
             : "none",
         }}
         transition={{ type: "spring", stiffness: 300, damping: 30 }}
-        className={`fixed top-[70px] left-4 bottom-4 z-30 flex-shrink-0 overflow-hidden rounded-2xl border ${darkMode ? "bg-gradient-to-b from-[#0c0e0e]/90 to-black/90 backdrop-blur-2xl border-white/[0.08] shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]" : "bg-gradient-to-b from-white/90 to-gray-50/90 backdrop-blur-2xl border-emerald-100 shadow-[inset_0_1px_1px_rgba(255,255,255,1)]"}`}
+        className={`fixed top-[70px] left-4 bottom-4 z-50 flex-shrink-0 overflow-hidden rounded-2xl border ${darkMode ? "bg-gradient-to-b from-[#0c0e0e]/90 to-black/90 backdrop-blur-2xl border-white/[0.08] shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]" : "bg-gradient-to-b from-white/90 to-gray-50/90 backdrop-blur-2xl border-emerald-100 shadow-[inset_0_1px_1px_rgba(255,255,255,1)]"}`}
       >
         <div className="w-full h-full flex flex-col pt-0 pb-6">
 
@@ -4711,7 +4878,7 @@ export default function AdminDashboard() {
               {/* Removed management header */}
               <div className="space-y-1 pt-4">
                 {[
-                  { id: "analytics", icon: BarChart3, label: "Analytics" },
+                  { id: "analytics", icon: BarChart3, label: "Analytics", superOnly: true },
                   { id: "orders", icon: ShoppingBag, label: t("orders") },
                   { id: "market", icon: ClipboardList, label: "Market List" },
                   { id: "products", icon: Package, label: t("products") },
@@ -4721,7 +4888,9 @@ export default function AdminDashboard() {
                     icon: SlidersHorizontal,
                     label: "Categories",
                   },
-                ].map((item) => (
+                ]
+                  .filter(item => !item.superOnly || isSuperAdmin)
+                  .map((item) => (
                   <button
                     key={item.id}
                     onClick={() => setActiveTab(item.id as any)}
@@ -4770,12 +4939,13 @@ export default function AdminDashboard() {
               <div className="space-y-1">
                 {[
                   { id: "users", icon: Users, label: "Customers" },
-                  { id: "coupons", icon: Ticket, label: "Coupons" },
                   { id: "notifications", icon: Bell, label: "Broadcast" },
-                  { id: "audit", icon: History, label: "Audit Logs" },
-                  { id: "admins", icon: ShieldCheck, label: "Admins" },
-                  { id: "settings", icon: Settings, label: t("settings") },
-                ].map((item) => (
+                  { id: "audit", icon: History, label: "Audit Logs", superOnly: true },
+                  { id: "admins", icon: ShieldCheck, label: "Admins", superOnly: true },
+                  { id: "settings", icon: Settings, label: t("settings"), superOnly: true },
+                ]
+                  .filter(item => !item.superOnly || isSuperAdmin)
+                  .map((item) => (
                   <button
                     key={item.id}
                     onClick={() => setActiveTab(item.id as any)}
@@ -4942,7 +5112,7 @@ export default function AdminDashboard() {
             )}
 
             <AnimatePresence mode="wait">
-              {activeTab === "analytics" ? (
+              {activeTab === "analytics" && isSuperAdmin ? (
                 <motion.div
                   key="analytics"
                   initial={{ opacity: 0, y: 20 }}
@@ -4957,6 +5127,7 @@ export default function AdminDashboard() {
                     formatPrice={formatPrice}
                     isLowStockAlertEnabled={isLowStockAlertEnabled}
                     t={t}
+                    categories={categories}
                   />
                 </motion.div>
               ) : activeTab === "orders" ? (
@@ -5167,66 +5338,66 @@ export default function AdminDashboard() {
                             setSelectedOrder(order);
                             setIsOrderModalOpen(true);
                           }}
-                          className={`group px-4 py-3 rounded-2xl border flex items-center justify-between transition-all cursor-pointer ${
+                          className={`group px-4 py-3 rounded-xl border flex items-center justify-between transition-all cursor-pointer hover:scale-[1.01] ${
                             order.status === "pending"
-                              ? "bg-amber-950/5 border-amber-500/20 hover:bg-amber-950/10"
-                              : "bg-surface-container-high/20 border-white/5 hover:bg-surface-container-high/40"
+                              ? "bg-amber-950/5 border-amber-500/20 hover:bg-amber-950/10 shadow-lg shadow-amber-900/5"
+                              : "bg-surface-container-high/20 border-white/5 hover:bg-surface-container-high/40 shadow-sm"
                           }`}
                         >
-                          <div className="flex items-center gap-4 flex-1">
+                          <div className="flex items-center gap-6 flex-1">
                             <div
-                              className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-[10px] ${
+                              className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs ${
                                 order.status === "pending"
                                   ? "bg-amber-500/10 text-amber-500"
                                   : "bg-primary/10 text-primary"
                               }`}
                             >
-                              <User size={14} />
+                              <User size={18} />
                             </div>
                             <div className="truncate">
-                              <p className="font-bold text-xs text-on-surface truncate">
+                              <p className="font-black text-sm text-on-surface truncate tracking-tight">
                                 {order.customerName}
                               </p>
-                              <p className="font-mono text-[10px] font-bold text-on-surface-variant/40">
+                              <p className="font-mono text-[9px] font-black uppercase tracking-widest opacity-30">
                                 #
-                                {order.id}
+                                {order.id.slice(-8)}
                               </p>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-6">
+                          <div className="flex items-center gap-8">
                             <div className="text-right hidden sm:block">
-                              <p className="text-[9px] uppercase tracking-wider text-on-surface-variant/40 font-bold">
+                              <p className="text-[8px] uppercase tracking-[0.2em] opacity-30 font-black mb-1">
                                 Ordered On
                               </p>
-                              <p className="font-bold text-[10px] text-on-surface">
-                                {new Date(order.createdAt).toLocaleDateString()}
+                              <p className="font-bold text-xs text-on-surface">
+                                {new Date(order.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                               </p>
                             </div>
 
-                            <div className="text-right">
-                              <p className="font-black text-xs text-on-surface">
+                            <div className="text-right min-w-[100px]">
+                              <p className="font-black text-sm text-on-surface">
                                 {formatPrice(order.total)}
                               </p>
-                              <p className="text-[9px] uppercase tracking-wider text-on-surface-variant/40 font-bold">
+                              <p className="text-[8px] uppercase tracking-[0.2em] opacity-30 font-black">
                                 {order.items.length} items
                               </p>
                             </div>
 
                             <span
-                              className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                              className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
                                 order.status === "delivered"
-                                  ? "bg-emerald-500/10 text-emerald-500"
+                                  ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
                                   : order.status === "packing"
-                                    ? "bg-blue-500/10 text-blue-500"
-                                    : "bg-amber-500/10 text-amber-500"
+                                    ? "bg-blue-500/10 text-blue-500 border-blue-500/20"
+                                    : "bg-amber-500/10 text-amber-500 border-amber-500/20"
                               }`}
                             >
                               {order.status}
                             </span>
 
-                            <div className="text-on-surface-variant/20 group-hover:text-primary transition-colors">
-                              <ChevronRight size={14} />
+                            <div className={`p-2 rounded-full transition-colors ${darkMode ? "bg-white/5 text-on-surface-variant/20 group-hover:text-primary group-hover:bg-primary/10" : "bg-gray-50 text-gray-300 group-hover:text-emerald-600 group-hover:bg-emerald-50"}`}>
+                              <ChevronRight size={16} />
                             </div>
                           </div>
                         </motion.div>
@@ -5727,23 +5898,6 @@ export default function AdminDashboard() {
                     globalSearch={searchQuery}
                   />
                 </motion.div>
-              ) : activeTab === "coupons" ? (
-                <motion.div
-                  key="coupons"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                >
-                  <CouponsTab
-                    coupons={coupons}
-                    addCoupon={addCoupon}
-                    updateCoupon={updateCoupon}
-                    deleteCoupon={deleteCoupon}
-                    darkMode={darkMode}
-                    formatPrice={formatPrice}
-                    globalSearch={searchQuery}
-                  />
-                </motion.div>
               ) : activeTab === "notifications" ? (
                 <motion.div
                   key="notifications"
@@ -5757,7 +5911,7 @@ export default function AdminDashboard() {
                     darkMode={darkMode}
                   />
                 </motion.div>
-              ) : activeTab === "audit" ? (
+              ) : activeTab === "audit" && isSuperAdmin ? (
                 <motion.div
                   key="audit"
                   initial={{ opacity: 0, y: 20 }}
@@ -5770,7 +5924,7 @@ export default function AdminDashboard() {
                     globalSearch={searchQuery}
                   />
                 </motion.div>
-              ) : activeTab === "admins" ? (
+              ) : activeTab === "admins" && isSuperAdmin ? (
                 <motion.div
                   key="admins"
                   initial={{ opacity: 0, y: 20 }}
@@ -5780,739 +5934,98 @@ export default function AdminDashboard() {
                   <AdminsTab
                     admins={admins}
                     addAdmin={addAdmin}
+                    createNewAdmin={createNewAdmin}
                     updateAdminRole={updateAdminRole}
                     removeAdmin={removeAdmin}
                     darkMode={darkMode}
                     globalSearch={searchQuery}
                   />
                 </motion.div>
-              ) : activeTab === "settings" ? (
-                <motion.div
-                  key="settings"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  className="space-y-10"
-                >
-                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                    <div>
-                      <h2
-                        className={`text-3xl font-black tracking-tight ${darkMode ? "text-on-surface" : "text-emerald-950"}`}
-                      >
-                        {t("generalSettings")}
-                      </h2>
-                      <p
-                        className={`text-xs font-bold ${darkMode ? "text-on-surface-variant/60" : "text-gray-500"}`}
-                      >
-                        System configuration and maintenance
-                      </p>
-                    </div>
-                  </div>
-
-                  <div
-                    className={`rounded-[3rem] p-12 border transition-all duration-500 ${darkMode ? "bg-surface-container-high/40 border-white/5" : "bg-white border-gray-100 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.05)]"}`}
-                  >
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
-                      {/* Left Column */}
-                      <div className="space-y-12">
-                        {/* Currency Settings */}
-                        <section className="space-y-6">
-                          <div className="flex items-center gap-4">
-                            <div
-                              className={`p-3 rounded-none ${darkMode ? "bg-white/5 text-primary" : "bg-emerald-50 text-emerald-600"}`}
-                            >
-                              <DollarSign size={20} />
-                            </div>
-                            <div>
-                              <h4
-                                className={`font-black uppercase tracking-widest text-xs ${darkMode ? "text-on-surface" : "text-emerald-900"}`}
-                              >
-                                Currency Settings
-                              </h4>
-                              <p
-                                className={`text-[10px] font-bold ${darkMode ? "text-on-surface-variant/40" : "text-gray-400"}`}
-                              >
-                                Active currency for the application
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex gap-4">
-                            {["RM", "MMK"].map((curr) => (
-                              <button
-                                key={curr}
-                                onClick={() => setCurrency(curr as any)}
-                                className={`flex-1 py-5 rounded-none font-black text-xs uppercase tracking-widest transition-all duration-300 border ${
-                                  currency === curr
-                                    ? darkMode
-                                      ? "bg-primary text-surface border-primary shadow-xl shadow-primary/20 scale-[1.02]"
-                                      : "bg-emerald-600 text-white border-emerald-600 shadow-xl shadow-emerald-100 scale-[1.02]"
-                                    : darkMode
-                                      ? "bg-white/5 border-white/10 text-on-surface-variant hover:bg-white/10"
-                                      : "bg-gray-50 border-gray-100 text-gray-400 hover:bg-gray-100"
-                                }`}
-                              >
-                                {curr === "RM"
-                                  ? "Malaysia (RM)"
-                                  : "Myanmar (MMK)"}
-                              </button>
-                            ))}
-                          </div>
-                        </section>
-
-                        {/* Delivery Service Settings */}
-                        <section
-                          className={`p-8 rounded-[2.5rem] border transition-all duration-500 ${darkMode ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"}`}
-                        >
-                          <div className="flex items-center justify-between mb-6">
-                            <div className="flex items-center gap-4">
-                              <div
-                                className={`p-3 rounded-none ${darkMode ? "bg-white/5 text-primary" : "bg-emerald-50 text-emerald-600"}`}
-                              >
-                                <Clock size={20} />
-                              </div>
-                              <div>
-                                <h4
-                                  className={`font-black uppercase tracking-widest text-xs ${darkMode ? "text-on-surface" : "text-emerald-900"}`}
-                                >
-                                  {t("deliveryService")}
-                                </h4>
-                                <p
-                                  className={`text-[10px] font-bold ${darkMode ? "text-on-surface-variant/40" : "text-gray-400"}`}
-                                >
-                                  {t("deliveryServiceDesc")}
-                                </p>
-                              </div>
-                            </div>
-                            <button
-                              onClick={() =>
-                                authUid &&
-                                setIsDeliveryEnabled(!isDeliveryEnabled)
-                              }
-                              disabled={!authUid}
-                              className={`w-16 h-9 rounded-full relative p-1 transition-all duration-500 ${
-                                !authUid
-                                  ? "opacity-50 cursor-not-allowed bg-gray-300"
-                                  : isDeliveryEnabled
-                                    ? "bg-emerald-500"
-                                    : darkMode
-                                      ? "bg-white/10"
-                                      : "bg-gray-200"
-                              }`}
-                            >
-                              <motion.div
-                                animate={{ x: isDeliveryEnabled ? 28 : 0 }}
-                                transition={{
-                                  type: "spring",
-                                  stiffness: 500,
-                                  damping: 30,
-                                }}
-                                className="w-7 h-7 bg-white rounded-full shadow-xl"
-                              />
-                            </button>
-                          </div>
-
-                          {/* Cutoff Time and Estimated Delivery Time Settings */}
-                          {authUid && (
-                            <div className="space-y-6 mb-8">
-                              <div className="flex flex-col gap-2">
-                                <label
-                                  className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? "text-on-surface-variant/60" : "text-gray-500"}`}
-                                >
-                                  Delivery Fee
-                                </label>
-                                <div className="flex gap-3">
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="100"
-                                    value={tempDeliveryFee}
-                                    onChange={(e) =>
-                                      setTempDeliveryFee(Number(e.target.value))
-                                    }
-                                    className={`flex-grow border rounded-none px-5 py-4 transition-all outline-none font-bold text-sm ${darkMode ? "bg-white/5 border-white/10 text-on-surface focus:border-primary/50" : "bg-white border-gray-100 text-emerald-950 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-50"}`}
-                                  />
-                                  <button
-                                    onClick={() => {
-                                      setDeliveryFee(tempDeliveryFee);
-                                      alert(
-                                        "Delivery fee updated successfully!",
-                                      );
-                                    }}
-                                    className={`px-6 py-4 rounded-none font-black text-[10px] uppercase tracking-widest shadow-xl transition-all flex items-center gap-2 ${darkMode ? "bg-primary text-surface shadow-primary/20 hover:bg-primary/90" : "bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700"}`}
-                                  >
-                                    <Save size={16} />
-                                    {t("save")}
-                                  </button>
-                                </div>
-                              </div>
-
-                              <div className="flex flex-col gap-2">
-                                <label
-                                  className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? "text-on-surface-variant/60" : "text-gray-500"}`}
-                                >
-                                  Order Cut-off Time
-                                </label>
-                                <div className="flex gap-3">
-                                  <input
-                                    type="time"
-                                    value={tempCutoffTime}
-                                    onChange={(e) =>
-                                      setTempCutoffTime(e.target.value)
-                                    }
-                                    className={`flex-grow border rounded-none px-5 py-4 transition-all outline-none font-bold text-sm ${darkMode ? "bg-white/5 border-white/10 text-on-surface focus:border-primary/50" : "bg-white border-gray-100 text-emerald-950 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-50"}`}
-                                  />
-                                  <button
-                                    onClick={() => {
-                                      setCutoffTime(tempCutoffTime);
-                                      alert(
-                                        "Cut-off time updated successfully!",
-                                      );
-                                    }}
-                                    className={`px-6 py-4 rounded-none font-black text-[10px] uppercase tracking-widest shadow-xl transition-all flex items-center gap-2 ${darkMode ? "bg-primary text-surface shadow-primary/20 hover:bg-primary/90" : "bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700"}`}
-                                  >
-                                    <Save size={16} />
-                                    {t("save")}
-                                  </button>
-                                </div>
-                              </div>
-
-                              <div className="flex flex-col gap-2">
-                                <label
-                                  className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? "text-on-surface-variant/60" : "text-gray-500"}`}
-                                >
-                                  Estimated Delivery Time
-                                </label>
-                                <div className="flex gap-3">
-                                  <input
-                                    type="text"
-                                    value={tempEstimatedDeliveryTime}
-                                    onChange={(e) =>
-                                      setTempEstimatedDeliveryTime(
-                                        e.target.value,
-                                      )
-                                    }
-                                    placeholder="e.g. 8:00 AM - 10:00 AM"
-                                    className={`flex-grow border rounded-none px-5 py-4 transition-all outline-none font-bold text-sm ${darkMode ? "bg-white/5 border-white/10 text-on-surface focus:border-primary/50" : "bg-white border-gray-100 text-emerald-950 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-50"}`}
-                                  />
-                                  <button
-                                    onClick={() => {
-                                      setEstimatedDeliveryTime(
-                                        tempEstimatedDeliveryTime,
-                                      );
-                                      alert(
-                                        "Estimated delivery time updated successfully!",
-                                      );
-                                    }}
-                                    className={`px-6 py-4 rounded-none font-black text-[10px] uppercase tracking-widest shadow-xl transition-all flex items-center gap-2 ${darkMode ? "bg-primary text-surface shadow-primary/20 hover:bg-primary/90" : "bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700"}`}
-                                  >
-                                    <Save size={16} />
-                                    {t("save")}
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          {!authUid ? (
-                            <div
-                              className={`p-6 rounded-none border ${darkMode ? "bg-amber-500/10 border-amber-500/20" : "bg-amber-50 border-amber-100"}`}
-                            >
-                              <div className="flex items-center gap-3 mb-3">
-                                <ShieldCheck
-                                  size={18}
-                                  className="text-amber-500"
-                                />
-                                <h5
-                                  className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? "text-amber-500" : "text-amber-700"}`}
-                                >
-                                  {t("authRequired")}
-                                </h5>
-                              </div>
-                              <p
-                                className={`text-[10px] font-bold mb-4 leading-relaxed ${darkMode ? "text-on-surface-variant/60" : "text-amber-600"}`}
-                              >
-                                {t("authRequiredDesc")}
-                              </p>
-                              <button
-                                onClick={signInWithGoogle}
-                                className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-white border border-gray-100 rounded-none shadow-sm hover:bg-gray-50 transition-all text-[10px] font-black uppercase tracking-widest text-gray-600"
-                              >
-                                <img
-                                  src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
-                                  alt="Google"
-                                  className="w-4 h-4"
-                                  referrerPolicy="no-referrer"
-                                />
-                                {t("signInWithGoogle")}
-                              </button>
-                            </div>
-                          ) : (
-                            <div
-                              className={`p-6 rounded-none border ${darkMode ? "bg-emerald-500/10 border-emerald-500/20" : "bg-emerald-50 border-emerald-100"}`}
-                            >
-                              <div className="flex items-center gap-4">
-                                <div
-                                  className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-black ${darkMode ? "bg-primary" : "bg-emerald-600"}`}
-                                >
-                                  <User size={18} />
-                                </div>
-                                <div>
-                                  <h5
-                                    className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? "text-emerald-500" : "text-emerald-700"}`}
-                                  >
-                                    {t("signedInAsAdmin")}
-                                  </h5>
-                                  <p
-                                    className={`text-[10px] font-bold ${darkMode ? "text-on-surface-variant/60" : "text-emerald-600"}`}
-                                  >
-                                    {auth.currentUser?.email}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </section>
-
-                        {/* Low Stock Alert Settings */}
-                        <section
-                          className={`p-8 rounded-[2.5rem] border transition-all duration-500 ${darkMode ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"}`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-4">
-                              <div
-                                className={`p-3 rounded-none ${darkMode ? "bg-white/5 text-red-400" : "bg-red-50 text-red-600"}`}
-                              >
-                                <AlertTriangle size={20} />
-                              </div>
-                              <div>
-                                <h4
-                                  className={`font-black uppercase tracking-widest text-xs ${darkMode ? "text-on-surface" : "text-emerald-900"}`}
-                                >
-                                  Low Stock Alerts
-                                </h4>
-                                <p
-                                  className={`text-[10px] font-bold ${darkMode ? "text-on-surface-variant/40" : "text-gray-400"}`}
-                                >
-                                  Show warnings when inventory is low
-                                </p>
-                              </div>
-                            </div>
-                            <button
-                              onClick={() =>
-                                authUid &&
-                                setIsLowStockAlertEnabled(
-                                  !isLowStockAlertEnabled,
-                                )
-                              }
-                              disabled={!authUid}
-                              className={`w-16 h-9 rounded-full relative p-1 transition-all duration-500 ${
-                                !authUid
-                                  ? "opacity-50 cursor-not-allowed bg-gray-300"
-                                  : isLowStockAlertEnabled
-                                    ? "bg-emerald-500"
-                                    : darkMode
-                                      ? "bg-white/10"
-                                      : "bg-gray-200"
-                              }`}
-                            >
-                              <motion.div
-                                animate={{ x: isLowStockAlertEnabled ? 28 : 0 }}
-                                transition={{
-                                  type: "spring",
-                                  stiffness: 500,
-                                  damping: 30,
-                                }}
-                                className="w-7 h-7 bg-white rounded-full shadow-xl"
-                              />
-                            </button>
-                          </div>
-                        </section>
-                      </div>
-
-                      {/* Right Column */}
-                      <div className="space-y-12">
-                        {/* Support Number */}
-                        <section className="space-y-6">
-                          <div className="flex items-center gap-4">
-                            <div
-                              className={`p-3 rounded-none ${darkMode ? "bg-white/5 text-primary" : "bg-emerald-50 text-emerald-600"}`}
-                            >
-                              <Phone size={20} />
-                            </div>
-                            <div>
-                              <h4
-                                className={`font-black uppercase tracking-widest text-xs ${darkMode ? "text-on-surface" : "text-emerald-900"}`}
-                              >
-                                {t("whatsappSupportNumber")}
-                              </h4>
-                              <p
-                                className={`text-[10px] font-bold ${darkMode ? "text-on-surface-variant/40" : "text-gray-400"}`}
-                              >
-                                {t("whatsappSupportNumberDesc")}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex gap-3">
-                            <div className="relative flex-grow">
-                              <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
-                                <span
-                                  className={`font-black text-sm ${darkMode ? "text-on-surface-variant/30" : "text-gray-400"}`}
-                                >
-                                  +
-                                </span>
-                              </div>
-                              <input
-                                type="text"
-                                value={tempSupportNumber}
-                                onChange={(e) =>
-                                  setTempSupportNumber(e.target.value)
-                                }
-                                className={`w-full border rounded-none pl-10 pr-6 py-5 transition-all outline-none font-bold text-sm ${darkMode ? "bg-white/5 border-white/10 text-on-surface focus:border-primary/50" : "bg-gray-50 border-gray-100 text-emerald-950 focus:bg-white focus:border-emerald-300 focus:ring-4 focus:ring-emerald-50"}`}
-                                placeholder="e.g. 601128096366"
-                              />
-                            </div>
-                            <button
-                              onClick={() => {
-                                setSupportNumber(tempSupportNumber);
-                                alert(t("supportNumberUpdated"));
-                              }}
-                              className={`px-8 py-5 rounded-none font-black text-[10px] uppercase tracking-widest shadow-xl transition-all flex items-center gap-3 ${darkMode ? "bg-primary text-surface shadow-primary/20 hover:bg-primary/90" : "bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700"}`}
-                            >
-                              <Save size={16} />
-                              {t("save")}
-                            </button>
-                          </div>
-                        </section>
-
-                        {/* Shop Info for Invoice */}
-                        <section className="space-y-6 pt-4 border-t border-gray-100/50">
-                          <div className="flex items-center gap-4">
-                            <div
-                              className={`p-3 rounded-none ${darkMode ? "bg-white/5 text-primary" : "bg-emerald-50 text-emerald-600"}`}
-                            >
-                              <ClipboardList size={20} />
-                            </div>
-                            <div>
-                              <h4
-                                className={`font-black uppercase tracking-widest text-xs ${darkMode ? "text-on-surface" : "text-emerald-900"}`}
-                              >
-                                Invoice Shop Info
-                              </h4>
-                              <p
-                                className={`text-[10px] font-bold ${darkMode ? "text-on-surface-variant/40" : "text-gray-400"}`}
-                              >
-                                Contact details shown on customer invoices
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="space-y-4">
-                            <div className="flex flex-col gap-2">
-                              <label
-                                className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? "text-on-surface-variant/60" : "text-gray-500"}`}
-                              >
-                                Shop Phone Number
-                              </label>
-                              <div className="flex gap-3">
-                                <input
-                                  type="text"
-                                  value={tempShopPhone}
-                                  onChange={(e) =>
-                                    setTempShopPhone(e.target.value)
-                                  }
-                                  className={`flex-grow border rounded-none px-5 py-4 transition-all outline-none font-bold text-sm ${darkMode ? "bg-white/5 border-white/10 text-on-surface focus:border-primary/50" : "bg-white border-gray-100 text-emerald-950 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-50"}`}
-                                />
-                                <button
-                                  onClick={() => {
-                                    setShopPhone(tempShopPhone);
-                                    toast.success("Invoice phone updated!");
-                                  }}
-                                  className={`px-6 py-4 rounded-none font-black text-[10px] uppercase tracking-widest shadow-xl transition-all flex items-center gap-2 ${darkMode ? "bg-primary text-surface shadow-primary/20 hover:bg-primary/90" : "bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700"}`}
-                                >
-                                  <Save size={16} />
-                                  {t("save")}
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className="flex flex-col gap-2">
-                              <label
-                                className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? "text-on-surface-variant/60" : "text-gray-500"}`}
-                              >
-                                Shop Email Address
-                              </label>
-                              <div className="flex gap-3">
-                                <input
-                                  type="email"
-                                  value={tempShopEmail}
-                                  onChange={(e) =>
-                                    setTempShopEmail(e.target.value)
-                                  }
-                                  className={`flex-grow border rounded-none px-5 py-4 transition-all outline-none font-bold text-sm ${darkMode ? "bg-white/5 border-white/10 text-on-surface focus:border-primary/50" : "bg-white border-gray-100 text-emerald-950 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-50"}`}
-                                />
-                                <button
-                                  onClick={() => {
-                                    setShopEmail(tempShopEmail);
-                                    toast.success("Invoice email updated!");
-                                  }}
-                                  className={`px-6 py-4 rounded-none font-black text-[10px] uppercase tracking-widest shadow-xl transition-all flex items-center gap-2 ${darkMode ? "bg-primary text-surface shadow-primary/20 hover:bg-primary/90" : "bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700"}`}
-                                >
-                                  <Save size={16} />
-                                  {t("save")}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </section>
-
-                        {/* Bank Details */}
-                        <section className="space-y-6">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-4">
-                              <div
-                                className={`p-3 rounded-none ${darkMode ? "bg-white/5 text-blue-500" : "bg-blue-50 text-blue-600"}`}
-                              >
-                                <CreditCard size={20} />
-                              </div>
-                              <div>
-                                <h4
-                                  className={`font-black uppercase tracking-widest text-xs ${darkMode ? "text-on-surface" : "text-emerald-900"}`}
-                                >
-                                  {t("bankTransferSettings")}
-                                </h4>
-                                <p
-                                  className={`text-[10px] font-bold ${darkMode ? "text-on-surface-variant/40" : "text-gray-400"}`}
-                                >
-                                  {t("bankTransferSettingsDesc")}
-                                </p>
-                              </div>
-                            </div>
-                            <button
-                              onClick={() =>
-                                authUid && setIsBankEnabled(!isBankEnabled)
-                              }
-                              disabled={!authUid}
-                              className={`w-16 h-9 rounded-full relative p-1 transition-all duration-500 ${
-                                !authUid
-                                  ? "opacity-50 cursor-not-allowed bg-gray-300"
-                                  : isBankEnabled
-                                    ? "bg-blue-500"
-                                    : darkMode
-                                      ? "bg-white/10"
-                                      : "bg-gray-200"
-                              }`}
-                            >
-                              <motion.div
-                                animate={{ x: isBankEnabled ? 28 : 0 }}
-                                transition={{
-                                  type: "spring",
-                                  stiffness: 500,
-                                  damping: 30,
-                                }}
-                                className="w-7 h-7 bg-white rounded-full shadow-xl"
-                              />
-                            </button>
-                          </div>
-
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {[
-                              {
-                                label: t("bankName"),
-                                value: tempBankDetails.name,
-                                key: "name",
-                                placeholder: "e.g. Maybank",
-                              },
-                              {
-                                label: t("accountName"),
-                                value: tempBankDetails.accName,
-                                key: "accName",
-                                placeholder: "e.g. SAPHOSAUNG GROCERY",
-                              },
-                            ].map((field) => (
-                              <div key={field.key} className="space-y-2">
-                                <label
-                                  className={`text-[10px] font-black uppercase tracking-widest ml-3 ${darkMode ? "text-on-surface-variant/40" : "text-gray-400"}`}
-                                >
-                                  {field.label}
-                                </label>
-                                <input
-                                  type="text"
-                                  value={field.value}
-                                  onChange={(e) =>
-                                    setTempBankDetails({
-                                      ...tempBankDetails,
-                                      [field.key]: e.target.value,
-                                    })
-                                  }
-                                  className={`w-full border rounded-none px-6 py-4 transition-all outline-none font-bold text-sm ${darkMode ? "bg-white/5 border-white/10 text-on-surface focus:border-primary/50" : "bg-gray-50 border-gray-100 text-emerald-950 focus:bg-white focus:border-blue-300 focus:ring-4 focus:ring-blue-50"}`}
-                                  placeholder={field.placeholder}
-                                />
-                              </div>
-                            ))}
-                            <div className="md:col-span-2 space-y-2">
-                              <label
-                                className={`text-[10px] font-black uppercase tracking-widest ml-3 ${darkMode ? "text-on-surface-variant/40" : "text-gray-400"}`}
-                              >
-                                {t("accountNumber")}
-                              </label>
-                              <input
-                                type="text"
-                                value={tempBankDetails.accNum}
-                                onChange={(e) =>
-                                  setTempBankDetails({
-                                    ...tempBankDetails,
-                                    accNum: e.target.value,
-                                  })
-                                }
-                                className={`w-full border rounded-none px-6 py-4 transition-all outline-none font-bold text-sm ${darkMode ? "bg-white/5 border-white/10 text-on-surface focus:border-primary/50" : "bg-gray-50 border-gray-100 text-emerald-950 focus:bg-white focus:border-blue-300 focus:ring-4 focus:ring-blue-50"}`}
-                                placeholder="e.g. 1234 5678 9012"
-                              />
-                            </div>
-                          </div>
-
-                          <button
-                            onClick={() => {
-                              setBankName(tempBankDetails.name);
-                              setBankAccountNumber(tempBankDetails.accNum);
-                              setBankAccountName(tempBankDetails.accName);
-                              alert(t("bankDetailsUpdated"));
-                            }}
-                            className={`w-full py-5 rounded-none font-black text-[10px] uppercase tracking-widest shadow-xl transition-all flex items-center justify-center gap-3 ${darkMode ? "bg-primary text-surface shadow-primary/20 hover:bg-primary/90" : "bg-blue-600 text-white shadow-blue-100 hover:bg-blue-700"}`}
-                          >
-                            <Save size={16} />
-                            {t("updateBankDetails")}
-                          </button>
-                        </section>
-
-                        {/* Database Tools */}
-                        <section className="space-y-6">
-                          <div className="flex items-center gap-4">
-                            <div
-                              className={`p-3 rounded-none ${darkMode ? "bg-white/5 text-amber-500" : "bg-amber-50 text-amber-600"}`}
-                            >
-                              <Database size={20} />
-                            </div>
-                            <div>
-                              <h4
-                                className={`font-black uppercase tracking-widest text-xs ${darkMode ? "text-on-surface" : "text-emerald-900"}`}
-                              >
-                                Database Tools
-                              </h4>
-                              <p
-                                className={`text-[10px] font-bold ${darkMode ? "text-on-surface-variant/40" : "text-gray-400"}`}
-                              >
-                                Maintenance and data management
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-1 gap-4">
-                            <div
-                              className={`p-6 rounded-none border flex items-center justify-between ${darkMode ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-100"}`}
-                            >
-                              <div>
-                                <h4
-                                  className={`font-black uppercase tracking-widest text-xs ${darkMode ? "text-on-surface" : "text-emerald-900"}`}
-                                >
-                                  Maintenance Mode
-                                </h4>
-                                <p
-                                  className={`text-[10px] font-bold ${darkMode ? "text-on-surface-variant/40" : "text-gray-400"}`}
-                                >
-                                  Pause all new orders
-                                </p>
-                              </div>
-                              <button
-                                onClick={() =>
-                                  updateMaintenanceMode(!isMaintenanceMode)
-                                }
-                                className={`w-16 h-9 rounded-full relative p-1 transition-all duration-500 ${
-                                  isMaintenanceMode
-                                    ? "bg-rose-500"
-                                    : darkMode
-                                      ? "bg-white/10"
-                                      : "bg-gray-200"
-                                }`}
-                              >
-                                <motion.div
-                                  animate={{ x: isMaintenanceMode ? 28 : 0 }}
-                                  transition={{
-                                    type: "spring",
-                                    stiffness: 500,
-                                    damping: 30,
-                                  }}
-                                  className="w-7 h-7 bg-white rounded-full shadow-xl"
-                                />
-                              </button>
-                            </div>
-                            <button
-                              onClick={handleSeed}
-                              disabled={isSeeding}
-                              className={`py-5 rounded-none font-black text-[10px] uppercase tracking-widest shadow-xl transition-all flex items-center justify-center gap-3 ${
-                                isSeeding ? "opacity-50 cursor-not-allowed" : ""
-                              } ${darkMode ? "bg-amber-600 text-white shadow-amber-900/20 hover:bg-amber-500" : "bg-amber-500 text-white shadow-amber-100 hover:bg-amber-600"}`}
-                            >
-                              <Database
-                                size={16}
-                                className={isSeeding ? "animate-bounce" : ""}
-                              />
-                              {isSeeding
-                                ? "Seeding..."
-                                : "Seed Products & Categories"}
-                            </button>
-                            <button
-                              onClick={async () => {
-                                setIsSeeding(true);
-                                try {
-                                  await seedSampleOrders();
-                                  toast.success("Sample orders seeded!");
-                                } catch (e) {
-                                  toast.error("Failed to seed sample orders.");
-                                } finally {
-                                  setIsSeeding(false);
-                                }
-                              }}
-                              disabled={isSeeding}
-                              className={`py-5 rounded-none font-black text-[10px] uppercase tracking-widest shadow-xl transition-all flex items-center justify-center gap-3 ${
-                                isSeeding ? "opacity-50 cursor-not-allowed" : ""
-                              } ${darkMode ? "bg-emerald-600 text-white shadow-emerald-900/20 hover:bg-emerald-500" : "bg-emerald-500 text-white shadow-emerald-100 hover:bg-emerald-600"}`}
-                            >
-                              <ShoppingBag
-                                size={16}
-                                className={isSeeding ? "animate-bounce" : ""}
-                              />
-                              {isSeeding
-                                ? "Seeding Orders..."
-                                : "Seed Sample Orders"}
-                            </button>
-                            <button
-                              onClick={handleMigrate}
-                              disabled={isMigrating}
-                              className={`py-5 rounded-none font-black text-[10px] uppercase tracking-widest shadow-xl transition-all flex items-center justify-center gap-3 ${
-                                isMigrating
-                                  ? "opacity-50 cursor-not-allowed"
-                                  : ""
-                              } ${darkMode ? "bg-blue-600 text-white shadow-blue-900/20 hover:bg-blue-500" : "bg-blue-500 text-white shadow-blue-100 hover:bg-blue-600"}`}
-                            >
-                              <RefreshCw
-                                size={16}
-                                className={isMigrating ? "animate-spin" : ""}
-                              />
-                              {isMigrating ? "Migrating..." : "Run Migration"}
-                            </button>
-                          </div>
-                        </section>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
+              ) : activeTab === "settings" && isSuperAdmin ? (
+                <SettingsTab 
+                  darkMode={darkMode}
+                  handleSeed={handleSeed}
+                  isSeeding={isSeeding}
+                  handleMigrate={handleMigrate}
+                  isMigrating={isMigrating}
+                  setIsSeeding={setIsSeeding}
+                />
               ) : null}
             </AnimatePresence>
           </div>
         </div>
       </motion.main>
+
+      {/* Change Password Modal */}
+      <AnimatePresence>
+        {isPasswordModalOpen && (
+          <Dialog.Root open={isPasswordModalOpen} onOpenChange={setIsPasswordModalOpen}>
+            <Dialog.Portal>
+              <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 transition-opacity" />
+              <Dialog.Content className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90vw] max-w-md rounded-3xl p-6 shadow-2xl z-50 ${darkMode ? "bg-surface-container-high border border-white/10 text-on-surface" : "bg-white border text-slate-800"}`}>
+                <div className="flex items-center justify-between mb-6">
+                  <Dialog.Title className="text-xl font-black">Change Password</Dialog.Title>
+                  <Dialog.Close asChild>
+                    <button className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
+                      <X size={20} />
+                    </button>
+                  </Dialog.Close>
+                </div>
+                
+                <form onSubmit={handleChangePassword} className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold opacity-70 uppercase tracking-wider">Current Password</label>
+                    <input
+                      type="password"
+                      required
+                      value={passwordForm.current}
+                      onChange={(e) => setPasswordForm(p => ({ ...p, current: e.target.value }))}
+                      className={`w-full px-4 py-3 rounded-xl border font-medium outline-none transition-all ${darkMode ? "bg-black/20 border-white/10 focus:border-primary" : "bg-gray-50 border-gray-200 focus:border-emerald-500"}`}
+                      placeholder="Enter current password"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold opacity-70 uppercase tracking-wider">New Password</label>
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      value={passwordForm.new}
+                      onChange={(e) => setPasswordForm(p => ({ ...p, new: e.target.value }))}
+                      className={`w-full px-4 py-3 rounded-xl border font-medium outline-none transition-all ${darkMode ? "bg-black/20 border-white/10 focus:border-primary" : "bg-gray-50 border-gray-200 focus:border-emerald-500"}`}
+                      placeholder="At least 6 characters"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold opacity-70 uppercase tracking-wider">Confirm New Password</label>
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      value={passwordForm.confirm}
+                      onChange={(e) => setPasswordForm(p => ({ ...p, confirm: e.target.value }))}
+                      className={`w-full px-4 py-3 rounded-xl border font-medium outline-none transition-all ${darkMode ? "bg-black/20 border-white/10 focus:border-primary" : "bg-gray-50 border-gray-200 focus:border-emerald-500"}`}
+                      placeholder="Repeat new password"
+                    />
+                  </div>
+                  
+                  <button
+                    type="submit"
+                    disabled={isChangingPassword}
+                    className={`mt-4 w-full h-12 rounded-xl flex items-center justify-center font-black text-sm uppercase tracking-widest transition-all ${darkMode ? "bg-primary text-surface hover:bg-primary/90" : "bg-emerald-600 text-white hover:bg-emerald-700"} disabled:opacity-50`}
+                  >
+                    {isChangingPassword ? (
+                      <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      "Update Password"
+                    )}
+                  </button>
+                </form>
+              </Dialog.Content>
+            </Dialog.Portal>
+          </Dialog.Root>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

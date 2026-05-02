@@ -27,6 +27,43 @@
         "status": { "type": "string" }
       },
       "required": ["id", "uid", "total"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Store product",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "mmName": { "type": "string" },
+        "msName": { "type": "string" },
+        "thName": { "type": "string" },
+        "zhName": { "type": "string" },
+        "price": { "type": "number" },
+        "stock": { "type": "number" },
+        "category": { "type": "string" },
+        "image": { "type": "string" },
+        "unit": { "type": "string" },
+        "status": { "type": "string", "enum": ["published", "draft"] }
+      },
+      "required": ["id", "name", "price", "category", "image"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Product category",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "key": { "type": "string" },
+        "nameEn": { "type": "string" },
+        "nameMm": { "type": "string" },
+        "nameMs": { "type": "string" },
+        "nameTh": { "type": "string" },
+        "nameZh": { "type": "string" },
+        "order": { "type": "number" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["id", "key", "nameEn", "nameMm"]
     }
   },
   "firestore": {
@@ -37,6 +74,14 @@
     "/orders/{orderId}": {
       "schema": { "$ref": "Order" },
       "description": "Orders"
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "Product" },
+      "description": "Store products"
+    },
+    "/categories/{categoryId}": {
+      "schema": { "$ref": "Category" },
+      "description": "Product categories"
     }
   }
 }

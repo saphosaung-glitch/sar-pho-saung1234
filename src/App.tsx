@@ -10,8 +10,8 @@ import { StoreProvider, useStore } from './context/StoreContext';
 import { AlertCircle, RefreshCw, Phone } from 'lucide-react';
 import { motion } from 'motion/react';
 
-const RegistrationPage = lazy(() => import('./pages/RegistrationPage'));
-const WelcomePage = lazy(() => import('./pages/WelcomePage'));
+import RegistrationPage from './pages/RegistrationPage';
+import WelcomePage from './pages/WelcomePage';
 const MenuPage = lazy(() => import('./pages/MenuPage'));
 const CheckoutPage = lazy(() => import('./pages/CheckoutPage'));
 const SuccessPage = lazy(() => import('./pages/SuccessPage'));
@@ -219,7 +219,7 @@ function AppContent() {
       <HashRouter>
         <ScrollToTop />
         <BlockedGuard>
-          <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+          <Suspense fallback={null}>
             <Routes>
               <Route path="/" element={<WelcomePage />} />
               <Route path="/registration" element={<RegistrationPage />} />

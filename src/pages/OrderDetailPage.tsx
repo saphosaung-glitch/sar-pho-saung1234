@@ -87,21 +87,174 @@ export default function OrderDetailPage() {
 
   const status = getStatusConfig(order.status);
 
-  const shareOrder = async (platform: 'whatsapp' | 'viber') => {
+  const shareOrder = async () => {
     if (!order) return;
-    const { formatOrderForWhatsApp, getWhatsAppLink, getViberLink } = await import('../lib/messaging');
-    const message = formatOrderForWhatsApp(order, formatPrice);
-    const link = platform === 'whatsapp' 
-      ? getWhatsAppLink(supportNumber, message) 
-      : getViberLink(supportNumber, message);
-    window.open(link, '_blank');
+    const { formatOrderInquiry, openWhatsApp } = await import('../lib/messaging');
+    const message = formatOrderInquiry(order);
+    openWhatsApp(supportNumber, message);
   };
 
-  const handleWhatsApp = (isSupport: boolean) => {
+  const generateInvoice = async () => {
+    if (!order) return;
+    
+    try {
+      const { default: jsPDF } = await import("jspdf");
+      const { default: autoTable } = await import("jspdf-autotable");
+      
+      const doc = new jsPDF();
+      const invoiceDate = new Date(order.timestamp).toLocaleDateString();
+      const itemsSubtotal = order.items.reduce(
+        (acc, item) => acc + item.price * (item.quantity || 1),
+        0,
+      );
+
+      // --- Header Section ---
+      doc.setTextColor(0, 0, 0);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(32);
+      doc.text("SAR TAW SET", 20, 30);
+
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100, 100, 100);
+      doc.text("Grocery & Meat Delivery Service", 20, 38);
+
+      // --- Invoice Details (Top Right) ---
+      doc.setTextColor(120, 120, 120);
+      doc.setFontSize(11);
+      doc.text("INVOICE", 190, 25, { align: "right" });
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(22);
+      doc.setFont("helvetica", "bold");
+      doc.text(`#${order.id}`, 190, 35, { align: "right" });
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100, 100, 100);
+      doc.text(`Issued: ${invoiceDate}`, 190, 42, { align: "right" });
+
+      // --- Divider ---
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(1);
+      doc.line(20, 55, 190, 55);
+
+      // --- Meta Info Grid ---
+      doc.setFontSize(10);
+      doc.setTextColor(150, 150, 150);
+      doc.text("BILLED TO", 20, 70);
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.text(order.customerName, 20, 78);
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(80, 80, 80);
+      doc.text(`Room ${order.roomNumber}`, 20, 85);
+      doc.text(order.customerPhone, 20, 91);
+      if (order.address) {
+        const splitAddr = doc.splitTextToSize(order.address, 90);
+        doc.setFontSize(11);
+        doc.text(splitAddr, 20, 98);
+      }
+
+      // Payment
+      doc.setFontSize(10);
+      doc.setTextColor(150, 150, 150);
+      doc.text("PAYMENT", 190, 70, { align: "right" });
+      doc.setFontSize(14);
+      doc.setTextColor(0, 0, 0);
+      doc.setFont("helvetica", "bold");
+      doc.text(order.paymentMethod.toUpperCase(), 190, 78, { align: "right" });
+
+      // --- Items Table ---
+      const itemsData = order.items.map((item) => [
+        item.name,
+        formatPrice(item.price),
+        item.quantity.toString(),
+        formatPrice(item.price * (item.quantity || 1)),
+      ]);
+
+      autoTable(doc, {
+        startY: 115,
+        head: [["Description", "Unit Price", "Qty", "Total"]],
+        body: itemsData,
+        theme: "plain",
+        headStyles: {
+          fontSize: 11,
+          fontStyle: "bold",
+          textColor: [100, 100, 100],
+          cellPadding: { bottom: 5, top: 0, left: 0, right: 0 },
+          lineColor: [200, 200, 200],
+          lineWidth: { bottom: 0.5 },
+        },
+        bodyStyles: {
+          fontSize: 12,
+          textColor: [0, 0, 0],
+          cellPadding: { bottom: 3, top: 3, left: 0, right: 0 },
+        },
+        columnStyles: {
+          1: { halign: "right" },
+          2: { halign: "right" },
+          3: { halign: "right" },
+        },
+        alternateRowStyles: { fillColor: [252, 252, 252] },
+      });
+
+      // --- Totals ---
+      const finalY = (doc as any).lastAutoTable.finalY + 15;
+      const totalsX = 130;
+      const amountX = 190;
+
+      doc.setFontSize(12);
+      doc.setTextColor(100, 100, 100);
+      doc.setFont("helvetica", "normal");
+      doc.text("Subtotal", totalsX, finalY);
+      doc.setTextColor(0, 0, 0);
+      doc.text(formatPrice(itemsSubtotal), amountX, finalY, { align: "right" });
+
+      let nextY = finalY + 8;
+      if (order.deliveryFee > 0) {
+        doc.setTextColor(100, 100, 100);
+        doc.text("Delivery Fee", totalsX, nextY);
+        doc.setTextColor(0, 0, 0);
+        doc.text(`+${formatPrice(order.deliveryFee)}`, amountX, nextY, { align: "right" });
+        nextY += 8;
+      }
+
+      if (order.pointDiscount && order.pointDiscount > 0) {
+        doc.setTextColor(100, 100, 100);
+        doc.text("Discount", totalsX, nextY);
+        doc.setTextColor(0, 0, 0);
+        doc.text(`-${formatPrice(order.pointDiscount)}`, amountX, nextY, { align: "right" });
+        nextY += 8;
+      }
+
+      // Grand Total
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.text("Total Amount", totalsX, nextY + 5);
+      doc.setTextColor(0, 0, 0);
+      doc.text(formatPrice(order.totalAmount), amountX, nextY + 5, { align: "right" });
+
+      // Footer
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "italic");
+      doc.setTextColor(150, 150, 150);
+      doc.text("Thank you for shopping with SAR TAW SET!", 105, 280, { align: "center" });
+
+      doc.save(`Invoice_${order.id}.pdf`);
+      toast.success("Invoice downloaded successfully!");
+    } catch (error) {
+      console.error("Failed to generate PDF:", error);
+      toast.error("Failed to generate PDF invoice");
+    }
+  };
+
+  const handleWhatsApp = async (isSupport: boolean) => {
+    const { openWhatsApp } = await import('../lib/messaging');
     const message = isSupport 
-      ? encodeURIComponent(t('whatsappSupportMsg').replace('{orderId}', order.id))
-      : encodeURIComponent(t('whatsappCancelMsg').replace('{orderId}', order.id));
-    window.open(`https://wa.me/${supportNumber}?text=${message}`, '_blank');
+      ? `Hello! I need assistance with my order #${order.id}.`
+      : `Hello! I would like to request a cancellation for my order #${order.id}.`;
+    openWhatsApp(supportNumber, message);
   };
 
   const handleCancel = () => {
@@ -129,17 +282,27 @@ export default function OrderDetailPage() {
   return (
     <div className={`min-h-screen pb-24 font-sans selection:bg-primary/20 ${darkMode ? 'bg-surface text-on-surface' : 'bg-[#F8FAFC]'}`}>
       {/* Header */}
-      <header className={`sticky top-0 z-50 backdrop-blur-xl border-b border-on-surface/5 px-4 h-[72px] flex items-center gap-4 ${darkMode ? 'bg-surface/80' : 'bg-white/80'}`}>
-        <button 
-          onClick={() => navigate(-1)}
-          className={`flex-none w-10 h-10 border border-on-surface/10 shadow-sm rounded-full flex items-center justify-center transition-all active:scale-90 touch-manipulation ${darkMode ? 'bg-surface-container-high hover:bg-surface-container-highest' : 'bg-white hover:bg-slate-50'}`}
-        >
-          <ChevronLeft size={20} className="text-on-surface" />
-        </button>
-        <div className="flex flex-col">
-          <h2 className="text-lg font-black text-on-surface tracking-tight leading-tight">{t('orderDetails')}</h2>
-          <p className="text-[10px] font-black text-on-surface-variant/60 uppercase tracking-widest">#{order.id}</p>
+      <header className={`sticky top-0 z-50 backdrop-blur-xl border-b border-on-surface/5 px-4 h-[72px] flex items-center justify-between ${darkMode ? 'bg-surface/80' : 'bg-white/80'}`}>
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => navigate(-1)}
+            className={`flex-none w-10 h-10 border border-on-surface/10 shadow-sm rounded-full flex items-center justify-center transition-all active:scale-90 touch-manipulation ${darkMode ? 'bg-surface-container-high hover:bg-surface-container-highest' : 'bg-white hover:bg-slate-50'}`}
+          >
+            <ChevronLeft size={20} className="text-on-surface" />
+          </button>
+          <div className="flex flex-col">
+            <h2 className="text-lg font-black text-on-surface tracking-tight leading-tight">{t('orderDetails')}</h2>
+            <p className="text-[10px] font-black text-on-surface-variant/60 uppercase tracking-widest">#{order.id}</p>
+          </div>
         </div>
+
+        <button 
+          onClick={generateInvoice}
+          className={`flex items-center justify-center transition-all active:scale-90 p-2 rounded-xl ${darkMode ? 'hover:bg-on-surface/5' : 'hover:bg-slate-50'}`}
+          title="Download Invoice PDF"
+        >
+          <FileText size={22} className="text-primary" />
+        </button>
       </header>
 
       <main className="max-w-2xl mx-auto p-4 space-y-6">
@@ -161,14 +324,14 @@ export default function OrderDetailPage() {
         </motion.section>
 
         {/* Delivery Info */}
-        <section className={`rounded-[2rem] p-4 border border-on-surface/5 shadow-sm space-y-3 ${darkMode ? 'bg-surface-container-high' : 'bg-white'}`}>
+        <section className={`rounded-[2rem] py-3 px-4 border border-on-surface/5 shadow-sm space-y-2 ${darkMode ? 'bg-surface-container-high' : 'bg-white'}`}>
           <div className="flex items-center gap-2">
             <MapPin size={16} className="text-primary" />
             <h3 className="font-black text-on-surface text-[10px] uppercase tracking-widest">{t('deliveryInformation')}</h3>
           </div>
           
-          <div className="grid grid-cols-1 gap-3">
-            <div className={`flex items-start gap-3 p-3 rounded-xl border ${darkMode ? 'bg-surface-container-highest border-on-surface/5' : 'bg-slate-50 border-slate-100'}`}>
+          <div className="grid grid-cols-1 gap-2">
+            <div className={`flex items-start gap-3 py-2 px-3 rounded-xl border ${darkMode ? 'bg-surface-container-highest border-on-surface/5' : 'bg-slate-50 border-slate-100'}`}>
               <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant/40 border flex-shrink-0 ${darkMode ? 'bg-surface-container-high border-on-surface/10' : 'bg-white border-slate-100'}`}>
                 <MapPin size={16} />
               </div>
@@ -187,8 +350,8 @@ export default function OrderDetailPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className={`flex items-center gap-2 p-2 rounded-xl border ${darkMode ? 'bg-surface-container-highest border-on-surface/5' : 'bg-slate-50 border-slate-100'}`}>
+            <div className="grid grid-cols-2 gap-2">
+              <div className={`flex items-center gap-2 py-1.5 px-2 rounded-xl border ${darkMode ? 'bg-surface-container-highest border-on-surface/5' : 'bg-slate-50 border-slate-100'}`}>
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant/40 border ${darkMode ? 'bg-surface-container-high border-on-surface/10' : 'bg-white border-slate-100'}`}>
                   <User size={14} />
                 </div>
@@ -198,7 +361,7 @@ export default function OrderDetailPage() {
                 </div>
               </div>
 
-              <div className={`flex items-center gap-2 p-2 rounded-xl border ${darkMode ? 'bg-surface-container-highest border-on-surface/5' : 'bg-slate-50 border-slate-100'}`}>
+              <div className={`flex items-center gap-2 py-1.5 px-2 rounded-xl border ${darkMode ? 'bg-surface-container-highest border-on-surface/5' : 'bg-slate-50 border-slate-100'}`}>
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant/40 border ${darkMode ? 'bg-surface-container-high border-on-surface/10' : 'bg-white border-slate-100'}`}>
                   <Phone size={14} />
                 </div>
@@ -209,8 +372,8 @@ export default function OrderDetailPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className={`flex items-center gap-2 p-2 rounded-xl border ${darkMode ? 'bg-surface-container-highest border-on-surface/5' : 'bg-slate-50 border-slate-100'}`}>
+            <div className="grid grid-cols-2 gap-2">
+              <div className={`flex items-center gap-2 py-1.5 px-2 rounded-xl border ${darkMode ? 'bg-surface-container-highest border-on-surface/5' : 'bg-slate-50 border-slate-100'}`}>
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant/40 border ${darkMode ? 'bg-surface-container-high border-on-surface/10' : 'bg-white border-slate-100'}`}>
                   <Wallet size={14} />
                 </div>
@@ -220,7 +383,7 @@ export default function OrderDetailPage() {
                 </div>
               </div>
 
-              <div className={`flex items-center gap-2 p-2 rounded-xl border ${darkMode ? 'bg-surface-container-highest border-on-surface/5' : 'bg-slate-50 border-slate-100'}`}>
+              <div className={`flex items-center gap-2 py-1.5 px-2 rounded-xl border ${darkMode ? 'bg-surface-container-highest border-on-surface/5' : 'bg-slate-50 border-slate-100'}`}>
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant/40 border ${darkMode ? 'bg-surface-container-high border-on-surface/10' : 'bg-white border-slate-100'}`}>
                   <Calendar size={14} />
                 </div>
@@ -233,8 +396,8 @@ export default function OrderDetailPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className={`flex items-center gap-2 p-2 rounded-xl border ${darkMode ? 'bg-surface-container-highest border-on-surface/5' : 'bg-slate-50 border-slate-100'}`}>
+            <div className="grid grid-cols-2 gap-2">
+              <div className={`flex items-center gap-2 py-1.5 px-2 rounded-xl border ${darkMode ? 'bg-surface-container-highest border-on-surface/5' : 'bg-slate-50 border-slate-100'}`}>
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant/40 border ${darkMode ? 'bg-surface-container-high border-on-surface/10' : 'bg-white border-slate-100'}`}>
                   <Calendar size={14} className="text-primary" />
                 </div>
@@ -247,7 +410,7 @@ export default function OrderDetailPage() {
                 </div>
               </div>
 
-              <div className={`flex items-center gap-2 p-2 rounded-xl border ${darkMode ? 'bg-surface-container-highest border-on-surface/5' : 'bg-slate-50 border-slate-100'}`}>
+              <div className={`flex items-center gap-2 py-1.5 px-2 rounded-xl border ${darkMode ? 'bg-surface-container-highest border-on-surface/5' : 'bg-slate-50 border-slate-100'}`}>
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant/40 border ${darkMode ? 'bg-surface-container-high border-on-surface/10' : 'bg-white border-slate-100'}`}>
                   <Clock size={14} className="text-primary" />
                 </div>
@@ -259,7 +422,7 @@ export default function OrderDetailPage() {
             </div>
 
             {order.note && (
-              <div className={`mt-3 flex items-start gap-3 p-3 rounded-xl border ${darkMode ? 'bg-amber-500/10 border-amber-500/20 text-amber-500/80' : 'bg-amber-50 border-amber-100 text-amber-700'}`}>
+              <div className={`mt-1 flex items-start gap-3 py-2 px-3 rounded-xl border ${darkMode ? 'bg-amber-500/10 border-amber-500/20 text-amber-500/80' : 'bg-amber-50 border-amber-100 text-amber-700'}`}>
                 <div className={`w-7 h-7 shrink-0 rounded-lg flex items-center justify-center border ${darkMode ? 'bg-amber-500/20 border-amber-500/20 text-amber-500' : 'bg-white border-amber-100 text-amber-600'}`}>
                   <FileText size={14} />
                 </div>
@@ -349,37 +512,24 @@ export default function OrderDetailPage() {
             </button>
           ) : (
             <button 
+              type="button"
               onClick={() => handleWhatsApp(false)}
-              className={`flex-1 py-2 rounded-xl font-black text-[10px] uppercase tracking-tight transition-all active:scale-95 flex items-center justify-center gap-1.5 ${darkMode ? 'bg-on-surface text-surface hover:bg-on-surface/90' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
+              className={`flex-1 py-2 rounded-xl font-black text-[10px] uppercase tracking-tight transition-all active:scale-95 flex items-center justify-center gap-1.5 border ${darkMode ? 'bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20' : 'bg-red-50 text-red-600 border-red-100 hover:bg-red-100/50'}`}
             >
-              <MessageCircle size={14} />
+              <MessageCircle size={14} className="text-[#25D366]" />
               <span className="truncate">{t('requestCancellation')}</span>
             </button>
           )}
 
           {/* Right Support Button (Always visible) */}
-          <div className={`flex items-center gap-0.5 p-1 rounded-xl border ${darkMode ? 'bg-surface-container-high border-on-surface/10' : 'bg-white border-slate-200 shadow-sm'}`}>
+          <div className={`flex items-center p-1 rounded-xl border ${darkMode ? 'bg-surface-container-high border-on-surface/10' : 'bg-white border-slate-200 shadow-sm'}`}>
             <button 
-              onClick={() => shareOrder('whatsapp')}
-              className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all active:scale-95 ${darkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}
+              onClick={() => shareOrder()}
+              className={`px-3 h-9 rounded-lg flex items-center justify-center gap-1.5 transition-all active:scale-95 ${darkMode ? 'hover:bg-white/5 text-on-surface' : 'hover:bg-slate-50 text-slate-900'}`}
               title="Share via WhatsApp"
             >
               <MessageCircle size={18} className="text-[#25D366]" />
-            </button>
-            <button 
-              onClick={() => shareOrder('viber')}
-              className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all active:scale-95 ${darkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}
-              title="Share via Viber"
-            >
-              <MessageSquare size={18} className="text-purple-500" />
-            </button>
-            <div className={`w-[1px] h-4 mx-1 ${darkMode ? 'bg-white/10' : 'bg-slate-100'}`} />
-            <button 
-              onClick={() => handleWhatsApp(true)}
-              className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all active:scale-95 ${darkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}
-              title={t('contactSupport')}
-            >
-              <FileText size={18} className="text-primary" />
+              <span className="text-[10px] font-black uppercase">WhatsApp</span>
             </button>
           </div>
         </div>

@@ -224,7 +224,9 @@ function AddProductModal({
                         className={inputClasses}
                       >
                         {categories.filter(c => c.id !== 'all').map(category => (
-                          <option key={category.id} value={category.id}>{category.name || t(category.key)}</option>
+                          <option key={category.id} value={category.id}>
+                            {category.nameEn || category.name || t(category.key)}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -480,9 +482,9 @@ export default function ProductsTab({
   const filteredProducts = useMemo(() => {
     let result = products.filter(p => {
       const s = globalSearch?.toLowerCase() || '';
-      const matchesSearch = p.name.toLowerCase().includes(s) || 
-                           p.mmName.toLowerCase().includes(s) ||
-                           p.sku?.toLowerCase().includes(s);
+      const matchesSearch = (p.name?.toLowerCase() || '').includes(s) || 
+                           (p.mmName?.toLowerCase() || '').includes(s) ||
+                           (p.sku?.toLowerCase() || '').includes(s);
       const matchesCategory = selectedCategory === 'all' || p.category === selectedCategory;
       const matchesStatus = statusFilter === 'all' || p.status === statusFilter;
       return matchesSearch && matchesCategory && matchesStatus;
@@ -550,7 +552,9 @@ export default function ProductsTab({
             >
               <option value="all">All Categories</option>
               {categories.map(cat => (
-                <option key={cat.id} value={cat.id}>{cat.name || t(cat.key)}</option>
+                <option key={cat.id} value={cat.id}>
+                  {cat.nameEn || cat.name || t(cat.key)}
+                </option>
               ))}
             </select>
           </div>
@@ -628,14 +632,14 @@ export default function ProductsTab({
                       initial={{ opacity: 0, y: 5 }}
                       animate={{ opacity: 1, y: 0 }}
                       className="font-black text-sm tracking-tight truncate max-w-[200px] sm:max-w-md">
-                      {product.name}
+                      {product.name || 'Unnamed Product'}
                     </motion.h4>
                     <motion.p 
                       initial={{ opacity: 0, y: 5 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.1 }}
                       className="text-[10px] font-bold opacity-40 truncate">
-                      {product.mmName || product.name}
+                      {product.mmName || product.name || '---'}
                     </motion.p>
                   </div>
                 </div>

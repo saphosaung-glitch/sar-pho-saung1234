@@ -1,16 +1,21 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, MessageSquare, Globe, Shield, ChevronRight } from 'lucide-react';
+import { ChevronLeft, MessageSquare, Globe, Shield, ChevronRight, QrCode, MapPin } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useStore } from '../context/StoreContext';
+import { QRCodeModal } from '../components/ui/QRCodeModal';
+import { useState } from 'react';
 
 export default function AboutUsPage() {
   const navigate = useNavigate();
   const { darkMode, t } = useStore();
+  const [showLocationQR, setShowLocationQR] = useState(false);
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
+
+  const brandLogo = "https://scontent.fkul7-2.fna.fbcdn.net/v/t39.30808-6/684505557_122097016515302120_6150026231108406984_n.jpg?_nc_cat=104&ccb=1-7&_nc_sid=1d70fc&_nc_ohc=65onKQ3wqrwQ7kNvwH-5Tn-&_nc_oc=AdoS-wVrlfKZ1ez9KNNdnG2zrOlHcnj7uHcGjRb3mW6fp1oguy8-8wQ1-pXhxzE26ke-vq-3N92HeuXbHTYkvevu&_nc_zt=23&_nc_ht=scontent.fkul7-2.fna&_nc_gid=lCsMSE2No98znYrLT3N7sg&_nc_ss=7b2a8&oh=00_Af4X8z6JL4VX10-1XWuFqPcF1kQfsivurJR7gMP3HKIQ7Q&oe=69FC4851";
 
   return (
     <div className={`min-h-screen pb-24 font-sans selection:bg-primary/20 transition-colors duration-300 ${darkMode ? 'bg-surface text-on-surface' : 'bg-[#F8FAFC] text-slate-900'}`}>
@@ -24,83 +29,121 @@ export default function AboutUsPage() {
         </button>
         <div className="flex flex-col">
           <h2 className={`text-lg font-black tracking-tight leading-tight ${darkMode ? 'text-on-surface' : 'text-slate-900'}`}>{t('aboutUs')}</h2>
-          <p className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? 'text-on-surface-variant/60' : 'text-slate-400'}`}>{t('version')} 1.0.4</p>
+          <p className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? 'text-on-surface-variant/60' : 'text-slate-400'}`}>{t('version')} 3.2.0</p>
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto p-4 space-y-6 mt-4">
-        {/* App Info Card */}
+      <main className="max-w-2xl mx-auto p-4 space-y-8 mt-6">
+        {/* App Info Card - Premium Redesign */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className={`rounded-3xl p-8 border shadow-sm text-center relative overflow-hidden transition-colors duration-300 ${darkMode ? 'bg-surface-container-high border-white/5' : 'bg-white border-slate-200/60'}`}
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.6, ease: [0.23, 1, 0.32, 1] }}
+          className={`rounded-[3rem] p-10 border shadow-[0_32px_64px_-16px_rgba(0,0,0,0.08)] text-center relative overflow-hidden transition-all duration-500 ${darkMode ? 'bg-surface-container-high border-white/5' : 'bg-white border-slate-200/40'}`}
         >
-          <div className={`absolute -top-24 -right-24 w-48 h-48 rounded-full blur-3xl ${darkMode ? 'bg-primary/5' : 'bg-primary/5'}`} />
+          {/* Subtle Ambient Light Effect */}
+          <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-[100px] pointer-events-none -translate-y-1/2 translate-x-1/2" />
+          <div className="absolute bottom-0 left-0 w-64 h-64 bg-blue-500/5 rounded-full blur-[100px] pointer-events-none translate-y-1/2 -translate-x-1/2" />
+          
           <div className="relative z-10">
-            <div className="w-24 h-24 bg-gradient-to-br from-primary to-emerald-600 rounded-[2rem] flex items-center justify-center mx-auto mb-6 shadow-xl shadow-primary/20">
-              <span className="text-4xl font-black text-white">S</span>
-            </div>
-            <h3 className={`text-2xl font-black mb-1 tracking-tight ${darkMode ? 'text-on-surface' : 'text-slate-900'}`}>SAPHOSAUNG</h3>
-            <p className="text-sm font-bold text-primary mb-4">{t('version')} 1.0.4</p>
-            <p className={`text-sm font-medium leading-relaxed max-w-xs mx-auto ${darkMode ? 'text-on-surface-variant/60' : 'text-slate-500'}`}>
-              {t('aboutUsDesc')}
-            </p>
+            <motion.div 
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.2 }}
+              className="w-28 h-28 rounded-3xl overflow-hidden mx-auto mb-8 shadow-2xl border-4 border-white rotate-3 group transition-transform hover:rotate-0 duration-500"
+            >
+              <img 
+                src={brandLogo} 
+                alt="Sar Taw Set Logo" 
+                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
+                referrerPolicy="no-referrer"
+              />
+            </motion.div>
+            
+            <motion.div
+              initial={{ y: 10, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.3 }}
+            >
+              <h3 className={`text-3xl font-black mb-2 tracking-tighter ${darkMode ? 'text-on-surface' : 'text-slate-900'}`}>Sar Taw Set</h3>
+              <div className="flex items-center justify-center gap-2 mb-6">
+                 <span className="h-1 w-1 rounded-full bg-primary" />
+                 <p className="text-[10px] font-black uppercase tracking-[0.4em] text-primary">Royal Taste Experience</p>
+                 <span className="h-1 w-1 rounded-full bg-primary" />
+              </div>
+              <p className={`text-sm font-medium leading-[1.8] max-w-sm mx-auto ${darkMode ? 'text-on-surface-variant/80' : 'text-slate-500'}`}>
+                {t('aboutUsDesc')}
+              </p>
+            </motion.div>
           </div>
         </motion.div>
 
-        {/* Links */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className={`rounded-2xl border shadow-sm overflow-hidden divide-y transition-colors duration-300 ${darkMode ? 'bg-surface-container-high border-white/5 divide-white/5' : 'bg-white border-slate-200/60 divide-slate-100'}`}
-        >
-          <div 
-            className={`flex items-center justify-between p-5 transition-colors cursor-pointer ${darkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}
-            onClick={() => window.open('https://saphosaung.com', '_blank')}
-          >
-            <div className="flex items-center gap-4">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${darkMode ? 'bg-blue-500/10 text-blue-400' : 'bg-blue-500/10 text-blue-500'}`}>
-                <Globe size={20} />
+        {/* Action Links - Glassmorphism style */}
+        <div className="space-y-4">
+          {[
+            { icon: Globe, label: t('visitWebsite'), color: 'bg-blue-500', action: () => window.open('https://sartawset.com', '_blank') },
+            { icon: MessageSquare, label: t('sendFeedback'), color: 'bg-emerald-500', action: () => window.open('mailto:hello@sartawset.com', '_blank') },
+            { icon: MapPin, label: 'Store Location', subLabel: 'Scan for directions', color: 'bg-indigo-500', action: () => setShowLocationQR(true), isQR: true },
+            { icon: Shield, label: t('privacyPolicy'), color: 'bg-rose-500', action: () => navigate('/privacy-policy') }
+          ].map((item, index) => (
+            <motion.button
+              key={index}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.4 + index * 0.1 }}
+              onClick={item.action}
+              className={`w-full flex items-center justify-between p-5 rounded-2xl border transition-all active:scale-[0.98] group ${darkMode ? 'bg-surface-container-high border-white/5 hover:bg-white/5' : 'bg-white border-slate-200/50 hover:border-slate-300 hover:shadow-md'}`}
+            >
+              <div className="flex items-center gap-5">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 ${item.color} text-white shadow-lg shadow-${item.color.split('-')[1]}-200/40`}>
+                  <item.icon size={22} strokeWidth={2.5} />
+                </div>
+                <div className="flex flex-col items-start translate-y-[-1px]">
+                  <span className={`text-sm font-black tracking-tight ${darkMode ? 'text-on-surface' : 'text-slate-900'}`}>{item.label}</span>
+                  {item.subLabel && <span className="text-[10px] font-bold opacity-40 uppercase tracking-widest">{item.subLabel}</span>}
+                </div>
               </div>
-              <span className={`text-sm font-bold ${darkMode ? 'text-on-surface' : 'text-slate-900'}`}>{t('visitWebsite')}</span>
-            </div>
-            <ChevronRight size={16} className={darkMode ? 'text-on-surface-variant/30' : 'text-slate-300'} />
-          </div>
-          <div 
-            className={`flex items-center justify-between p-5 transition-colors cursor-pointer ${darkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}
-            onClick={() => window.open('mailto:support@saphosaung.com', '_blank')}
-          >
-            <div className="flex items-center gap-4">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${darkMode ? 'bg-amber-500/10 text-amber-400' : 'bg-amber-500/10 text-amber-500'}`}>
-                <MessageSquare size={20} />
-              </div>
-              <span className={`text-sm font-bold ${darkMode ? 'text-on-surface' : 'text-slate-900'}`}>{t('sendFeedback')}</span>
-            </div>
-            <ChevronRight size={16} className={darkMode ? 'text-on-surface-variant/30' : 'text-slate-300'} />
-          </div>
-          <div className={`flex items-center justify-between p-5 transition-colors cursor-pointer ${darkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`} onClick={() => navigate('/privacy-policy')}>
-            <div className="flex items-center gap-4">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${darkMode ? 'bg-red-500/10 text-red-400' : 'bg-red-500/10 text-red-500'}`}>
-                <Shield size={20} />
-              </div>
-              <span className={`text-sm font-bold ${darkMode ? 'text-on-surface' : 'text-slate-900'}`}>{t('privacyPolicy')}</span>
-            </div>
-            <ChevronRight size={16} className={darkMode ? 'text-on-surface-variant/30' : 'text-slate-300'} />
-          </div>
-        </motion.div>
+              {item.isQR ? (
+                <QrCode size={18} className="opacity-30 group-hover:opacity-100 transition-opacity" />
+              ) : (
+                <ChevronRight size={18} className="opacity-20 group-hover:opacity-100 transition-opacity group-hover:translate-x-1" />
+              )}
+            </motion.button>
+          ))}
+        </div>
 
-        {/* Copyright */}
+        {/* Redesigned Footer Section */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className="text-center pt-8 pb-4"
+          transition={{ delay: 1 }}
+          className="text-center pt-12 pb-6 space-y-4"
         >
-          <p className={`text-xs font-bold ${darkMode ? 'text-on-surface-variant/30' : 'text-slate-400'}`}>© 2026 SAPHOSAUNG. {t('allRightsReserved')}</p>
-          <p className={`text-[10px] font-medium mt-1 ${darkMode ? 'text-on-surface-variant/20' : 'text-slate-400'}`}>{t('madeWithLove')}</p>
+          <div className="flex items-center justify-center gap-4 opacity-20">
+             <div className="h-px w-8 bg-current" />
+             <div className="w-1.5 h-1.5 rounded-full bg-current" />
+             <div className="h-px w-8 bg-current" />
+          </div>
+          
+          <div>
+            <p className={`text-[10px] font-black uppercase tracking-[0.3em] ${darkMode ? 'text-on-surface-variant/40' : 'text-slate-400'}`}>
+              © {new Date().getFullYear()} Sar Taw Set Royal Caterer
+            </p>
+            <p className={`text-[9px] font-bold mt-2 uppercase tracking-widest ${darkMode ? 'text-on-surface-variant/20' : 'text-slate-300'}`}>
+               Crafted with Elegance by Sar Taw Set Infrastructure
+            </p>
+          </div>
         </motion.div>
       </main>
+
+      <QRCodeModal 
+        isOpen={showLocationQR} 
+        onClose={() => setShowLocationQR(false)} 
+        url="https://maps.google.com/?q=Sartawset+Royal+Caterer+Mandalay"
+        title="Store Location"
+        subtitle="Sartawset Royal Caterer"
+        darkMode={darkMode}
+      />
     </div>
   );
 }

@@ -49,7 +49,20 @@ Thank you!`;
 }
 
 /**
- * Formats a phone number for international messaging (WhatsApp/Viber).
+ * Formats an order inquiry message for the customer to send to admin.
+ */
+export function formatOrderInquiry(order: Order): string {
+  return `Hello! I would like to inquire about my order #${order.id}.
+
+Order ID: #${order.id}
+Customer: ${order.customerName}
+Phone: ${order.customerPhone}
+
+Looking forward to your response. Thank you!`;
+}
+
+/**
+ * Formats a phone number for international messaging (WhatsApp).
  */
 export function formatPhoneNumber(phone: string): string {
   let cleaned = phone.replace(/\D/g, "");
@@ -67,19 +80,18 @@ export function formatPhoneNumber(phone: string): string {
 }
 
 /**
- * Generates a WhatsApp wa.me link for a given phone number and message.
+ * Generates a WhatsApp link for a given phone number and message.
  */
 export function getWhatsAppLink(phone: string, message: string): string {
-  const encodedMessage = encodeURIComponent(message);
-  return `https://wa.me/${formatPhoneNumber(phone)}?text=${encodedMessage}`;
+  const cleanPhone = formatPhoneNumber(phone);
+  // Using api.whatsapp.com as it can be more stable for redirects in some browsers
+  return `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
 }
 
 /**
- * Generates a Viber link. 
- * Using forward?text is more reliable for sending pre-filled text.
+ * Opens a WhatsApp link. Reverted to window.open for reliability.
  */
-export function getViberLink(phone: string, message: string): string {
-  // Replace %20 with + for better URI scheme compatibility in some Viber versions
-  const encodedMessage = encodeURIComponent(message).replace(/%20/g, '+');
-  return `viber://forward?text=${encodedMessage}`;
+export function openWhatsApp(phone: string, message: string) {
+  const link = getWhatsAppLink(phone, message);
+  window.open(link, '_blank');
 }

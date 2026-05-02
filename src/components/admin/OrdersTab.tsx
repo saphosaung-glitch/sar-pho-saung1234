@@ -178,19 +178,19 @@ export default function OrdersTab({ orders, darkMode, formatPrice, t, updateStat
           </div>
         </div>
 
-        <div className="grid gap-4">
+        <div className="grid gap-10">
           <AnimatePresence mode="popLayout">
             {orders.length === 0 ? (
               <motion.div 
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className={`p-16 rounded-[3rem] border border-dashed text-center ${darkMode ? 'border-white/10' : 'border-gray-200'}`}
+                className={`p-20 rounded-[4rem] border border-dashed text-center ${darkMode ? 'border-white/10' : 'border-gray-200'}`}
               >
-                <div className="w-20 h-20 rounded-full bg-gray-500/5 flex items-center justify-center mx-auto mb-4">
-                  <Search size={32} className="opacity-20" />
+                <div className="w-24 h-24 rounded-full bg-gray-500/5 flex items-center justify-center mx-auto mb-6">
+                  <Search size={40} className="opacity-20" />
                 </div>
-                <h3 className="text-xl font-black opacity-40">No orders found</h3>
-                <p className="text-sm opacity-20 font-bold max-w-xs mx-auto mt-2 italic">Try adjusting your filters or search query to find what you're looking for.</p>
+                <h3 className="text-2xl font-black opacity-40">No orders found</h3>
+                <p className="text-base opacity-20 font-bold max-w-sm mx-auto mt-3 italic">Try adjusting your filters or search query to find what you're looking for.</p>
               </motion.div>
             ) : orders.map((order, i) => {
               const config = getStatusConfig(order.status);
@@ -202,59 +202,59 @@ export default function OrdersTab({ orders, darkMode, formatPrice, t, updateStat
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ delay: i * 0.05 }}
-                  className={`group p-6 rounded-[2rem] border flex flex-col md:flex-row items-center justify-between gap-6 transition-all duration-300 ${
+                  className={`group px-16 py-12 rounded-[3.5rem] border flex flex-col md:flex-row items-center justify-between gap-12 transition-all duration-300 ${
                     darkMode ? 'bg-surface-container/60 border-white/5 hover:bg-surface-container' : 'bg-white border-gray-100 hover:shadow-xl shadow-sm'
                   }`}
                 >
-                  <div className="flex items-center gap-6 w-full md:w-auto">
-                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${config.bg}`}>
-                      <config.icon className={`w-6 h-6 ${config.color}`} />
+                  <div className="flex items-center gap-10 w-full md:w-auto">
+                    <div className={`w-24 h-24 rounded-[2rem] flex items-center justify-center shrink-0 ${config.bg} shadow-lg ${darkMode ? 'shadow-black/20' : 'shadow-on-surface/5'}`}>
+                      <config.icon className={`w-11 h-11 ${config.color}`} />
                     </div>
                     
                     <div className="min-w-0 flex-grow">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`text-[10px] font-black uppercase tracking-[0.2em] ${darkMode ? 'text-primary' : 'text-emerald-600'}`}>
+                      <div className="flex items-center gap-5 mb-3.5">
+                        <span className={`text-[13px] font-black uppercase tracking-[0.3em] ${darkMode ? 'text-primary' : 'text-emerald-600'}`}>
                           #{order.id}
                         </span>
-                        <span className="w-1 h-1 rounded-full bg-gray-300 dark:bg-white/20" />
-                        <span className="text-[10px] font-bold opacity-40">
+                        <span className="w-2 h-2 rounded-full bg-gray-300 dark:bg-white/20" />
+                        <span className="text-[13px] font-bold opacity-40 uppercase tracking-tight">
                           {new Date(order.createdAt).toLocaleDateString()} at {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
-                      <h4 className="text-lg font-black tracking-tight truncate">{order.customerName}</h4>
-                      <p className="text-xs font-bold opacity-40 uppercase tracking-widest text-emerald-500/80">Room {order.roomNumber} • {order.customerPhone}</p>
+                      <h4 className="text-3xl font-black tracking-tighter truncate">{order.customerName}</h4>
+                      <p className="text-lg font-bold opacity-40 uppercase tracking-widest text-emerald-500/80 mt-3 italic">Room {order.roomNumber} • {order.customerPhone}</p>
                     </div>
                   </div>
-
-                  <div className="flex items-center justify-between md:justify-end gap-8 w-full md:w-auto mt-4 md:mt-0 pt-4 md:pt-0 border-t md:border-none border-gray-50 dark:border-white/5">
+ 
+                  <div className="flex items-center justify-between md:justify-end gap-16 w-full md:w-auto mt-8 md:mt-0 pt-8 md:pt-0 border-t md:border-none border-gray-50 dark:border-white/5">
                     <div className="text-right">
-                      <p className="text-2xl font-black tracking-tighter">{formatPrice(order.total)}</p>
-                      <p className="text-[10px] font-bold opacity-40 uppercase tracking-widest">
+                      <p className="text-5xl font-black tracking-tighter leading-none">{formatPrice(order.total)}</p>
+                      <p className="text-[13px] font-black opacity-40 uppercase tracking-[0.25em] mt-3">
                         {order.items.length} Items Total
                       </p>
                     </div>
-
-                    <div className="flex items-center gap-2">
+ 
+                    <div className="flex items-center gap-6">
                       <button
                         onClick={() => setSelectedOrder(order)}
-                        className={`p-2.5 rounded-xl transition-all active:scale-95 ${
-                          darkMode ? 'bg-white/5 hover:bg-white/10 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                        className={`p-5 rounded-3xl transition-all active:scale-90 shadow-sm ${
+                          darkMode ? 'bg-white/5 hover:bg-white/10 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
                         }`}
                         title="View Details"
                       >
-                        <Eye size={18} />
+                        <Eye size={28} />
                       </button>
-
-                      <div className="flex bg-gray-100 dark:bg-white/5 p-1.5 rounded-2xl gap-1">
+ 
+                      <div className="flex bg-gray-100 dark:bg-white/5 p-2.5 rounded-[2rem] gap-2">
                         {['pending', 'packing', 'delivered', 'cancelled'].map((s) => (
                           <motion.button
                             key={s}
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                             onClick={(e) => { e.stopPropagation(); updateStatus(order.id, s); }}
-                            className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
+                            className={`px-5 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all ${
                               order.status === s 
-                                ? 'bg-primary text-surface shadow-lg shadow-primary/20' 
+                                ? 'bg-primary text-surface shadow-xl shadow-primary/30' 
                                 : 'text-gray-400 hover:text-primary dark:hover:text-white'
                             }`}
                             title={`Mark as ${s}`}
@@ -285,12 +285,17 @@ export default function OrdersTab({ orders, darkMode, formatPrice, t, updateStat
             />
             
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className={`relative w-full max-w-6xl h-[90vh] overflow-hidden rounded-[3rem] shadow-2xl flex flex-col md:flex-row ${
-                darkMode ? 'bg-[#0F172A] text-white border border-white/5' : 'bg-white text-slate-900 border border-slate-200'
+              initial={{ y: "100%", opacity: 0 }}
+              animate={{ 
+                y: 0, 
+                opacity: 1,
+                left: 100 // Approximation since we don't have isMenuOpen here
+              }}
+              exit={{ y: "100%", opacity: 0 }}
+              className={`fixed bottom-4 right-4 z-[100] rounded-[2.5rem] border shadow-2xl overflow-hidden flex flex-col md:flex-row ${
+                darkMode ? 'bg-[#0F172A] text-white border-white/10' : 'bg-[#fdfdfd] text-slate-900 border-slate-200'
               }`}
+              style={{ height: '500px' }}
             >
               {/* Left Side: Premium Management Rail */}
               <div className={`p-10 md:w-[450px] flex-shrink-0 flex flex-col overflow-y-auto custom-scrollbar ${

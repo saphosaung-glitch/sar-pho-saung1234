@@ -10,24 +10,27 @@ interface OrderInvoiceProps {
 }
 
 export default function OrderInvoice({ order, formatPrice, t, id }: OrderInvoiceProps) {
+
   return (
     <div 
       id={id}
-      className="bg-white text-slate-900 p-[18mm] mx-auto w-[210mm] min-h-[297mm] shadow-none flex flex-col font-sans relative overflow-hidden print:p-0 print:w-full print:h-full print:shadow-none"
+      className="bg-white text-slate-900 p-[18mm] mx-auto w-[210mm] min-h-[297mm] shadow-none flex flex-col font-sans relative print:p-0 print:w-full print:h-full print:shadow-none"
       style={{ 
         boxSizing: 'border-box',
         backgroundColor: '#ffffff',
         color: '#000000',
-        lineHeight: '1.5'
+        lineHeight: '1.5',
+        paddingBottom: '20mm'
       }}
     >
-      {/* Print-specific layout control */}
       <style>{`
         @media print {
           body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
           .print-hidden { display: none !important; }
+          @page { size: A4; margin: 0; }
         }
       `}</style>
+      
       {/* Royal Head Decoration */}
       <div className="absolute top-0 left-0 w-full h-3 bg-slate-900" />
       <div className="absolute top-3 left-0 w-full h-1 bg-amber-500/20" />
@@ -76,7 +79,7 @@ export default function OrderInvoice({ order, formatPrice, t, id }: OrderInvoice
             <div className="space-y-4 relative z-10">
               <div className="bg-slate-900 text-white p-4 rounded-2xl shadow-xl">
                 <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-50 mb-1">Invoice ID</p>
-                <p className="text-xl font-black uppercase tracking-tight tabular-nums">#INV-{order.id}</p>
+                <p className="text-xl font-black uppercase tracking-tight tabular-nums">#INV-{order.id.slice(0, 12).toUpperCase()}</p>
               </div>
               <div className="pr-4">
                 <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 mb-1">Date of Issue</p>
@@ -130,17 +133,12 @@ export default function OrderInvoice({ order, formatPrice, t, id }: OrderInvoice
                   <p className="text-xs font-black uppercase border-2 border-slate-900 px-3 py-1.5 rounded-lg inline-block">08:00 - 10:00</p>
                 </div>
               </div>
-              <div className="space-y-4">
+              <div className="space-y-4 flex flex-col items-center">
                  <div>
                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Status</p>
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-emerald-500" />
                     <p className="text-xs font-black uppercase text-emerald-600">{order.status}</p>
-                  </div>
-                </div>
-                <div className="pt-2">
-                  <div className="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 border border-emerald-100">
-                    <Receipt size={24} />
                   </div>
                 </div>
               </div>
@@ -190,7 +188,7 @@ export default function OrderInvoice({ order, formatPrice, t, id }: OrderInvoice
                 <div className="p-8 bg-amber-50/50 rounded-[2.5rem] border-2 border-amber-500/10 relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full -mr-12 -mt-12" />
                   <p className="text-[11px] font-black uppercase tracking-[0.3em] text-amber-600 mb-4 flex items-center gap-3">
-                    <div className="w-1.5 h-1.5 bg-amber-500 rounded-full" />
+                    <span className="w-1.5 h-1.5 bg-amber-500 rounded-full" />
                     Special Directives
                   </p>
                   <p className="text-sm font-bold text-slate-700 leading-relaxed italic border-l-4 border-amber-200 pl-6 uppercase tracking-wider">
@@ -265,24 +263,24 @@ export default function OrderInvoice({ order, formatPrice, t, id }: OrderInvoice
         </div>
         
         {/* Fine Print Footer */}
-        <div className="mt-auto pt-16 flex justify-between items-center text-slate-300">
-          <div className="flex items-center gap-3">
-            <Globe size={14} />
-            <p className="text-[10px] font-black uppercase tracking-[0.4em]">www.sartawset.com</p>
+        <div className="mt-20 pt-10 border-t-2 border-slate-100 flex justify-between items-end">
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 text-slate-300">
+              <Globe size={14} />
+              <p className="text-[10px] font-black uppercase tracking-[0.4em]">www.sartawset.com</p>
+            </div>
+            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-300">Document Generated via Royal Asset Management System</p>
           </div>
-          <p className="text-[9px] font-bold uppercase tracking-widest">Document Generated via Royal Asset Management System</p>
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-px bg-slate-100" />
-            <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-900">STS-01</p>
+          
+          <div className="text-right">
+             <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-900 mb-1">Sar Taw Set</p>
+             <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Mandalay Division, Myanmar</p>
           </div>
         </div>
       </div>
       
       {/* Royal Corner Accent */}
-      <div className="absolute bottom-0 right-0 w-64 h-64 bg-slate-900 rounded-tl-[10rem] -br-20 -bb-20 z-0 opacity-[0.03]" />
+      <div className="absolute bottom-0 right-0 w-64 h-64 bg-slate-900 rounded-tl-[10rem] -br-20 -bb-20 z-0 opacity-[0.03] pointer-events-none" />
     </div>
   );
 }
-
-
-

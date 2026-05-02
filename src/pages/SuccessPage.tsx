@@ -45,14 +45,11 @@ export default function SuccessPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleShare = async (platform: 'whatsapp' | 'viber') => {
+  const handleShare = async () => {
     if (!order) return;
-    const { formatOrderForWhatsApp, getWhatsAppLink, getViberLink } = await import('../lib/messaging');
-    const message = formatOrderForWhatsApp(order, formatPrice);
-    const link = platform === 'whatsapp' 
-      ? getWhatsAppLink(supportNumber, message) 
-      : getViberLink(supportNumber, message);
-    window.open(link, '_blank');
+    const { formatOrderInquiry, openWhatsApp } = await import('../lib/messaging');
+    const message = formatOrderInquiry(order);
+    openWhatsApp(supportNumber, message);
   };
 
   // Status mapping
@@ -252,22 +249,6 @@ export default function SuccessPage() {
           </button>
           
           <div className="grid grid-cols-2 gap-2">
-            <div className="flex gap-1">
-              <button 
-                onClick={() => handleShare('whatsapp')}
-                className={`flex-1 text-on-surface border border-on-surface/10 py-2.5 rounded-2xl transition-all active:scale-95 flex items-center justify-center ${darkMode ? 'bg-surface-container-highest hover:bg-surface-container-high' : 'bg-surface-container-low hover:bg-surface-container-high'}`}
-                title="Send via WhatsApp"
-              >
-                <MessageCircle size={18} className="text-[#25D366]" />
-              </button>
-              <button 
-                onClick={() => handleShare('viber')}
-                className={`flex-1 text-on-surface border border-on-surface/10 py-2.5 rounded-2xl transition-all active:scale-95 flex items-center justify-center ${darkMode ? 'bg-surface-container-highest hover:bg-surface-container-high' : 'bg-surface-container-low hover:bg-surface-container-high'}`}
-                title="Send via Viber"
-              >
-                <MessageSquare size={18} className="text-purple-500" />
-              </button>
-            </div>
             <button 
               onClick={() => navigate('/menu')}
               className={`text-on-surface border border-on-surface/10 py-2.5 rounded-2xl font-black text-[10px] transition-all active:scale-95 flex items-center justify-center gap-1.5 ${darkMode ? 'bg-surface-container-highest hover:bg-surface-container-high' : 'bg-surface-container-low hover:bg-surface-container-high'}`}
@@ -275,6 +256,16 @@ export default function SuccessPage() {
               <ShoppingBag size={14} className="text-primary" />
               <span className="truncate">{t('continueShopping')}</span>
             </button>
+            <div className="flex gap-1">
+              <button 
+                onClick={() => handleShare()}
+                className={`flex-1 text-on-surface border border-on-surface/10 py-2.5 rounded-2xl transition-all active:scale-95 flex items-center justify-center gap-2 ${darkMode ? 'bg-surface-container-highest hover:bg-surface-container-high' : 'bg-surface-container-low hover:bg-surface-container-high'}`}
+                title="Send via WhatsApp"
+              >
+                <MessageCircle size={18} className="text-[#25D366]" />
+                <span className="text-[10px] font-black uppercase">WhatsApp</span>
+              </button>
+            </div>
           </div>
         </motion.div>
       </motion.div>

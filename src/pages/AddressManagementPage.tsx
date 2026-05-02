@@ -37,20 +37,20 @@ export default function AddressManagementPage() {
       </div>
 
       {/* Header */}
-      <header className={`sticky top-0 z-50 backdrop-blur-3xl border-b px-6 h-[80px] flex items-center gap-5 transition-all duration-500 ${darkMode ? 'bg-slate-900/60 border-white/5' : 'bg-white/60 border-on-surface/5'}`}>
+      <header className={`sticky top-0 z-50 backdrop-blur-3xl border-b px-4 h-[72px] flex items-center gap-4 transition-all duration-500 ${darkMode ? 'bg-slate-900/60 border-white/5' : 'bg-white/60 border-on-surface/5'}`}>
         <motion.button 
-          whileHover={{ scale: 1.1, x: -2 }}
-          whileTap={{ scale: 0.9 }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
           onClick={() => navigate(-1)}
-          className={`flex-none w-12 h-12 border shadow-sm rounded-2xl flex items-center justify-center transition-all ${darkMode ? 'bg-slate-800/50 border-white/10 hover:bg-slate-700/50' : 'bg-white border-on-surface/5 hover:bg-slate-50'}`}
+          className={`flex-none w-10 h-10 border shadow-sm rounded-full flex items-center justify-center transition-all ${darkMode ? 'bg-slate-800 border-white/10 hover:bg-slate-700 text-white' : 'bg-white border-on-surface/5 hover:bg-slate-50 text-slate-900'}`}
         >
-          <ChevronLeft size={22} className={darkMode ? 'text-white' : 'text-on-surface'} />
+          <ChevronLeft size={20} />
         </motion.button>
         <div className="flex flex-col">
-          <h2 className={`text-lg font-black tracking-tight leading-none ${darkMode ? 'text-white' : 'text-on-surface'}`}>{t('savedAddresses')}</h2>
-          <div className="flex items-center gap-2 mt-1.5">
-            <div className="w-2 h-2 rounded-full bg-primary animate-pulse shadow-[0_0_10px_rgba(13,99,27,0.5)]" />
-            <p className={`text-[11px] font-black uppercase tracking-[0.2em] ${darkMode ? 'text-white/40' : 'text-on-surface-variant/60'}`}>{addresses.length} {t('locations')}</p>
+          <h2 className={`text-lg font-bold tracking-tight ${darkMode ? 'text-white' : 'text-on-surface'}`}>{t('savedAddresses')}</h2>
+          <div className="flex items-center gap-2 mt-0.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse shadow-[0_0_10px_rgba(13,99,27,0.5)]" />
+            <p className={`text-[11px] font-bold uppercase tracking-[0.1em] ${darkMode ? 'text-white/40' : 'text-on-surface-variant/60'}`}>{addresses.length} {t('locations')}</p>
           </div>
         </div>
       </header>

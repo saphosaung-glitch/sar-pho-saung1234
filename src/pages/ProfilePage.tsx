@@ -7,10 +7,11 @@ import {
   Camera, Save, Sparkles, ChevronRight, Heart, 
   Headphones, Bell, Moon, CreditCard, ShieldCheck,
   Trophy, Trash2, MessageCircle, HelpCircle, Shield, Info,
-  Clock, Package, Mail, Calendar, Database, RefreshCw
+  Clock, Package, Mail, Calendar, Database, RefreshCw, Share2, QrCode
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
+import { QRCodeModal } from '../components/ui/QRCodeModal';
 
 export default function ProfilePage() {
   const { 
@@ -27,6 +28,7 @@ export default function ProfilePage() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showLanguageModal, setShowLanguageModal] = useState(false);
+  const [showQRModal, setShowQRModal] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
 
   const languages = [
@@ -234,11 +236,12 @@ export default function ProfilePage() {
         </motion.div>
 
         {/* Quick Actions Grid */}
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-5 gap-2">
           {[
             { icon: Receipt, label: t('history'), color: 'bg-blue-500/10 text-blue-500', onClick: () => navigate('/orders', { state: { from: 'profile' } }) },
             { icon: Heart, label: t('favorites'), color: 'bg-rose-500/10 text-rose-500', onClick: () => navigate('/favorites') },
             { icon: Trophy, label: t('points'), color: 'bg-amber-500/10 text-amber-500', onClick: () => navigate('/points') },
+            { icon: Share2, label: 'Share', color: 'bg-indigo-500/10 text-indigo-500', onClick: () => setShowQRModal(true) },
             { icon: Headphones, label: t('support'), color: 'bg-emerald-500/10 text-emerald-500', onClick: handleWhatsApp },
           ].map((action, idx) => (
             <motion.button
@@ -247,12 +250,12 @@ export default function ProfilePage() {
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.1 + idx * 0.05 }}
               onClick={action.onClick}
-              className={`${darkMode ? 'bg-surface-container-high' : 'bg-white'} p-4 rounded-[1.5rem] border border-on-surface/5 shadow-sm flex flex-col items-center gap-2 active:scale-95 transition-all`}
+              className={`${darkMode ? 'bg-surface-container-high' : 'bg-white'} p-3 rounded-[1.25rem] border border-on-surface/5 shadow-sm flex flex-col items-center gap-1.5 active:scale-95 transition-all`}
             >
-              <div className={`w-10 h-10 ${action.color} rounded-xl flex items-center justify-center`}>
-                <action.icon size={20} />
+              <div className={`w-9 h-9 ${action.color} rounded-xl flex items-center justify-center`}>
+                <action.icon size={18} />
               </div>
-              <span className="text-[9px] font-black text-on-surface-variant uppercase tracking-widest">{action.label}</span>
+              <span className="text-[8px] font-black text-on-surface-variant uppercase tracking-widest leading-none">{action.label}</span>
             </motion.button>
           ))}
         </div>
@@ -474,49 +477,11 @@ export default function ProfilePage() {
                 </div>
                 <div>
                   <p className="text-sm font-bold text-on-surface">{t('aboutUs')}</p>
-                  <p className="text-[8px] font-black text-on-surface-variant/40 uppercase tracking-widest">{t('version')} 1.0.4</p>
+                  <p className="text-[8px] font-black text-on-surface-variant/40 uppercase tracking-widest">{t('version')} 3.2.1</p>
                 </div>
               </div>
               <ChevronRight size={16} className="text-on-surface-variant/30" />
             </div>
-
-            <div onClick={() => navigate(isAdmin ? '/admin' : '/admin-login')} className="flex items-center justify-between px-6 py-4 hover:bg-surface-container-low/30 transition-colors cursor-pointer">
-              <div className="flex items-center gap-4">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isAdmin ? 'bg-primary/10 text-primary' : 'bg-amber-500/5 text-amber-600'}`}>
-                  <ShieldCheck size={18} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-on-surface">{t('adminDashboard')}</p>
-                  <p className="text-[8px] font-black text-on-surface-variant/40 uppercase tracking-widest">
-                    {isAdmin ? 'You have admin access' : t('managementAccessDesc')}
-                  </p>
-                </div>
-              </div>
-              <ChevronRight size={16} className="text-on-surface-variant/30" />
-            </div>
-
-            {isAdmin && isQuotaExceeded && (
-              <div 
-                onClick={() => {
-                  resetQuotaExceeded();
-                  toast.success("Quota status reset locally.");
-                }} 
-                className="flex items-center justify-between px-6 py-4 hover:bg-red-500/10 transition-colors cursor-pointer border-t border-red-500/10"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-red-500/10 text-red-500">
-                    <Database size={18} />
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-red-500">Reset Quota Status</p>
-                    <p className="text-[8px] font-black text-red-500/60 uppercase tracking-widest">
-                      Firestore limit reached. Click to retry.
-                    </p>
-                  </div>
-                </div>
-                <RefreshCw size={16} className="text-red-500/30" />
-              </div>
-            )}
           </div>
         </motion.section>
 
@@ -698,6 +663,15 @@ export default function ProfilePage() {
           )}
         </AnimatePresence>
       </main>
+
+      <QRCodeModal 
+        isOpen={showQRModal} 
+        onClose={() => setShowQRModal(false)} 
+        url={window.location.origin}
+        title="Share App"
+        subtitle="Invite friends to shop"
+        darkMode={darkMode}
+      />
     </div>
   );
 }

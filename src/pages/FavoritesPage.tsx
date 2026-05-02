@@ -8,7 +8,7 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
 export default function FavoritesPage() {
-  const { favorites, toggleFavorite, addToCart, cart, cartTotal, clearCart, t, darkMode, formatPrice, getMainName, getSecondaryName, isProfileLoaded, products } = useStore();
+  const { favorites, toggleFavorite, addToCart, cart, cartTotal, clearCart, t, darkMode, formatPrice, getMainName, getSecondaryName, getCategoryName, isProfileLoaded, products } = useStore();
   const navigate = useNavigate();
 
   const handleBack = () => {
@@ -79,8 +79,14 @@ export default function FavoritesPage() {
 
                 <div className="p-2 flex flex-col flex-1 justify-between gap-1">
                   <div className="space-y-1">
-                    <h4 className="text-on-surface font-black text-xs leading-tight line-clamp-1 tracking-tight">{getMainName(product)}</h4>
-                    <p className="text-on-surface-variant/60 text-[10px] font-medium leading-tight">{getSecondaryName(product)}</p>
+                    <div className="flex flex-col">
+                      <h4 className="text-on-surface font-black text-xs leading-tight tracking-tight group-hover:text-primary transition-colors duration-300 truncate">
+                        {getMainName(product)}
+                      </h4>
+                      <p className="text-on-surface-variant/60 text-[10px] font-medium leading-tight truncate mt-0.5">
+                        {getSecondaryName(product)}
+                      </p>
+                    </div>
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-primary font-black text-sm tracking-tighter">{formatPrice(product.price)}</p>

@@ -1,6 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, X, ArrowLeft, Plus, SlidersHorizontal, Camera, Clock, TrendingUp, Check, ScanLine, ShoppingCart, Heart, Trash2 } from 'lucide-react';
+import { 
+  Search, X, ArrowLeft, Plus, SlidersHorizontal, Camera, Clock, 
+  TrendingUp, Check, ScanLine, ShoppingCart, Heart, Trash2,
+  LayoutDashboard, Zap, Sparkles, Beef, Fish, Carrot, Egg, 
+  Soup, Wheat, UtensilsCrossed, Flame, Wine, Candy, Snowflake, 
+  Baby, Dog, Home, Smile, Pill, Briefcase, Store
+} from 'lucide-react';
 import { AddToCartButton } from '../components/AddToCartButton';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -9,13 +15,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI } from '@google/genai';
 
 const POPULAR_SEARCHES = ['Fresh Milk', 'Organic Eggs', 'Salmon', 'Avocado', 'Bread'];
-const CATEGORIES = [
-  { id: 'all', key: 'all' },
-  { id: 'seafood', key: 'seafood' },
-  { id: 'meat', key: 'meat' },
-  { id: 'vegetables', key: 'vegetables' },
-  { id: 'kitchen', key: 'kitchen' }
-];
 
 const SORT_OPTIONS = [
   { id: 'relevance', key: 'relevance' },
@@ -26,7 +25,23 @@ const SORT_OPTIONS = [
 
 export default function SearchPage() {
   const navigate = useNavigate();
-  const { addToCart, cart, cartTotal, clearCart, favorites, toggleFavorite, t, darkMode, formatPrice, getMainName, getSecondaryName, products } = useStore();
+  const { 
+    addToCart, 
+    cart, 
+    cartTotal, 
+    clearCart, 
+    favorites, 
+    toggleFavorite, 
+    t, 
+    darkMode, 
+    formatPrice, 
+    getMainName, 
+    getSecondaryName, 
+    getCategoryName,
+    products,
+    categories,
+    language
+  } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   
@@ -50,6 +65,62 @@ export default function SearchPage() {
       return [];
     }
   });
+
+  const getCategoryIcon = (key: string) => {
+    const iconSize = 12;
+    switch (key) {
+      case 'all': return <LayoutDashboard size={iconSize} />;
+      case 'deals': return <Zap size={iconSize} className="fill-orange-500 text-orange-500" />;
+      case 'bundles': return <Sparkles size={iconSize} className="text-cyan-500" />;
+      
+      // Core food categories
+      case 'meat': 
+      case 'poultry':
+      case 'meat-poultry': return <Beef size={iconSize} />;
+      case 'seafood': 
+      case 'fish': return <Fish size={iconSize} />;
+      case 'vegetables': 
+      case 'fresh-produce': 
+      case 'fruits': return <Carrot size={iconSize} />;
+      case 'dairy':
+      case 'eggs':
+      case 'dairy-eggs':
+      case 'dairyAndEggs': return <Egg size={iconSize} />;
+      case 'ready-to-eat':
+      case 'readyToEat': 
+      case 'prepared-meals': return <Soup size={iconSize} />;
+      case 'dry-goods':
+      case 'pantry':
+      case 'dryGoods': return <Wheat size={iconSize} />;
+      case 'kitchen': 
+      case 'home-essentials': return <UtensilsCrossed size={iconSize} />;
+      case 'spices': 
+      case 'seasonings': return <Flame size={iconSize} className="text-orange-600" />;
+      case 'beverages': 
+      case 'drinks': return <Wine size={iconSize} />;
+      case 'snacks': 
+      case 'confectionery': return <Candy size={iconSize} />;
+      
+      // Legacy/Misc categories
+      case 'frozen-foods': return <Snowflake size={iconSize} />;
+      case 'baby-care': return <Baby size={iconSize} />;
+      case 'pet-care': return <Dog size={iconSize} />;
+      case 'household': return <Home size={iconSize} />;
+      case 'personal-care': return <Smile size={iconSize} />;
+      case 'health-wellness': return <Pill size={iconSize} />;
+      case 'office-supplies': return <Briefcase size={iconSize} />;
+      
+      default: return <Store size={iconSize} />;
+    }
+  };
+
+  const categoriesWithSpecials = useMemo(() => {
+    // Check if 'all' is already in categories from store
+    const hasAll = categories.some(c => c.id === 'all');
+    const baseCategories = hasAll ? categories : [{ id: 'all', key: 'all' }, ...categories];
+    
+    return baseCategories.filter(c => c.isActive !== false);
+  }, [categories]);
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -262,19 +333,22 @@ export default function SearchPage() {
 
       {/* Category Quick Links (Only show when typing) */}
       {searchQuery.trim() !== '' && (
-        <div className={`sticky top-[72px] z-30 backdrop-blur-sm border-b border-on-surface/5 py-2 ${darkMode ? 'bg-surface/95' : 'bg-surface/95'}`}>
-          <div className="flex overflow-x-auto no-scrollbar gap-2 px-4">
-            {CATEGORIES.map(cat => (
+        <div className={`sticky top-[72px] z-30 h-9 flex items-center bg-transparent`}>
+          <div className="flex overflow-x-auto no-scrollbar gap-1.5 px-4 w-full items-center">
+            {categoriesWithSpecials.map(cat => (
               <button
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id)}
-                className={`flex-none px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-colors ${
+                className={`flex-none px-3 py-1.5 rounded-xl font-black text-[10px] uppercase tracking-wider whitespace-nowrap transition-all duration-300 shadow-sm flex items-center gap-1.5 border ${
                   selectedCategory === cat.id
-                    ? 'bg-primary text-white'
-                    : `${darkMode ? 'bg-surface-container-high' : 'bg-white'} text-on-surface-variant border border-on-surface/5 hover:bg-surface-container-low`
+                    ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20'
+                    : `${darkMode ? 'bg-surface-container-high text-on-surface-variant' : 'bg-white text-on-surface-variant'} border-on-surface/5 hover:bg-on-surface/5`
                 }`}
               >
-                {t(cat.key)}
+                <span className={selectedCategory === cat.id ? 'scale-110' : 'opacity-60'}>
+                  {getCategoryIcon(cat.key || cat.id)}
+                </span>
+                {getCategoryName(cat.id)}
               </button>
             ))}
           </div>
@@ -384,10 +458,10 @@ export default function SearchPage() {
                 <div className="p-2 flex flex-col flex-1 justify-between gap-1">
                   <div className="space-y-1">
                     <div className="flex flex-col">
-                      <h4 className="text-on-surface font-black text-xs leading-tight line-clamp-1 tracking-tight group-hover:text-primary transition-colors duration-300">
+                      <h4 className="text-on-surface font-black text-xs leading-tight tracking-tight group-hover:text-primary transition-colors duration-300 truncate">
                         {getMainName(product)}
                       </h4>
-                      <p className="text-on-surface-variant/60 text-[10px] font-medium leading-tight mt-0.5">
+                      <p className="text-on-surface-variant/60 text-[10px] font-medium leading-tight truncate mt-0.5">
                         {getSecondaryName(product)}
                       </p>
                     </div>
@@ -469,17 +543,20 @@ export default function SearchPage() {
                 <section>
                   <h3 className="text-sm font-black text-on-surface mb-3 uppercase tracking-widest">{t('category')}</h3>
                   <div className="flex flex-wrap gap-2">
-                    {CATEGORIES.map(cat => (
+                    {categoriesWithSpecials.map(cat => (
                       <button
                         key={cat.id}
                         onClick={() => setSelectedCategory(cat.id)}
-                        className={`px-4 py-2 rounded-full text-xs font-black uppercase tracking-widest transition-colors ${
+                        className={`px-3 py-1.5 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all duration-300 shadow-sm flex items-center gap-1.5 border ${
                           selectedCategory === cat.id
-                            ? 'bg-primary text-white shadow-md shadow-primary/20'
-                            : `${darkMode ? 'bg-surface-container-high' : 'bg-white'} border border-on-surface/5 text-on-surface-variant hover:bg-surface-container-low`
+                            ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20'
+                            : `${darkMode ? 'bg-surface-container-high text-on-surface-variant' : 'bg-white text-on-surface-variant'} border-on-surface/5 hover:bg-on-surface/5`
                         }`}
                       >
-                        {t(cat.key)}
+                        <span className={selectedCategory === cat.id ? 'scale-110' : 'opacity-60'}>
+                          {getCategoryIcon(cat.key || cat.id)}
+                        </span>
+                        {getCategoryName(cat.id)}
                       </button>
                     ))}
                   </div>
