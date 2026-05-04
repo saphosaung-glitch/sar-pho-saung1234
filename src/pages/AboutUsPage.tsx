@@ -5,6 +5,7 @@ import { motion } from 'motion/react';
 import { useStore } from '../context/StoreContext';
 import { QRCodeModal } from '../components/ui/QRCodeModal';
 import { useState } from 'react';
+import { BRAND_LOGO, PRODUCTION_URL } from '../constants';
 
 export default function AboutUsPage() {
   const navigate = useNavigate();
@@ -15,7 +16,7 @@ export default function AboutUsPage() {
     window.scrollTo(0, 0);
   }, []);
 
-  const brandLogo = "https://scontent.fkul7-2.fna.fbcdn.net/v/t39.30808-6/684505557_122097016515302120_6150026231108406984_n.jpg?_nc_cat=104&ccb=1-7&_nc_sid=1d70fc&_nc_ohc=65onKQ3wqrwQ7kNvwH-5Tn-&_nc_oc=AdoS-wVrlfKZ1ez9KNNdnG2zrOlHcnj7uHcGjRb3mW6fp1oguy8-8wQ1-pXhxzE26ke-vq-3N92HeuXbHTYkvevu&_nc_zt=23&_nc_ht=scontent.fkul7-2.fna&_nc_gid=lCsMSE2No98znYrLT3N7sg&_nc_ss=7b2a8&oh=00_Af4X8z6JL4VX10-1XWuFqPcF1kQfsivurJR7gMP3HKIQ7Q&oe=69FC4851";
+  const brandLogo = BRAND_LOGO;
 
   return (
     <div className={`min-h-screen pb-24 font-sans selection:bg-primary/20 transition-colors duration-300 ${darkMode ? 'bg-surface text-on-surface' : 'bg-[#F8FAFC] text-slate-900'}`}>
@@ -81,7 +82,7 @@ export default function AboutUsPage() {
         {/* Action Links - Glassmorphism style */}
         <div className="space-y-4">
           {[
-            { icon: Globe, label: t('visitWebsite'), color: 'bg-blue-500', action: () => window.open('https://sartawset.com', '_blank') },
+            { icon: Globe, label: t('visitWebsite'), color: 'bg-blue-500', action: () => window.open(PRODUCTION_URL, '_blank') },
             { icon: MessageSquare, label: t('sendFeedback'), color: 'bg-emerald-500', action: () => window.open('mailto:hello@sartawset.com', '_blank') },
             { icon: MapPin, label: 'Store Location', subLabel: 'Scan for directions', color: 'bg-indigo-500', action: () => setShowLocationQR(true), isQR: true },
             { icon: Shield, label: t('privacyPolicy'), color: 'bg-rose-500', action: () => navigate('/privacy-policy') }

@@ -12,6 +12,7 @@ import {
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeModal } from '../components/ui/QRCodeModal';
+import { PRODUCTION_URL } from '../constants';
 
 export default function ProfilePage() {
   const { 
@@ -667,7 +668,7 @@ export default function ProfilePage() {
       <QRCodeModal 
         isOpen={showQRModal} 
         onClose={() => setShowQRModal(false)} 
-        url={window.location.origin}
+        url={PRODUCTION_URL}
         title="Share App"
         subtitle="Invite friends to shop"
         darkMode={darkMode}

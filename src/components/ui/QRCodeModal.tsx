@@ -3,6 +3,7 @@ import { QRCodeSVG, QRCodeCanvas } from 'qrcode.react';
 import { X, Download, Share2, Copy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
+import { BRAND_LOGO } from '../../constants';
 
 interface QRCodeModalProps {
   isOpen: boolean;
@@ -12,8 +13,6 @@ interface QRCodeModalProps {
   subtitle?: string;
   darkMode?: boolean;
 }
-
-const BRAND_LOGO = "https://scontent.fkul7-2.fna.fbcdn.net/v/t39.30808-6/684505557_122097016515302120_6150026231108406984_n.jpg?_nc_cat=104&ccb=1-7&_nc_sid=1d70fc&_nc_ohc=65onKQ3wqrwQ7kNvwH-5Tn-&_nc_oc=AdoS-wVrlfKZ1ez9KNNdnG2zrOlHcnj7uHcGjRb3mW6fp1oguy8-8wQ1-pXhxzE26ke-vq-3N92HeuXbHTYkvevu&_nc_zt=23&_nc_ht=scontent.fkul7-2.fna&_nc_gid=lCsMSE2No98znYrLT3N7sg&_nc_ss=7b2a8&oh=00_Af4X8z6JL4VX10-1XWuFqPcF1kQfsivurJR7gMP3HKIQ7Q&oe=69FC4851";
 
 export function QRCodeModal({ isOpen, onClose, url, title, subtitle, darkMode }: QRCodeModalProps) {
   const [logoDataUrl, setLogoDataUrl] = React.useState<string>(BRAND_LOGO);

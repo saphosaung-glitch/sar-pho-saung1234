@@ -11,6 +11,7 @@ import { auth } from '../../lib/firebase';
 import { seedSampleOrders } from '../../lib/seed';
 import { ServiceAreasConfig } from './ServiceAreasConfig';
 import { QRCodeModal } from '../ui/QRCodeModal';
+import { PRODUCTION_URL } from '../../constants';
 
 export function SettingsTab({ 
   darkMode,
@@ -726,7 +727,7 @@ export function SettingsTab({
       <QRCodeModal 
         isOpen={isQRModalOpen} 
         onClose={() => setIsQRModalOpen(false)} 
-        url={window.location.origin}
+        url={PRODUCTION_URL}
         title="Shop App QR"
         subtitle="Catalog & Ordering System"
         darkMode={darkMode}
