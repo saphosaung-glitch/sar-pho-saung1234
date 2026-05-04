@@ -23,7 +23,7 @@ export default function MenuPage() {
     setRoomNumber, addToCart, cartTotal, cart, roomNumber, clearCart,
     favorites, toggleFavorite, notifications, markNotificationAsRead, clearNotifications,
     t, darkMode, language, formatPrice, getMainName, getSecondaryName, getCategoryName, products,
-    promotionBanners, categories, deals, bundles
+    promotionBanners, categories, deals, bundles, settings
   } = useStore();
   const navigate = useNavigate();
 
@@ -519,7 +519,7 @@ export default function MenuPage() {
       <QRCodeModal 
         isOpen={!!qrItem} 
         onClose={() => setQrItem(null)} 
-        url={`${window.location.origin}/#/search?q=${qrItem ? encodeURIComponent(qrItem.name) : ''}`}
+        url={`${settings.productionUrl}/#/search?q=${qrItem ? encodeURIComponent(qrItem.name) : ''}`}
         title={qrItem?.name || 'Product'}
         subtitle="Item QR Code"
         darkMode={darkMode}

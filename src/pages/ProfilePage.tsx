@@ -22,7 +22,8 @@ export default function ProfilePage() {
     points, language, setLanguage, t,
     darkMode, setDarkMode, formatPrice,
     logout, forceSync, isSyncing, uid, addresses, orders, userAvatar,
-    userEmail, userBirthday, isAdmin, isQuotaExceeded, resetQuotaExceeded, totalOrders
+    userEmail, userBirthday, isAdmin, isQuotaExceeded, resetQuotaExceeded, totalOrders,
+    settings
   } = useStore();
   const navigate = useNavigate();
   const [showSuccess, setShowSuccess] = useState(false);
@@ -668,7 +669,7 @@ export default function ProfilePage() {
       <QRCodeModal 
         isOpen={showQRModal} 
         onClose={() => setShowQRModal(false)} 
-        url={PRODUCTION_URL}
+        url={settings.productionUrl}
         title="Share App"
         subtitle="Invite friends to shop"
         darkMode={darkMode}

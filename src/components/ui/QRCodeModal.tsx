@@ -4,6 +4,7 @@ import { X, Download, Share2, Copy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { BRAND_LOGO } from '../../constants';
+import { useStore } from '../../context/StoreContext';
 
 interface QRCodeModalProps {
   isOpen: boolean;
@@ -15,15 +16,19 @@ interface QRCodeModalProps {
 }
 
 export function QRCodeModal({ isOpen, onClose, url, title, subtitle, darkMode }: QRCodeModalProps) {
-  const [logoDataUrl, setLogoDataUrl] = React.useState<string>(BRAND_LOGO);
+  const { settings } = useStore();
+  const [logoDataUrl, setLogoDataUrl] = React.useState<string | null>(null);
+  
+  const finalUrl = url || settings.productionUrl;
 
   React.useEffect(() => {
     // Attempt to pre-load logo as data URL to avoid CORS/Tainting issues during download
     if (isOpen) {
       const fetchLogo = async () => {
         try {
-          const response = await fetch(BRAND_LOGO);
-          if (!response.ok) throw new Error('Network response was not ok');
+          // Add crossOrigin: 'anonymous' to fetch to check CORS support
+          const response = await fetch(BRAND_LOGO, { mode: 'cors' });
+          if (!response.ok) throw new Error('CORS fetch failed');
           const blob = await response.blob();
           const reader = new FileReader();
           reader.onloadend = () => {
@@ -31,8 +36,8 @@ export function QRCodeModal({ isOpen, onClose, url, title, subtitle, darkMode }:
           };
           reader.readAsDataURL(blob);
         } catch (err) {
-          console.warn('Failed to fetch brand logo for QR, using direct URL:', err);
-          setLogoDataUrl(BRAND_LOGO);
+          console.warn('CORS restricted logo - download will not include logo to remain secure:', err);
+          setLogoDataUrl(null); // Explicitly null if fetch fails
         }
       };
       fetchLogo();
@@ -81,7 +86,12 @@ export function QRCodeModal({ isOpen, onClose, url, title, subtitle, darkMode }:
         downloadLink.download = `${title?.toLowerCase().replace(/\s+/g, '-') || 'qr-code'}.png`;
         downloadLink.href = pngFile;
         downloadLink.click();
-        toast.success('QR Code with Logo downloaded');
+        
+        if (logoDataUrl) {
+          toast.success('QR Code with Logo downloaded');
+        } else {
+          toast.success('QR Code downloaded (Logo skipped due to security)');
+        }
       }
     } catch (error) {
       console.error('QR Download Error:', error);
@@ -118,16 +128,16 @@ export function QRCodeModal({ isOpen, onClose, url, title, subtitle, darkMode }:
             <div className="hidden">
               <QRCodeCanvas
                 id="app-qr-canvas"
-                value={url}
+                value={finalUrl}
                 size={1024}
                 level="H"
                 includeMargin={false}
-                imageSettings={{
+                imageSettings={logoDataUrl ? {
                   src: logoDataUrl,
                   height: 200,
                   width: 200,
                   excavate: true,
-                }}
+                } : undefined}
               />
             </div>
 
@@ -154,7 +164,7 @@ export function QRCodeModal({ isOpen, onClose, url, title, subtitle, darkMode }:
               <div className={`p-6 rounded-3xl shrink-0 ${darkMode ? 'bg-white shadow-xl shadow-primary/10' : 'bg-white shadow-2xl shadow-slate-200'}`}>
                 <QRCodeSVG
                   id="app-qr-code"
-                  value={url}
+                  value={finalUrl}
                   size={180}
                   level="H"
                   includeMargin={false}

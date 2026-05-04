@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   DollarSign, Clock, Save, Phone, ClipboardList, CreditCard, 
   ShieldCheck, AlertTriangle, User, ShieldAlert, Zap, Globe,
-  Database, ShoppingBag, RefreshCw, MessageSquare, Info, XCircle, ShoppingCart, Plus, ChevronDown, MapPin, QrCode
+  Database, ShoppingBag, RefreshCw, MessageSquare, Info, XCircle, ShoppingCart, Plus, ChevronDown, MapPin, QrCode, Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStore, SupportContact } from '../../context/StoreContext';
@@ -47,6 +47,7 @@ export function SettingsTab({
     authUid,
     shopPhone, setShopPhone,
     shopEmail, setShopEmail,
+    settings, updateSettings
   } = useStore();
 
   const [tempSupportNumber, setTempSupportNumber] = useState(supportNumber);
@@ -55,6 +56,7 @@ export function SettingsTab({
   const [tempDeliveryFee, setTempDeliveryFee] = useState(deliveryFee || 0);
   const [tempShopPhone, setTempShopPhone] = useState(shopPhone);
   const [tempShopEmail, setTempShopEmail] = useState(shopEmail);
+  const [tempProductionUrl, setTempProductionUrl] = useState(settings.productionUrl);
   const [tempBankDetails, setTempBankDetails] = useState({
     name: bankName,
     number: bankAccountNumber,
@@ -103,6 +105,8 @@ export function SettingsTab({
 
   const [openSection, setOpenSection] = useState<string | null>(null);
   const [isQRModalOpen, setIsQRModalOpen] = useState(false);
+  const [qrUrl, setQrUrl] = useState(settings.productionUrl);
+  const [qrTitle, setQrTitle] = useState("Shop App QR");
 
   const sections = [
     { id: 'marketing', label: 'Marketing', sub: 'QR Codes & Sharing', icon: <QrCode size={18} />, color: 'bg-indigo-600' },
@@ -213,28 +217,143 @@ export function SettingsTab({
             </div>
 
             <div className="flex-1 space-y-4">
-              <div className="p-6 rounded-3xl bg-on-surface/5">
-                <h6 className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Copy Share Link</h6>
-                <div className="flex gap-2">
-                  <div className={`flex-1 px-4 py-3 rounded-xl border text-[10px] font-mono truncate ${darkMode ? 'bg-black/20 border-white/10 opacity-60' : 'bg-white border-on-surface/5 opacity-60'}`}>
-                    {window.location.origin}
+              <div className="p-6 rounded-3xl bg-on-surface/5 border border-on-surface/5">
+                <div className="flex items-center justify-between mb-3">
+                  <h6 className="text-[10px] font-black uppercase tracking-widest opacity-40">Main Production Link (Stable URL)</h6>
+                  <div className="flex items-center gap-1">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-[8px] font-bold text-emerald-500/60 uppercase tracking-tight">System Link Active</span>
                   </div>
+                </div>
+                <div className="flex gap-2">
+                  <input 
+                    type="text"
+                    value={tempProductionUrl}
+                    onChange={(e) => setTempProductionUrl(e.target.value)}
+                    placeholder="https://your-delivery-site.com"
+                    className={`flex-1 px-4 py-3 rounded-xl border text-[10px] font-mono outline-none focus:border-primary transition-all ${
+                      darkMode ? 'bg-black/20 border-white/10' : 'bg-white border-on-surface/5'
+                    }`}
+                  />
                   <button 
                     onClick={() => {
-                      navigator.clipboard.writeText(window.location.origin);
-                      toast.success('URL copied');
+                      updateSettings({ productionUrl: tempProductionUrl });
                     }}
-                    className="p-3 rounded-xl bg-primary text-white"
+                    className="p-3 rounded-xl bg-primary text-white shadow-lg shadow-primary/20 hover:brightness-110 active:scale-95 transition-all"
+                    title="Save stable link"
                   >
                     <Save size={16} />
                   </button>
                 </div>
-              </div>
-              
-              <div className={`p-6 rounded-3xl border ${darkMode ? 'bg-white/5 border-white/5' : 'bg-indigo-50/50 border-indigo-100'}`}>
-                <p className="text-[10px] font-bold leading-relaxed opacity-60 italic">
-                  Tip: Print your QR code and display it at your store pickup point so customers can quickly access your catalog.
+                <p className="text-[9px] font-medium opacity-40 mt-3 px-1 leading-relaxed">
+                  ⚠️ <b>အရေးကြီးသည်:</b> ဤ Link သည် သင်၏ လက်ကမ်းစာစောင်များရှိ QR Code ထဲတွင် ပါဝင်မည့် Link ဖြစ်သည်။ 
+                  Website Update တင်၍ Link အသစ်ထွက်လာပါက ဤနေရာတွင် လာရောက်ပြင်ဆင်ပေးရုံဖြင့် လက်ရှိ QR ဟောင်းများ ဆက်လက်အလုပ်လုပ်နေမည်ဖြစ်သည်။
                 </p>
+              </div>
+
+              {/* Professional QR Marketing Section */}
+              <div className={`p-8 rounded-[2rem] border transition-all ${
+                darkMode ? 'bg-indigo-500/5 border-indigo-500/10' : 'bg-indigo-50/50 border-indigo-100 shadow-sm'
+              }`}>
+                <div className="flex items-start justify-between mb-6">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-500 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                      <QrCode size={24} />
+                    </div>
+                    <div>
+                      <h6 className="text-sm font-black uppercase tracking-tight">Marketing QR System</h6>
+                      <p className="text-[11px] opacity-50 font-medium">For Flyers, Posters & Home Delivery Packages</p>
+                    </div>
+                  </div>
+                  <div className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-500 text-[9px] font-black uppercase tracking-widest border border-emerald-500/20">
+                    Industry standard
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <div className="p-5 rounded-2xl bg-on-surface/5 border border-on-surface/5">
+                    <label className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3 block">
+                      Flyer Destination URL
+                    </label>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1 group">
+                        <Globe size={14} className="absolute left-4 top-1/2 -translate-y-1/2 opacity-30 group-focus-within:text-primary transition-colors" />
+                        <input 
+                          type="text"
+                          value={tempProductionUrl}
+                          onChange={(e) => setTempProductionUrl(e.target.value)}
+                          placeholder="https://yourlink.com"
+                          className={`w-full pl-10 pr-4 py-3.5 rounded-xl border text-[11px] font-mono outline-none focus:border-primary transition-all ${
+                            darkMode ? 'bg-black/40 border-white/10' : 'bg-white border-on-surface/10'
+                          }`}
+                        />
+                      </div>
+                      <button 
+                        onClick={() => {
+                          if (!tempProductionUrl.startsWith('http')) {
+                            toast.error("Please enter a valid URL starting with http:// or https://");
+                            return;
+                          }
+                          updateSettings({ productionUrl: tempProductionUrl });
+                        }}
+                        className="px-6 rounded-xl bg-primary text-white shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2"
+                      >
+                        <Save size={18} />
+                        <span className="text-[10px] font-black uppercase tracking-widest">Connect</span>
+                      </button>
+                    </div>
+                    <div className="mt-4 flex items-start gap-2 bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
+                      <Info size={14} className="text-amber-500 shrink-0 mt-0.5" />
+                      <p className="text-[9px] font-bold text-amber-600/80 leading-relaxed italic">
+                        <b>အရေးကြီးသည်:</b> သင်၏ လက်ကမ်းစာစောင်များကို မရိုက်နှိပ်မီ အပေါ်မှ URL ကို သေချာစွာ စစ်ဆေးပါ။ Website Link ပြောင်းသွားသော်လည်း ဤနေရာကို လာပြင်လိုက်ရုံဖြင့် အဟောင်း QR များ ဆက်လက် အလုပ်လုပ်နေမည် ဖြစ်သည်။
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <button 
+                      onClick={() => {
+                        setQrUrl(settings.productionUrl);
+                        setQrTitle("Sar Taw Set - Delivery Flyer");
+                        setIsQRModalOpen(true);
+                      }}
+                      className={`flex flex-col items-center gap-3 p-6 rounded-3xl border transition-all hover:scale-105 active:scale-95 ${
+                        darkMode ? 'bg-white/5 border-white/10 hover:bg-white/10' : 'bg-white border-on-surface/5 hover:border-primary/20 shadow-md'
+                      }`}
+                    >
+                      <Download size={24} className="text-primary" />
+                      <div className="text-center">
+                        <span className="block text-[10px] font-black uppercase tracking-widest">Flyer HQ</span>
+                        <span className="text-[8px] opacity-40 font-bold uppercase tracking-tight">Large Size (1024px)</span>
+                      </div>
+                    </button>
+
+                    <button 
+                      onClick={() => {
+                        window.open(`https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&data=${encodeURIComponent(settings.productionUrl)}`, '_blank');
+                        toast.info("Opening raw preview...");
+                      }}
+                      className={`flex flex-col items-center gap-3 p-6 rounded-3xl border transition-all hover:scale-105 active:scale-95 ${
+                        darkMode ? 'bg-white/5 border-white/10 hover:bg-white/10' : 'bg-white border-on-surface/5 hover:border-primary/20 shadow-md'
+                      }`}
+                    >
+                      <Globe size={24} className="text-indigo-500" />
+                      <div className="text-center">
+                        <span className="block text-[10px] font-black uppercase tracking-widest">Raw Preview</span>
+                        <span className="text-[8px] opacity-40 font-bold uppercase tracking-tight">Test connectivity</span>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className={`p-6 rounded-3xl border ${darkMode ? 'bg-white/5 border-white/5' : 'bg-indigo-50/10 border-indigo-100/50'}`}>
+                <div className="flex items-center gap-3">
+                  <ShieldCheck size={16} className="text-emerald-500" />
+                  <p className="text-[10px] font-bold leading-relaxed opacity-60">
+                    QR Dynamic System is active. All scans are routed through your verified stable link.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -727,8 +846,8 @@ export function SettingsTab({
       <QRCodeModal 
         isOpen={isQRModalOpen} 
         onClose={() => setIsQRModalOpen(false)} 
-        url={PRODUCTION_URL}
-        title="Shop App QR"
+        url={qrUrl}
+        title={qrTitle}
         subtitle="Catalog & Ordering System"
         darkMode={darkMode}
       />

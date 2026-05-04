@@ -9,7 +9,7 @@ import { BRAND_LOGO, PRODUCTION_URL } from '../constants';
 
 export default function AboutUsPage() {
   const navigate = useNavigate();
-  const { darkMode, t } = useStore();
+  const { darkMode, t, settings } = useStore();
   const [showLocationQR, setShowLocationQR] = useState(false);
 
   useEffect(() => {
@@ -82,7 +82,7 @@ export default function AboutUsPage() {
         {/* Action Links - Glassmorphism style */}
         <div className="space-y-4">
           {[
-            { icon: Globe, label: t('visitWebsite'), color: 'bg-blue-500', action: () => window.open(PRODUCTION_URL, '_blank') },
+            { icon: Globe, label: t('visitWebsite'), color: 'bg-blue-500', action: () => window.open(settings.productionUrl, '_blank') },
             { icon: MessageSquare, label: t('sendFeedback'), color: 'bg-emerald-500', action: () => window.open('mailto:hello@sartawset.com', '_blank') },
             { icon: MapPin, label: 'Store Location', subLabel: 'Scan for directions', color: 'bg-indigo-500', action: () => setShowLocationQR(true), isQR: true },
             { icon: Shield, label: t('privacyPolicy'), color: 'bg-rose-500', action: () => navigate('/privacy-policy') }

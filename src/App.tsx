@@ -84,6 +84,25 @@ function ThemeHandler() {
   return null;
 }
 
+function QueryParamHandler() {
+  const { setRoomNumber } = useStore();
+  const location = useLocation();
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const room = params.get('room') || params.get('table');
+    if (room) {
+      setRoomNumber(room);
+      toast.success(`Table ${room} Identified`, {
+        description: "Your table number has been set automatically.",
+        icon: '🪑'
+      });
+    }
+  }, [location.search, setRoomNumber]);
+
+  return null;
+}
+
 function ThemedToaster() {
   const { darkMode } = useStore();
   return <Toaster position="top-center" theme={darkMode ? 'dark' : 'light'} expand={false} richColors />;
@@ -218,6 +237,7 @@ function AppContent() {
       )}
       <HashRouter>
         <ScrollToTop />
+        <QueryParamHandler />
         <BlockedGuard>
           <Suspense fallback={null}>
             <Routes>

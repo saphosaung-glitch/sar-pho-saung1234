@@ -364,6 +364,8 @@ interface StoreContextType {
   addServiceArea: (area: Omit<ServiceArea, 'id'>) => Promise<void>;
   updateServiceArea: (id: string, updates: Partial<ServiceArea>) => Promise<void>;
   deleteServiceArea: (id: string) => Promise<void>;
+  settings: { productionUrl: string };
+  updateSettings: (newSettings: { productionUrl: string }) => Promise<void>;
 }
 
 export interface Notification {
@@ -486,7 +488,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [broadcastNotifications, setBroadcastNotifications] = useState<BroadcastNotification[]>([]);
   const [serviceAreas, setServiceAreas] = useState<ServiceArea[]>(() => safeParse(localStorage.getItem('sp_serviceAreas'), []));
+  const [settings, setSettings] = useState<{ productionUrl: string }>({ productionUrl: 'https://sartawset.com' });
   
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'settings', 'global'), (doc) => {
+      if (doc.exists()) {
+        setSettings(doc.data() as { productionUrl: string });
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  const updateSettings = async (newSettings: { productionUrl: string }) => {
+    if (!isAdmin) return;
+    try {
+      await setDoc(doc(db, 'settings', 'global'), {
+        ...newSettings,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      toast.success('System settings updated');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'settings/global');
+    }
+  };
+
   useEffect(() => {
     if (serviceAreas.length > 0) {
       localStorage.setItem('sp_serviceAreas', JSON.stringify(serviceAreas));
@@ -3355,7 +3380,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     serviceAreas,
     addServiceArea,
     updateServiceArea,
-    deleteServiceArea
+    deleteServiceArea,
+    settings,
+    updateSettings
   }), [
     cart,
     userName,
@@ -3414,6 +3441,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     blockMessage,
     totalOrders,
     serviceAreas,
+    settings,
+    updateSettings,
     addProduct,
     updateProduct,
     deleteProduct,
