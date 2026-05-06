@@ -205,6 +205,14 @@ export interface SupportContact {
   phone: string;
 }
 
+export interface TelegramConfig {
+  id: string;
+  name: string;
+  token: string;
+  chatId: string;
+  isActive: boolean;
+}
+
 interface StoreContextType {
   cart: CartItem[];
   addToCart: (item: Omit<CartItem, 'quantity'>) => void;
@@ -364,8 +372,18 @@ interface StoreContextType {
   addServiceArea: (area: Omit<ServiceArea, 'id'>) => Promise<void>;
   updateServiceArea: (id: string, updates: Partial<ServiceArea>) => Promise<void>;
   deleteServiceArea: (id: string) => Promise<void>;
-  settings: { productionUrl: string; telegramToken?: string; telegramChatId?: string };
-  updateSettings: (newSettings: { productionUrl?: string; telegramToken?: string; telegramChatId?: string }) => Promise<void>;
+  settings: { 
+    productionUrl: string; 
+    telegramToken?: string; 
+    telegramChatId?: string;
+    telegramConfigs?: TelegramConfig[];
+  };
+  updateSettings: (newSettings: { 
+    productionUrl?: string; 
+    telegramToken?: string; 
+    telegramChatId?: string;
+    telegramConfigs?: TelegramConfig[];
+  }) => Promise<void>;
 }
 
 export interface Notification {
@@ -508,7 +526,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [settings, setSettings] = useState<{ 
     productionUrl: string; 
     telegramToken?: string; 
-    telegramChatId?: string 
+    telegramChatId?: string;
+    telegramConfigs?: TelegramConfig[];
   }>({ productionUrl: 'https://sartawset.com' });
   
   useEffect(() => {
@@ -520,7 +539,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => unsub();
   }, []);
 
-  const updateSettings = async (newSettings: { productionUrl?: string; telegramToken?: string; telegramChatId?: string }) => {
+  const updateSettings = async (newSettings: { 
+    productionUrl?: string; 
+    telegramToken?: string; 
+    telegramChatId?: string;
+    telegramConfigs?: TelegramConfig[];
+  }) => {
     if (!isAdmin) return;
     try {
       await setDoc(doc(db, 'settings', 'global'), {
@@ -2248,39 +2272,67 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const sendTelegramNotification = useCallback(async (order: Order) => {
-    if (!settings.telegramToken || !settings.telegramChatId) return;
+    const itemsList = order.items.map(item => 
+      `▫️ <b>${item.name}</b> (x${item.quantity})`
+    ).join('\n');
 
     const message = `
-🔔 *New Order Received!*
-------------------------
-🆔 Order ID: ${order.id}
-👤 Customer: ${order.customerName}
-📞 Phone: ${order.customerPhone}
-📍 Address: ${order.address || 'N/A'}
-💰 Total: ${formatPrice(order.total)}
-💳 Payment: ${order.paymentMethod}
-📦 Items:
-${order.items.map(item => `- ${item.name} x ${item.quantity}`).join('\n')}
-------------------------
-📅 Time: ${new Date().toLocaleString()}
+<b>🛍 NEW ORDER PLACED 🛍</b>
+━━━━━━━━━━━━━━━━━━
+<b>🆔 Order ID:</b> <code>${order.id}</code>
+<b>👤 Customer:</b> ${order.customerName}
+<b>📞 Phone:</b> ${order.customerPhone}
+<b>📍 Address:</b> ${order.address || 'N/A'}
+
+<b>📦 ITEMS SUMMARY</b>
+${itemsList}
+
+<b>💰 TOTAL AMOUNT:</b> <b>${formatPrice(order.total)}</b>
+<b>💳 PAYMENT:</b> ${order.paymentMethod}
+
+━━━━━━━━━━━━━━━━━━
+🕒 <b>Placed at:</b> ${new Date().toLocaleString()}
+<i>🚀 Please process this order promptly!</i>
 `;
 
-    try {
-      await fetch(`https://api.telegram.org/bot${settings.telegramToken}/sendMessage`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          chat_id: settings.telegramChatId,
-          text: message,
-          parse_mode: 'Markdown'
-        })
-      });
-    } catch (error) {
-      console.error('Telegram Notification Error:', error);
+    // 1. Send via legacy configuration if exists
+    if (settings.telegramToken && settings.telegramChatId) {
+      try {
+        await fetch(`https://api.telegram.org/bot${settings.telegramToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: settings.telegramChatId,
+            text: message,
+            parse_mode: 'HTML'
+          })
+        });
+      } catch (error) {
+        console.error('Legacy Telegram Notification Error:', error);
+      }
     }
-  }, [settings.telegramToken, settings.telegramChatId, formatPrice]);
+
+    // 2. Send via multiple bot configurations
+    if (settings.telegramConfigs && settings.telegramConfigs.length > 0) {
+      const activeConfigs = settings.telegramConfigs.filter(c => c.isActive);
+      
+      for (const config of activeConfigs) {
+        try {
+          await fetch(`https://api.telegram.org/bot${config.token}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: config.chatId,
+              text: message,
+              parse_mode: 'HTML'
+            })
+          });
+        } catch (error) {
+          console.error(`Telegram Notification Error for ${config.name}:`, error);
+        }
+      }
+    }
+  }, [settings.telegramToken, settings.telegramChatId, settings.telegramConfigs, formatPrice]);
 
   const placeOrder = async (details: { 
     name: string; 
