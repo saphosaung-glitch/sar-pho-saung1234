@@ -131,11 +131,12 @@ export function QRCodeModal({ isOpen, onClose, url, title, subtitle, darkMode }:
                 value={finalUrl}
                 size={1024}
                 level="H"
-                includeMargin={false}
+                includeMargin={true}
+                fgColor="#0f172a"
                 imageSettings={logoDataUrl ? {
                   src: logoDataUrl,
-                  height: 200,
-                  width: 200,
+                  height: 220,
+                  width: 220,
                   excavate: true,
                 } : undefined}
               />
@@ -165,13 +166,14 @@ export function QRCodeModal({ isOpen, onClose, url, title, subtitle, darkMode }:
                 <QRCodeSVG
                   id="app-qr-code"
                   value={finalUrl}
-                  size={180}
+                  size={200}
                   level="H"
-                  includeMargin={false}
+                  includeMargin={true}
+                  fgColor="#0f172a"
                   imageSettings={{
                     src: BRAND_LOGO,
-                    height: 36,
-                    width: 36,
+                    height: 44,
+                    width: 44,
                     excavate: true,
                   }}
                 />

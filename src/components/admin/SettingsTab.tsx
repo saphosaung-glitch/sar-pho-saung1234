@@ -13,6 +13,60 @@ import { ServiceAreasConfig } from './ServiceAreasConfig';
 import { QRCodeModal } from '../ui/QRCodeModal';
 import { PRODUCTION_URL } from '../../constants';
 
+const SettingRow = ({ 
+  section, 
+  children, 
+  isOpen, 
+  darkMode, 
+  onToggle 
+}: { 
+  section: { id: string; label: string; sub: string; icon: React.ReactNode; color: string }, 
+  children: React.ReactNode,
+  isOpen: boolean,
+  darkMode: boolean,
+  onToggle: () => void
+}) => {
+  return (
+    <div className={`mb-3 overflow-hidden transition-all duration-300 rounded-xl border ${
+      isOpen 
+        ? (darkMode ? 'bg-white/5 border-primary/30 ring-1 ring-primary/20 shadow-xl shadow-primary/5' : 'bg-white border-primary/20 shadow-xl shadow-on-surface/5') 
+        : (darkMode ? 'bg-white/[0.03] border-white/5 hover:bg-white/[0.05]' : 'bg-surface-container-high/20 border-white/5 hover:bg-surface-container-high/40 shadow-sm')
+    }`}>
+      <button 
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-6 py-4 text-left transition-colors cursor-pointer hover:scale-[1.01] transition-all"
+      >
+        <div className="flex items-center gap-6">
+          <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-white shadow-lg ${section.color} ${isOpen ? 'scale-110 shadow-primary/20' : 'opacity-80'} transition-all`}>
+            {section.icon}
+          </div>
+          <div>
+            <h4 className={`text-sm font-black uppercase tracking-widest leading-none ${darkMode ? 'text-on-surface' : 'text-slate-900'}`}>{section.label}</h4>
+            <p className="text-[10px] font-bold opacity-40 mt-1.5 uppercase tracking-tighter">{section.sub}</p>
+          </div>
+        </div>
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 ${isOpen ? 'bg-primary text-white rotate-180 scale-110' : 'bg-on-surface/5 opacity-40'}`}>
+          <ChevronDown size={18} />
+        </div>
+      </button>
+      
+      <motion.div
+        initial={false}
+        animate={{ height: isOpen ? 'auto' : 0, opacity: isOpen ? 1 : 0 }}
+        transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+        className="overflow-hidden"
+      >
+        <div className="p-6 pt-0">
+          <div className={`h-px w-full mb-6 ${darkMode ? 'bg-white/5' : 'bg-on-surface/5'}`} />
+          <div className="max-w-4xl mx-auto">
+            {children}
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
 export function SettingsTab({ 
   darkMode,
   handleSeed,
@@ -119,49 +173,6 @@ export function SettingsTab({
     { id: 'system', label: 'System Tools', sub: 'Data & Maintenance', icon: <Database size={18} />, color: 'bg-rose-500' },
   ];
 
-  const SettingRow = ({ section, children }: { section: typeof sections[0], children: React.ReactNode }) => {
-    const isOpen = openSection === section.id;
-    return (
-      <div className={`mb-3 overflow-hidden transition-all duration-300 rounded-xl border ${
-        isOpen 
-          ? (darkMode ? 'bg-white/5 border-primary/30 ring-1 ring-primary/20 shadow-xl shadow-primary/5' : 'bg-white border-primary/20 shadow-xl shadow-on-surface/5') 
-          : (darkMode ? 'bg-white/[0.03] border-white/5 hover:bg-white/[0.05]' : 'bg-surface-container-high/20 border-white/5 hover:bg-surface-container-high/40 shadow-sm')
-      }`}>
-        <button 
-          onClick={() => setOpenSection(isOpen ? null : section.id)}
-          className="w-full flex items-center justify-between px-6 py-4 text-left transition-colors cursor-pointer hover:scale-[1.01] transition-all"
-        >
-          <div className="flex items-center gap-6">
-            <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-white shadow-lg ${section.color} ${isOpen ? 'scale-110 shadow-primary/20' : 'opacity-80'} transition-all`}>
-              {section.icon}
-            </div>
-            <div>
-              <h4 className={`text-sm font-black uppercase tracking-widest leading-none ${darkMode ? 'text-on-surface' : 'text-slate-900'}`}>{section.label}</h4>
-              <p className="text-[10px] font-bold opacity-40 mt-1.5 uppercase tracking-tighter">{section.sub}</p>
-            </div>
-          </div>
-          <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 ${isOpen ? 'bg-primary text-white rotate-180 scale-110' : 'bg-on-surface/5 opacity-40'}`}>
-            <ChevronDown size={18} />
-          </div>
-        </button>
-        
-        <motion.div
-          initial={false}
-          animate={{ height: isOpen ? 'auto' : 0, opacity: isOpen ? 1 : 0 }}
-          transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-          className="overflow-hidden"
-        >
-          <div className="p-6 pt-0">
-            <div className={`h-px w-full mb-6 ${darkMode ? 'bg-white/5' : 'bg-on-surface/5'}`} />
-            <div className="max-w-4xl mx-auto">
-              {children}
-            </div>
-          </div>
-        </motion.div>
-      </div>
-    );
-  };
-
   return (
     <div className="space-y-6 pb-20">
       {/* Header Area */}
@@ -195,172 +206,112 @@ export function SettingsTab({
 
       <div className="space-y-4">
         {/* Marketing / QR */}
-        <SettingRow section={sections[0]}>
-          <div className="flex flex-col md:flex-row items-center gap-8">
-            <div className={`p-8 rounded-[2.5rem] flex flex-col items-center text-center gap-4 flex-1 ${darkMode ? 'bg-white/5 border border-white/10' : 'bg-gray-50 border border-on-surface/5'}`}>
-              <div className="w-16 h-16 rounded-3xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center mb-2">
-                <QrCode size={32} />
+        <SettingRow 
+          section={sections[0]} 
+          isOpen={openSection === sections[0].id} 
+          darkMode={darkMode} 
+          onToggle={() => setOpenSection(openSection === sections[0].id ? null : sections[0].id)}
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className={`p-6 rounded-3xl flex flex-col items-center text-center gap-3 ${darkMode ? 'bg-white/5 border border-white/10' : 'bg-gray-50 border border-on-surface/5'}`}>
+              <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center">
+                <QrCode size={24} />
               </div>
-              <div>
-                <h5 className="text-sm font-black uppercase tracking-tight mb-1">Application QR Code</h5>
-                <p className="text-[10px] font-bold opacity-40 uppercase tracking-widest max-w-[200px] mx-auto">
-                  Generate a scanable QR code for your shop to print on banners, flyers or receipts.
+              <div className="space-y-1">
+                <h5 className="text-xs font-black uppercase tracking-tight">Application QR Code</h5>
+                <p className="text-[9px] font-bold opacity-40 uppercase tracking-widest max-w-[180px] mx-auto leading-relaxed">
+                  Generate scanable codes for print marketing.
                 </p>
               </div>
               <button
                 onClick={() => setIsQRModalOpen(true)}
-                className="w-full py-4 rounded-2xl bg-indigo-600 text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-600/20 hover:brightness-110 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                className="w-full py-3 rounded-xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-600/10 hover:brightness-110 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
               >
-                <QrCode size={18} />
-                Generate QR Code
+                <Plus size={14} />
+                Generate QR
               </button>
             </div>
 
-            <div className="flex-1 space-y-4">
-              <div className="p-6 rounded-3xl bg-on-surface/5 border border-on-surface/5">
-                <div className="flex items-center justify-between mb-3">
-                  <h6 className="text-[10px] font-black uppercase tracking-widest opacity-40">Main Production Link (Stable URL)</h6>
-                  <div className="flex items-center gap-1">
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-[8px] font-bold text-emerald-500/60 uppercase tracking-tight">System Link Active</span>
-                  </div>
+            <div className={`p-6 rounded-3xl border transition-all ${
+              darkMode ? 'bg-white/5 border-white/10' : 'bg-white border-on-surface/5 shadow-sm'
+            }`}>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                  <Globe size={16} />
                 </div>
-                <div className="flex gap-2">
+                <div className="flex-1">
+                  <h6 className="text-[10px] font-black uppercase tracking-widest text-primary">Target Production URL</h6>
+                  <p className="text-[8px] opacity-40 font-bold truncate max-w-[150px]">{settings.productionUrl}</p>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-[8px] font-bold text-emerald-500/60 uppercase">Live</span>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="relative group">
                   <input 
                     type="text"
                     value={tempProductionUrl}
                     onChange={(e) => setTempProductionUrl(e.target.value)}
-                    placeholder="https://your-delivery-site.com"
-                    className={`flex-1 px-4 py-3 rounded-xl border text-[10px] font-mono outline-none focus:border-primary transition-all ${
-                      darkMode ? 'bg-black/20 border-white/10' : 'bg-white border-on-surface/5'
+                    placeholder="https://your-site.com"
+                    className={`w-full px-4 py-2.5 rounded-xl border text-[10px] font-mono outline-none focus:border-primary transition-all ${
+                      darkMode ? 'bg-black/30 border-white/10' : 'bg-on-surface/5 border-transparent'
                     }`}
                   />
                   <button 
                     onClick={() => {
                       updateSettings({ productionUrl: tempProductionUrl });
+                      toast.success('System link updated');
                     }}
-                    className="p-3 rounded-xl bg-primary text-white shadow-lg shadow-primary/20 hover:brightness-110 active:scale-95 transition-all"
-                    title="Save stable link"
+                    className="absolute right-1 top-1 bottom-1 px-3 rounded-lg bg-primary text-white hover:brightness-110 transition-all flex items-center justify-center"
+                    title="Update Link"
                   >
-                    <Save size={16} />
+                    <Save size={12} />
                   </button>
                 </div>
-                <p className="text-[9px] font-medium opacity-40 mt-3 px-1 leading-relaxed">
-                  ⚠️ <b>အရေးကြီးသည်:</b> ဤ Link သည် သင်၏ လက်ကမ်းစာစောင်များရှိ QR Code ထဲတွင် ပါဝင်မည့် Link ဖြစ်သည်။ 
-                  Website Update တင်၍ Link အသစ်ထွက်လာပါက ဤနေရာတွင် လာရောက်ပြင်ဆင်ပေးရုံဖြင့် လက်ရှိ QR ဟောင်းများ ဆက်လက်အလုပ်လုပ်နေမည်ဖြစ်သည်။
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button 
+                    onClick={() => {
+                      setQrUrl(settings.productionUrl);
+                      setQrTitle("Flyer QR");
+                      setIsQRModalOpen(true);
+                    }}
+                    className={`py-2.5 rounded-xl border flex items-center justify-center gap-2 transition-all hover:bg-primary/5 ${
+                      darkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-50 border-slate-100 text-slate-600'
+                    }`}
+                  >
+                    <Download size={12} />
+                    <span className="text-[9px] font-black uppercase tracking-widest">Flyer QR</span>
+                  </button>
+                  <button 
+                    onClick={() => window.open(`https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&data=${encodeURIComponent(settings.productionUrl)}`, '_blank')}
+                    className={`py-2.5 rounded-xl border flex items-center justify-center gap-2 transition-all hover:bg-primary/5 ${
+                      darkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-50 border-slate-100 text-slate-600'
+                    }`}
+                  >
+                    <Globe size={12} />
+                    <span className="text-[9px] font-black uppercase tracking-widest">Raw Image</span>
+                  </button>
+                </div>
+
+                <p className="text-[8px] font-medium opacity-40 leading-relaxed italic px-1">
+                  Flyer ရိုက်နှိပ်ပြီးနောက် Link ပြောင်းလဲလိုပါက အထက်တွင် လာရောက်ပြင်ဆင်နိုင်သည်။
                 </p>
-              </div>
-
-              {/* Professional QR Marketing Section */}
-              <div className={`p-8 rounded-[2rem] border transition-all ${
-                darkMode ? 'bg-indigo-500/5 border-indigo-500/10' : 'bg-indigo-50/50 border-indigo-100 shadow-sm'
-              }`}>
-                <div className="flex items-start justify-between mb-6">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-indigo-500 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20">
-                      <QrCode size={24} />
-                    </div>
-                    <div>
-                      <h6 className="text-sm font-black uppercase tracking-tight">Marketing QR System</h6>
-                      <p className="text-[11px] opacity-50 font-medium">For Flyers, Posters & Home Delivery Packages</p>
-                    </div>
-                  </div>
-                  <div className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-500 text-[9px] font-black uppercase tracking-widest border border-emerald-500/20">
-                    Industry standard
-                  </div>
-                </div>
-
-                <div className="space-y-6">
-                  <div className="p-5 rounded-2xl bg-on-surface/5 border border-on-surface/5">
-                    <label className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3 block">
-                      Flyer Destination URL
-                    </label>
-                    <div className="flex gap-2">
-                      <div className="relative flex-1 group">
-                        <Globe size={14} className="absolute left-4 top-1/2 -translate-y-1/2 opacity-30 group-focus-within:text-primary transition-colors" />
-                        <input 
-                          type="text"
-                          value={tempProductionUrl}
-                          onChange={(e) => setTempProductionUrl(e.target.value)}
-                          placeholder="https://yourlink.com"
-                          className={`w-full pl-10 pr-4 py-3.5 rounded-xl border text-[11px] font-mono outline-none focus:border-primary transition-all ${
-                            darkMode ? 'bg-black/40 border-white/10' : 'bg-white border-on-surface/10'
-                          }`}
-                        />
-                      </div>
-                      <button 
-                        onClick={() => {
-                          if (!tempProductionUrl.startsWith('http')) {
-                            toast.error("Please enter a valid URL starting with http:// or https://");
-                            return;
-                          }
-                          updateSettings({ productionUrl: tempProductionUrl });
-                        }}
-                        className="px-6 rounded-xl bg-primary text-white shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2"
-                      >
-                        <Save size={18} />
-                        <span className="text-[10px] font-black uppercase tracking-widest">Connect</span>
-                      </button>
-                    </div>
-                    <div className="mt-4 flex items-start gap-2 bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
-                      <Info size={14} className="text-amber-500 shrink-0 mt-0.5" />
-                      <p className="text-[9px] font-bold text-amber-600/80 leading-relaxed italic">
-                        <b>အရေးကြီးသည်:</b> သင်၏ လက်ကမ်းစာစောင်များကို မရိုက်နှိပ်မီ အပေါ်မှ URL ကို သေချာစွာ စစ်ဆေးပါ။ Website Link ပြောင်းသွားသော်လည်း ဤနေရာကို လာပြင်လိုက်ရုံဖြင့် အဟောင်း QR များ ဆက်လက် အလုပ်လုပ်နေမည် ဖြစ်သည်။
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <button 
-                      onClick={() => {
-                        setQrUrl(settings.productionUrl);
-                        setQrTitle("Sar Taw Set - Delivery Flyer");
-                        setIsQRModalOpen(true);
-                      }}
-                      className={`flex flex-col items-center gap-3 p-6 rounded-3xl border transition-all hover:scale-105 active:scale-95 ${
-                        darkMode ? 'bg-white/5 border-white/10 hover:bg-white/10' : 'bg-white border-on-surface/5 hover:border-primary/20 shadow-md'
-                      }`}
-                    >
-                      <Download size={24} className="text-primary" />
-                      <div className="text-center">
-                        <span className="block text-[10px] font-black uppercase tracking-widest">Flyer HQ</span>
-                        <span className="text-[8px] opacity-40 font-bold uppercase tracking-tight">Large Size (1024px)</span>
-                      </div>
-                    </button>
-
-                    <button 
-                      onClick={() => {
-                        window.open(`https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&data=${encodeURIComponent(settings.productionUrl)}`, '_blank');
-                        toast.info("Opening raw preview...");
-                      }}
-                      className={`flex flex-col items-center gap-3 p-6 rounded-3xl border transition-all hover:scale-105 active:scale-95 ${
-                        darkMode ? 'bg-white/5 border-white/10 hover:bg-white/10' : 'bg-white border-on-surface/5 hover:border-primary/20 shadow-md'
-                      }`}
-                    >
-                      <Globe size={24} className="text-indigo-500" />
-                      <div className="text-center">
-                        <span className="block text-[10px] font-black uppercase tracking-widest">Raw Preview</span>
-                        <span className="text-[8px] opacity-40 font-bold uppercase tracking-tight">Test connectivity</span>
-                      </div>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className={`p-6 rounded-3xl border ${darkMode ? 'bg-white/5 border-white/5' : 'bg-indigo-50/10 border-indigo-100/50'}`}>
-                <div className="flex items-center gap-3">
-                  <ShieldCheck size={16} className="text-emerald-500" />
-                  <p className="text-[10px] font-bold leading-relaxed opacity-60">
-                    QR Dynamic System is active. All scans are routed through your verified stable link.
-                  </p>
-                </div>
               </div>
             </div>
           </div>
         </SettingRow>
 
         {/* Localization */}
-        <SettingRow section={sections[1]}>
+        <SettingRow 
+          section={sections[1]} 
+          isOpen={openSection === sections[1].id} 
+          darkMode={darkMode} 
+          onToggle={() => setOpenSection(openSection === sections[1].id ? null : sections[1].id)}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="space-y-2">
               <label className="text-[10px] font-black opacity-30 uppercase tracking-widest ml-1">Store Currency</label>
@@ -404,7 +355,12 @@ export function SettingsTab({
         </SettingRow>
 
         {/* Schedule */}
-        <SettingRow section={sections[2]}>
+        <SettingRow 
+          section={sections[2]} 
+          isOpen={openSection === sections[2].id} 
+          darkMode={darkMode} 
+          onToggle={() => setOpenSection(openSection === sections[2].id ? null : sections[2].id)}
+        >
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="md:col-span-1 p-6 rounded-3xl bg-on-surface/5 flex flex-col items-center justify-center text-center space-y-4">
               <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isDeliveryEnabled ? 'bg-emerald-500 text-white' : 'bg-on-surface/10 opacity-40'}`}>
@@ -468,12 +424,22 @@ export function SettingsTab({
         </SettingRow>
 
         {/* Service Areas */}
-        <SettingRow section={sections[3]}>
+        <SettingRow 
+          section={sections[3]} 
+          isOpen={openSection === sections[3].id} 
+          darkMode={darkMode} 
+          onToggle={() => setOpenSection(openSection === sections[3].id ? null : sections[3].id)}
+        >
           <ServiceAreasConfig darkMode={darkMode} />
         </SettingRow>
 
         {/* Branding */}
-        <SettingRow section={sections[4]}>
+        <SettingRow 
+          section={sections[4]} 
+          isOpen={openSection === sections[4].id} 
+          darkMode={darkMode} 
+          onToggle={() => setOpenSection(openSection === sections[4].id ? null : sections[4].id)}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <label className="text-[10px] font-black opacity-30 uppercase tracking-widest ml-1">Shop Public Phone</label>
@@ -518,7 +484,12 @@ export function SettingsTab({
         </SettingRow>
 
         {/* Support */}
-        <SettingRow section={sections[5]}>
+        <SettingRow 
+          section={sections[5]} 
+          isOpen={openSection === sections[5].id} 
+          darkMode={darkMode} 
+          onToggle={() => setOpenSection(openSection === sections[5].id ? null : sections[5].id)}
+        >
           <div className="space-y-8">
             <div className="flex items-center justify-between p-4 rounded-3xl bg-red-500/5 border border-red-500/10">
               <div>
@@ -656,7 +627,12 @@ export function SettingsTab({
         </SettingRow>
 
         {/* Payments */}
-        <SettingRow section={sections[6]}>
+        <SettingRow 
+          section={sections[6]} 
+          isOpen={openSection === sections[6].id} 
+          darkMode={darkMode} 
+          onToggle={() => setOpenSection(openSection === sections[6].id ? null : sections[6].id)}
+        >
           <div className="space-y-8">
             <div className="flex items-center justify-between p-6 rounded-[2rem] bg-blue-500/5 border border-blue-500/10">
               <div className="flex items-center gap-4">
@@ -734,7 +710,12 @@ export function SettingsTab({
         </SettingRow>
 
         {/* System */}
-        <SettingRow section={sections[7]}>
+        <SettingRow 
+          section={sections[7]} 
+          isOpen={openSection === sections[7].id} 
+          darkMode={darkMode} 
+          onToggle={() => setOpenSection(openSection === sections[7].id ? null : sections[7].id)}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="space-y-4">
               <h5 className="text-[11px] font-black uppercase tracking-widest opacity-60">Maintenance Mode</h5>

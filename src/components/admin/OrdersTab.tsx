@@ -63,10 +63,53 @@ export default function OrdersTab({ orders, darkMode, formatPrice, t, updateStat
           <title>Invoice - ${order.id}</title>
           <style>
             @media print {
-              @page { size: A4; margin: 0; }
-              body { margin: 0; padding: 0; }
+              @page { size: 58mm auto; margin: 0; }
+              body { 
+                margin: 0; 
+                padding: 0; 
+                background: #ffffff !important;
+                color: #000000 !important; 
+                width: 58mm; 
+                font-family: Arial, Helvetica, sans-serif !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              * {
+                background-color: transparent !important;
+                color: #000000 !important;
+                border-color: #000000 !important;
+                font-family: Arial, Helvetica, sans-serif !important;
+                font-weight: bold !important;
+                -webkit-text-stroke: 0.4px #000000 !important;
+                box-shadow: none !important;
+                opacity: 1 !important;
+                filter: none !important;
+              }
+              .thermal-bold { 
+                font-weight: 900 !important;
+                color: #000000 !important;
+                text-transform: uppercase !important;
+                letter-spacing: 0.05em !important;
+                -webkit-text-stroke: 0.8px #000000 !important;
+              }
+              .thermal-text-5xl { font-size: 28pt !important; line-height: 1 !important; }
+              .thermal-text-4xl { font-size: 24pt !important; line-height: 1 !important; }
+              .thermal-text-3xl { font-size: 20pt !important; line-height: 1.1 !important; }
+              .thermal-text-2xl { font-size: 18pt !important; line-height: 1.1 !important; }
+              .thermal-text-xl { font-size: 16pt !important; line-height: 1.2 !important; }
+              .thermal-text-lg { font-size: 14pt !important; line-height: 1.2 !important; }
+              .thermal-text-base { font-size: 12pt !important; line-height: 1.3 !important; }
+              .thermal-text-sm { font-size: 10pt !important; line-height: 1.3 !important; }
+              .print-border-thick { border-width: 4px !important; border-color: black !important; border-style: solid !important; }
+              .print-border-b-thick { border-bottom-width: 4px !important; border-color: black !important; border-style: solid !important; }
+              .print-border-t-thick { border-top-width: 4px !important; border-color: black !important; border-style: solid !important; }
+              table { width: 100%; border-collapse: collapse; margin-bottom: 3mm; border-bottom: 3px solid black !important; }
+              tr { border-bottom: 1.5px solid black !important; }
+              th, td { padding: 4px 2px !important; }
+              thead { border-bottom: 4px solid black !important; }
+              .print-hidden, .print\\:hidden { display: none !important; }
             }
-            body { font-family: sans-serif; }
+            body { font-family: -apple-system, system-ui, sans-serif; background: white; color: black; }
             ${Array.from(document.styleSheets)
               .filter(s => !s.href || s.href.startsWith(window.location.origin))
               .map(s => {
@@ -78,9 +121,45 @@ export default function OrdersTab({ orders, darkMode, formatPrice, t, updateStat
               })
               .join('\n')}
           </style>
+          <style>
+            /* Force universal stark black and thicker fonts for thermal printer */
+            body, * {
+              color: #000000 !important;
+              border-color: #000000 !important;
+              background-color: transparent !important;
+              opacity: 1 !important;
+              font-family: Arial, Helvetica, sans-serif !important;
+              -webkit-font-smoothing: antialiased !important;
+              text-rendering: geometricPrecision !important;
+            }
+            body { 
+              background-color: #ffffff !important; 
+              margin: 0 !important;
+              padding: 0 !important;
+              width: 58mm !important;
+            }
+            h1, h2, h3, h4, h5, p, span, div, td, th {
+              font-weight: bold !important;
+              -webkit-text-stroke: 0.4px black !important;
+              text-shadow: none !important;
+            }
+            .thermal-bold {
+              font-weight: 900 !important;
+              -webkit-text-stroke: 0.6px black !important;
+              text-shadow: none !important;
+            }
+            svg {
+              stroke: #000000 !important;
+              fill: #000000 !important;
+              stroke-width: 2.5px !important;
+            }
+            .print-border-thick, .print-border-b-thick, .print-border-t-thick {
+              border-width: 3px !important;
+            }
+          </style>
         </head>
         <body>
-          ${printContent.innerHTML}
+          ${printContent.outerHTML}
           <script>
             window.onload = () => {
               window.print();
@@ -275,7 +354,7 @@ export default function OrdersTab({ orders, darkMode, formatPrice, t, updateStat
       {/* Order Detail Modal */}
       <AnimatePresence>
         {selectedOrder && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -286,54 +365,76 @@ export default function OrdersTab({ orders, darkMode, formatPrice, t, updateStat
             
             <motion.div
               initial={{ y: "100%", opacity: 0 }}
-              animate={{ 
-                y: 0, 
-                opacity: 1,
-                left: 100 // Approximation since we don't have isMenuOpen here
-              }}
+              animate={{ y: 0, opacity: 1 }}
               exit={{ y: "100%", opacity: 0 }}
-              className={`fixed bottom-4 right-4 z-[100] rounded-[2.5rem] border shadow-2xl overflow-hidden flex flex-col md:flex-row ${
+              className={`relative z-[100] w-full h-[100dvh] md:w-auto md:h-[650px] lg:h-[750px] rounded-none md:rounded-[2.5rem] border-0 md:border shadow-2xl flex flex-col overflow-hidden ${
                 darkMode ? 'bg-[#0F172A] text-white border-white/10' : 'bg-[#fdfdfd] text-slate-900 border-slate-200'
               }`}
-              style={{ height: '500px' }}
             >
-              {/* Left Side: Premium Management Rail */}
-              <div className={`p-10 md:w-[450px] flex-shrink-0 flex flex-col overflow-y-auto custom-scrollbar ${
-                darkMode ? 'bg-[#1E293B]/50' : 'bg-slate-50/50'
+              {/* Mobile Header: Sticky for Print & Close */}
+              <div className={`md:hidden flex-shrink-0 px-6 py-4 flex items-center justify-between border-b ${
+                darkMode ? 'bg-[#0F172A] border-white/10' : 'bg-[#fdfdfd] border-slate-200'
               }`}>
-                <div className="flex items-center justify-between mb-10">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-2xl bg-slate-900 flex items-center justify-center text-white shadow-xl shadow-slate-900/20 rotate-3">
-                      <Receipt size={28} />
+                <div className="flex items-center gap-2">
+                  <Receipt size={18} className="text-primary" />
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em]">Order #{selectedOrder.id}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={() => handlePrint(selectedOrder)}
+                    className="w-10 h-10 rounded-full bg-slate-900 text-white flex items-center justify-center active:scale-95 shadow-lg shadow-slate-900/20"
+                    title="Print Invoice"
+                  >
+                    <Printer size={18} />
+                  </button>
+                  <button 
+                    onClick={() => setSelectedOrder(null)}
+                    className="w-10 h-10 rounded-full border border-slate-200 dark:border-white/10 flex items-center justify-center active:scale-95 bg-white/50 dark:bg-black/50"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Scrollable Body Container */}
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain md:overflow-hidden flex flex-col md:flex-row w-full relative z-10 custom-scrollbar">
+                {/* Left Side: Management Rail */}
+                <div className={`p-6 md:p-10 md:w-[400px] lg:w-[450px] flex-shrink-0 flex flex-col md:overflow-y-auto custom-scrollbar ${
+                  darkMode ? 'md:bg-[#1E293B]/50' : 'md:bg-slate-50/50'
+                }`}>
+                <div className="hidden md:flex items-center justify-between mb-8">
+                  <div className="flex items-center gap-3 md:gap-4">
+                    <div className="w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl bg-slate-900 flex items-center justify-center text-white shadow-xl shadow-slate-900/20 rotate-3">
+                      <Receipt size={20} className="md:w-7 md:h-7" />
                     </div>
                     <div>
-                      <h2 className="text-2xl font-black tracking-tight leading-tight">Order Management</h2>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Priority Service</span>
+                      <h2 className="text-lg md:text-2xl font-black tracking-tight leading-tight">Order Details</h2>
+                      <div className="flex items-center gap-2 mt-0.5 md:mt-1">
+                        <span className="text-[8px] md:text-[10px] font-black text-primary uppercase tracking-[0.2em]">Priority Service</span>
                         <div className="w-1 h-1 bg-slate-300 rounded-full" />
-                        <span className="text-[10px] font-black opacity-40 uppercase tracking-widest leading-none">#{selectedOrder.id}</span>
+                        <span className="text-[8px] md:text-[10px] font-black opacity-40 uppercase tracking-widest leading-none">#{selectedOrder.id}</span>
                       </div>
                     </div>
                   </div>
                   <button 
                     onClick={() => setSelectedOrder(null)}
-                    className="w-12 h-12 rounded-full border border-slate-200 dark:border-white/10 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-white/5 transition-all active:scale-90"
+                    className="w-10 h-10 md:w-12 md:h-12 rounded-full border border-slate-200 dark:border-white/10 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-white/5 transition-all active:scale-90"
                   >
-                    <X size={24} />
+                    <X size={20} className="md:w-6 md:h-6" />
                   </button>
                 </div>
 
-                <div className="space-y-8 flex-grow">
+                <div className="space-y-6 md:space-y-8 flex-grow">
                   {/* Status & Actions Section */}
-                  <section className={`p-6 rounded-[2.5rem] border ${
+                  <section className={`p-4 md:p-6 rounded-2xl md:rounded-[2.5rem] border ${
                     darkMode ? 'bg-white/5 border-white/5 shadow-inner' : 'bg-white border-slate-100 shadow-sm'
                   }`}>
-                    <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center justify-between mb-4 md:mb-6">
                       <div className="flex items-center gap-2">
                          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                         <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40">Settlement Active</p>
+                         <p className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] opacity-40">Settlement Active</p>
                       </div>
-                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-sm ${
+                      <span className={`px-2 md:px-3 py-1 rounded-full text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] shadow-sm ${
                         selectedOrder.status === 'delivered' ? 'bg-emerald-500 text-white' : 
                         selectedOrder.status === 'cancelled' ? 'bg-rose-500 text-white' : 'bg-amber-500 text-white'
                       }`}>
@@ -341,53 +442,53 @@ export default function OrdersTab({ orders, darkMode, formatPrice, t, updateStat
                       </span>
                     </div>
                     
-                    <div className="grid grid-cols-1 gap-3">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-1">
                        <button 
                          onClick={() => handlePrint(selectedOrder)}
-                         className="group flex flex-col items-center justify-center gap-3 py-6 rounded-3xl bg-slate-900 text-white transition-all hover:bg-slate-800 active:scale-95 shadow-xl shadow-slate-900/20"
+                         className="flex group flex-col items-center justify-center gap-2 md:gap-3 py-4 md:py-6 rounded-2xl md:rounded-3xl bg-slate-900 text-white transition-all hover:bg-slate-800 active:scale-95 shadow-xl shadow-slate-900/20"
                        >
-                         <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center group-hover:rotate-12 transition-transform">
-                           <Printer size={20} />
+                         <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-white/10 flex items-center justify-center group-hover:rotate-12 transition-transform">
+                           <Printer size={16} className="md:w-5 md:h-5" />
                          </div>
-                         <span className="text-[10px] font-black uppercase tracking-[0.2em]">Generate Printout</span>
+                         <span className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em]">Generate Printout</span>
                        </button>
                     </div>
                   </section>
 
                   {/* Customer Intelligence */}
-                  <div className="grid gap-4">
-                    <h3 className="text-[10px] font-black uppercase tracking-[0.3em] opacity-40 ml-4">Recipient Intelligence</h3>
+                  <div className="grid gap-3 md:gap-4">
+                    <h3 className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.3em] opacity-40 ml-4">Recipient Info</h3>
                     
-                    <div className={`p-5 rounded-3xl border transition-all hover:scale-[1.02] ${
+                    <div className={`p-4 md:p-5 rounded-2xl md:rounded-3xl border transition-all hover:scale-[1.01] ${
                       darkMode ? 'border-white/5 bg-white/[0.02]' : 'border-slate-100 bg-white shadow-sm'
                     }`}>
-                      <div className="flex items-start gap-4">
-                        <div className="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-500 border border-blue-500/20">
-                          <User size={22} />
+                      <div className="flex items-start gap-3 md:gap-4">
+                        <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-500 border border-blue-500/20">
+                          <User size={18} className="md:w-5 md:h-5" />
                         </div>
-                        <div>
-                          <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-0.5">Primary Contact</p>
-                          <p className="text-base font-black tracking-tight">{selectedOrder.customerName}</p>
+                        <div className="min-w-0">
+                          <p className="text-[8px] md:text-[9px] font-black uppercase tracking-widest opacity-40 mb-0.5">Primary Contact</p>
+                          <p className="text-sm md:text-base font-black tracking-tight truncate">{selectedOrder.customerName}</p>
                           <div className="flex items-center gap-2 mt-1 px-2 py-0.5 bg-blue-500/10 rounded-md inline-flex">
                             <Phone size={10} className="text-blue-500" />
-                            <span className="text-[10px] font-bold text-blue-500 uppercase">{selectedOrder.customerPhone}</span>
+                            <span className="text-[9px] md:text-[10px] font-bold text-blue-500 uppercase">{selectedOrder.customerPhone}</span>
                           </div>
                         </div>
                       </div>
                     </div>
 
-                    <div className={`p-5 rounded-3xl border transition-all hover:scale-[1.02] ${
+                    <div className={`p-4 md:p-5 rounded-2xl md:rounded-3xl border transition-all hover:scale-[1.01] ${
                       darkMode ? 'border-white/5 bg-white/[0.02]' : 'border-slate-100 bg-white shadow-sm'
                     }`}>
-                      <div className="flex items-start gap-4">
-                        <div className="w-12 h-12 rounded-2xl bg-rose-500/10 flex items-center justify-center text-rose-500 border border-rose-500/20">
-                          <MapPin size={22} />
+                      <div className="flex items-start gap-3 md:gap-4">
+                        <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-rose-500/10 flex items-center justify-center text-rose-500 border border-rose-500/20">
+                          <MapPin size={18} className="md:w-5 md:h-5" />
                         </div>
-                        <div className="flex-grow">
-                          <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-0.5">Delivery Point</p>
-                          <p className="text-base font-black tracking-tight">Apartment {selectedOrder.roomNumber}</p>
+                        <div className="flex-grow min-w-0">
+                          <p className="text-[8px] md:text-[9px] font-black uppercase tracking-widest opacity-40 mb-0.5">Delivery Point</p>
+                          <p className="text-sm md:text-base font-black tracking-tight">Apartment {selectedOrder.roomNumber}</p>
                           {selectedOrder.address && (
-                            <p className="text-xs font-bold opacity-40 mt-1 uppercase tracking-wider leading-relaxed">
+                            <p className="text-[10px] md:text-xs font-bold opacity-40 mt-1 uppercase tracking-wider leading-relaxed line-clamp-2">
                               {selectedOrder.address}
                             </p>
                           )}
@@ -395,16 +496,16 @@ export default function OrdersTab({ orders, darkMode, formatPrice, t, updateStat
                       </div>
                     </div>
 
-                    <div className={`p-5 rounded-3xl border transition-all hover:scale-[1.02] ${
+                    <div className={`p-4 md:p-5 rounded-2xl md:rounded-3xl border transition-all hover:scale-[1.01] ${
                       darkMode ? 'border-white/5 bg-white/[0.02]' : 'border-slate-100 bg-white shadow-sm'
                     }`}>
-                      <div className="flex items-start gap-4">
-                        <div className="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-500 border border-amber-500/20">
-                          <Wallet size={22} />
+                      <div className="flex items-start gap-3 md:gap-4">
+                        <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-500 border border-amber-500/20">
+                          <Wallet size={18} className="md:w-5 md:h-5" />
                         </div>
                         <div>
-                          <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-0.5">Liquidity Arrangement</p>
-                          <p className="text-base font-black tracking-tight uppercase tracking-widest">{selectedOrder.paymentMethod}</p>
+                          <p className="text-[8px] md:text-[9px] font-black uppercase tracking-widest opacity-40 mb-0.5">Liquidity Arrangement</p>
+                          <p className="text-sm md:text-base font-black tracking-tight uppercase tracking-widest">{selectedOrder.paymentMethod}</p>
                         </div>
                       </div>
                     </div>
@@ -412,32 +513,40 @@ export default function OrdersTab({ orders, darkMode, formatPrice, t, updateStat
                 </div>
 
                 {/* Financial Summary */}
-                <div className={`mt-8 p-10 rounded-[3rem] relative overflow-hidden ${
+                <div className={`mt-6 md:mt-8 p-6 md:p-10 rounded-2xl md:rounded-[3rem] relative overflow-hidden ${
                   darkMode ? 'bg-slate-900 border border-white/5' : 'bg-slate-900 text-white shadow-2xl'
                 }`}>
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16" />
+                  <div className="absolute top-0 right-0 w-24 h-24 md:w-32 md:h-32 bg-white/5 rounded-full -mr-12 -mt-12 md:-mr-16 md:-mt-16" />
                   <div className="relative z-10">
-                    <div className="flex justify-between items-center mb-6 opacity-60">
-                      <p className="text-[10px] font-black uppercase tracking-[0.3em]">Gross Settlement</p>
-                      <p className="text-sm font-black tabular-nums">{formatPrice(selectedOrder.total + (selectedOrder.pointDiscount || 0))}</p>
+                    <div className="flex justify-between items-center mb-3 md:mb-4 opacity-60">
+                      <p className="text-[8px] md:text-[10px] font-black uppercase tracking-[0.3em]">Gross Settlement</p>
+                      <p className="text-xs md:text-sm font-black tabular-nums">
+                        {formatPrice(selectedOrder.items.reduce((acc, item) => acc + item.price * (item.quantity || 1), 0))}
+                      </p>
+                    </div>
+                    <div className="flex justify-between items-center mb-3 md:mb-4 opacity-60">
+                      <p className="text-[8px] md:text-[10px] font-black uppercase tracking-[0.3em]">Logistic Service</p>
+                      <p className={`text-xs md:text-sm font-black tabular-nums ${selectedOrder.deliveryFee === 0 ? 'text-emerald-400' : ''}`}>
+                        {selectedOrder.deliveryFee === 0 ? 'Complimentary' : `+${formatPrice(selectedOrder.deliveryFee || 0)}`}
+                      </p>
                     </div>
                     {selectedOrder.pointDiscount > 0 && (
-                      <div className="flex justify-between items-center mb-6 text-rose-400">
-                        <p className="text-[10px] font-black uppercase tracking-[0.3em]">Royal Credit Bias</p>
-                        <p className="text-sm font-black tabular-nums">-{formatPrice(selectedOrder.pointDiscount)}</p>
+                      <div className="flex justify-between items-center mb-3 md:mb-4 text-rose-400">
+                        <p className="text-[8px] md:text-[10px] font-black uppercase tracking-[0.3em]">Royal Credit Bias</p>
+                        <p className="text-xs md:text-sm font-black tabular-nums">-{formatPrice(selectedOrder.pointDiscount)}</p>
                       </div>
                     )}
-                    <div className="h-px bg-white/10 mb-6" />
+                    <div className="h-px bg-white/10 mb-4 md:mb-6" />
                     <div className="flex justify-between items-end">
                       <div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.4em] opacity-40 mb-2">Final Allocation</p>
-                        <p className="text-4xl font-black tracking-tighter text-white tabular-nums leading-none">
+                        <p className="text-[8px] md:text-[10px] font-black uppercase tracking-[0.4em] opacity-40 mb-1 md:mb-2">Final Allocation</p>
+                        <p className="text-2xl md:text-4xl font-black tracking-tighter text-white tabular-nums leading-none">
                           {formatPrice(selectedOrder.total)}
                         </p>
                       </div>
                       <div className="flex flex-col items-end">
-                         <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1">+{selectedOrder.earnedPoints} PTS</span>
-                         <div className="px-2 py-0.5 rounded bg-emerald-500/10 text-[8px] font-black text-emerald-400 uppercase tracking-[0.2em] border border-emerald-500/20">Verified</div>
+                         <span className="text-[8px] md:text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1">+{selectedOrder.earnedPoints} PTS</span>
+                         <div className="px-2 py-0.5 rounded bg-emerald-500/10 text-[7px] md:text-[8px] font-black text-emerald-400 uppercase tracking-[0.2em] border border-emerald-500/20">Verified</div>
                       </div>
                     </div>
                   </div>
@@ -445,22 +554,24 @@ export default function OrdersTab({ orders, darkMode, formatPrice, t, updateStat
               </div>
 
               {/* Right Side: High-Definition Document Preview */}
-              <div className={`flex-grow p-12 overflow-y-auto flex flex-col items-center custom-scrollbar ${
+              <div className={`flex-grow p-6 md:p-12 md:overflow-y-auto flex flex-col items-center custom-scrollbar ${
                 darkMode ? 'bg-[#0B0F19]' : 'bg-slate-200'
               }`}>
-                 <div className="mb-6 flex items-center gap-3 self-start md:self-center">
-                   <div className="w-4 h-4 rounded-full bg-emerald-500" />
-                   <p className="text-[10px] font-black uppercase tracking-[0.4em] opacity-40">Document Verification Mode / A4 Format</p>
+                 <div className="mb-4 md:mb-6 flex items-center gap-3 self-start md:self-center">
+                   <div className="w-3 h-3 md:w-4 md:h-4 rounded-full bg-emerald-500" />
+                   <p className="text-[8px] md:text-[10px] font-black uppercase tracking-[0.4em] opacity-40">Document Verification Mode / A4 Format</p>
                  </div>
                  
-                 <div className="shadow-[0_20px_70px_rgba(0,0,0,0.15)] origin-top hover:shadow-[0_40px_120px_rgba(0,0,0,0.25)] transition-all duration-700 ease-out scale-[0.6] sm:scale-[0.7] md:scale-[0.85] lg:scale-[0.95] xl:scale-100 mb-40 h-fit rounded-lg overflow-hidden border border-white/10">
+                 <div className="shadow-[0_20px_70px_rgba(0,0,0,0.15)] origin-top hover:shadow-[0_40px_120px_rgba(0,0,0,0.25)] transition-all duration-700 ease-out scale-[0.5] xs:scale-[0.6] sm:scale-[0.75] md:scale-[0.8] lg:scale-[0.9] xl:scale-100 mb-20 md:mb-40 h-fit rounded-lg overflow-hidden border border-white/10">
                     <OrderInvoice 
                       id={`invoice-${selectedOrder.id}`}
                       order={selectedOrder}
                       formatPrice={formatPrice}
                       t={t}
-                    />
+                     />
                  </div>
+              </div>
+
               </div>
             </motion.div>
           </div>

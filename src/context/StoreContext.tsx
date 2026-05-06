@@ -453,7 +453,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       localStorage.setItem('sp_products', JSON.stringify(products));
     }
   }, [products]);
-  const [addresses, setAddresses] = useState<Address[]>(() => safeParse(localStorage.getItem('sp_addresses'), []));
+  const [addresses, setAddresses] = useState<Address[]>(() => {
+    const localAddrs = safeParse(localStorage.getItem('sp_addresses'), []);
+    const unique = new Map<string, Address>();
+    localAddrs.forEach((addr: Address) => {
+      const key = [
+        addr.phone,
+        addr.township,
+        addr.street,
+        addr.building,
+        addr.room
+      ].map(v => (v || '').toString().toLowerCase().trim().replace(/\s+/g, '')).join('|');
+      
+      if (!unique.has(key) || (addr.isDefault && !unique.get(key)?.isDefault)) {
+        unique.set(key, addr);
+      }
+    });
+    return Array.from(unique.values());
+  });
   const [selectedAddressId, setSelectedAddressIdState] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<string[]>(() => safeParse(localStorage.getItem('sp_favorites'), []));
   const [categories, setCategories] = useState<Category[]>(() => safeParse(localStorage.getItem('sp_categories'), []));
@@ -775,7 +792,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
             addresses.forEach(addr => {
               // Create a unique key for this address to detect duplicates
-              const addressKey = `${addr.building || ''}-${addr.street || ''}-${addr.room || ''}`.toLowerCase().replace(/\s/g, '');
+              const addressKey = `${addr.name || ''}-${addr.phone || ''}-${addr.region || ''}-${addr.city || ''}-${addr.township || ''}-${addr.street || ''}-${addr.building || ''}-${addr.room || ''}`.toLowerCase().replace(/\s/g, '');
               
               if (!addedAddressKeys.has(addressKey)) {
                 const newDocRef = doc(addressesRef); // Generate new ID in Firestore
@@ -846,7 +863,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
              const existingAddressKeys = new Set<string>();
              existingAddrsSnap.docs.forEach(doc => {
                const addr = doc.data();
-               const key = `${addr.building || ''}-${addr.street || ''}-${addr.room || ''}`.toLowerCase().replace(/\s/g, '');
+               const key = `${addr.name || ''}-${addr.phone || ''}-${addr.region || ''}-${addr.city || ''}-${addr.township || ''}-${addr.street || ''}-${addr.building || ''}-${addr.room || ''}`.toLowerCase().replace(/\s/g, '');
                existingAddressKeys.add(key);
              });
 
@@ -855,7 +872,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
              let addedCount = 0;
 
              addresses.forEach(addr => {
-               const key = `${addr.building || ''}-${addr.street || ''}-${addr.room || ''}`.toLowerCase().replace(/\s/g, '');
+               const key = `${addr.name || ''}-${addr.phone || ''}-${addr.region || ''}-${addr.city || ''}-${addr.township || ''}-${addr.street || ''}-${addr.building || ''}-${addr.room || ''}`.toLowerCase().replace(/\s/g, '');
                if (!existingAddressKeys.has(key)) {
                  const newDocRef = doc(addressesRef);
                  batch.set(newDocRef, { ...addr, id: newDocRef.id });
@@ -981,10 +998,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       // DEDUPLICATION: Ensure no identical addresses are displayed
       const uniqueItems = new Map<string, Address>();
       fetchedAddresses.forEach(addr => {
-        // Create a unique fingerprint based on building/street/room
-        const key = `${addr.building || ''}-${addr.street || ''}-${addr.room || ''}`.toLowerCase().replace(/\s/g, '');
+        // Create a unique fingerprint based on specific fields to identify "human" duplicates
+        // We exclude 'name' and 'label' if we want to be aggressive, but user might want different names for same place.
+        // However, usually duplicates have the same name too.
+        const key = [
+          addr.phone,
+          addr.township,
+          addr.street,
+          addr.building,
+          addr.room
+        ].map(v => (v || '').toString().toLowerCase().trim().replace(/\s+/g, '')).join('|');
+
         // If we don't have this address yet, or this one is set as default, keep it
-        if (!uniqueItems.has(key) || addr.isDefault) {
+        if (!uniqueItems.has(key) || (addr.isDefault && !uniqueItems.get(key)?.isDefault)) {
           uniqueItems.set(key, addr);
         }
       });

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useStore } from '../context/StoreContext';
-import { ChevronLeft, Save, MapPin, Phone, User, Home, Building, CheckCircle2, Navigation, Landmark, Hash, Check, Map } from 'lucide-react';
+import { ChevronLeft, Save, MapPin, Phone, User, Home, Building, CheckCircle2, Navigation, Landmark, Hash, Check, Map as MapIcon } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Address } from '../types';
 
@@ -27,22 +27,78 @@ export default function AddAddressPage() {
   // Filter active service areas
   const activeServiceAreas = serviceAreas.filter(area => area.isActive);
 
-  // Compute unique regions
-  const availableRegions = Array.from(new Set(activeServiceAreas.map(a => a.region)));
+  // Compute unique regions and merge cities if multiple entries exist for same region
+  const availableRegions = useMemo(() => {
+    const uniqueRegions = new Set<string>();
+    const displayNames: Record<string, string> = {};
 
-  // Helper to get cities for a region
-  const getRegionCities = (regionName: string) => {
-    const area = activeServiceAreas.find(a => a.region === regionName);
-    if (!area) return [];
+    activeServiceAreas.forEach(a => {
+      const name = (a.region || '').trim();
+      if (!name) return;
+      const key = name.toLowerCase();
+      if (!uniqueRegions.has(key)) {
+        uniqueRegions.add(key);
+        displayNames[key] = name; // Keep the first casing encountered as the display name
+      }
+    });
+
+    return Object.values(displayNames).sort((a, b) => a.localeCompare(b));
+  }, [activeServiceAreas]);
+
+  // Helper to get cities for a region (handles merging if multiple region docs exist)
+  const getRegionCities = (regionName: string): { name: string; townships: string[] }[] => {
+    const normalizedRegion = (regionName || '').trim().toLowerCase();
+    if (!normalizedRegion) return [];
     
-    return area.cities || [];
+    // Find all documents matching this region name (case-insensitive for safety)
+    const matchingAreas = activeServiceAreas.filter(a => 
+      (a.region || '').trim().toLowerCase() === normalizedRegion
+    );
+    
+    // Reconstruct with proper formatting
+    const rawCities = matchingAreas.flatMap(a => a.cities || []) as any[];
+    const uniqueCities = new Map<string, { name: string; townships: Map<string, string> }>();
+
+    rawCities.forEach(city => {
+      const name = (city.name || '').trim();
+      if (!name) return;
+      const key = name.toLowerCase();
+      
+      if (!uniqueCities.has(key)) {
+        const townshipMap = new Map<string, string>();
+        (city.townships || []).forEach((t: string) => {
+          const trimmed = t.trim();
+          if (trimmed) townshipMap.set(trimmed.toLowerCase(), trimmed);
+        });
+        uniqueCities.set(key, { name, townships: townshipMap });
+      } else {
+        const existing = uniqueCities.get(key)!;
+        (city.townships || []).forEach((t: string) => {
+          const trimmed = t.trim();
+          if (trimmed && !existing.townships.has(trimmed.toLowerCase())) {
+            existing.townships.set(trimmed.toLowerCase(), trimmed);
+          }
+        });
+      }
+    });
+
+    return Array.from(uniqueCities.values()).map(c => ({
+      name: c.name,
+      townships: Array.from(c.townships.values()).sort((a, b) => a.localeCompare(b))
+    })).sort((a, b) => a.name.localeCompare(b.name));
   };
 
-  const currentRegionCities = getRegionCities(formData.region);
-  const availableCities = currentRegionCities.map(c => c.name);
+  const availableCities = useMemo(() => {
+    return getRegionCities(formData.region).map(c => c.name);
+  }, [formData.region, activeServiceAreas]);
 
   // Compute townships for selected region and city
-  const availableTownships = currentRegionCities.find(c => c.name === formData.city)?.townships || [];
+  const availableTownships = useMemo(() => {
+    const cities = getRegionCities(formData.region);
+    const selectedCityName = (formData.city || '').trim().toLowerCase();
+    const city = cities.find(c => c.name.trim().toLowerCase() === selectedCityName);
+    return (city?.townships || []).sort();
+  }, [formData.region, formData.city, activeServiceAreas]);
 
   const [isSaving, setIsSaving] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
@@ -140,6 +196,10 @@ export default function AddAddressPage() {
                   className={`w-full bg-transparent font-bold text-sm outline-none appearance-none cursor-pointer ${!formData.region && (darkMode ? 'text-white/40' : 'text-slate-400')}`}
                 >
                   <option value="" disabled className={darkMode ? 'bg-slate-900' : 'bg-white'}>{t('region')}</option>
+                  {/* Always include the current value if it's not in the list (legacy/mismatch support) */}
+                  {formData.region && !availableRegions.includes(formData.region) && (
+                    <option key={formData.region} value={formData.region} className={darkMode ? 'bg-slate-900' : 'bg-white'}>{formData.region}</option>
+                  )}
                   {availableRegions.map(region => (
                     <option key={region} value={region} className={darkMode ? 'bg-slate-900' : 'bg-white'}>{region}</option>
                   ))}
@@ -158,6 +218,10 @@ export default function AddAddressPage() {
                   className={`w-full bg-transparent font-bold text-sm outline-none appearance-none cursor-pointer disabled:opacity-50 ${!formData.city && (darkMode ? 'text-white/40' : 'text-slate-400')}`}
                 >
                   <option value="" disabled className={darkMode ? 'bg-slate-900' : 'bg-white'}>{t('city')}</option>
+                  {/* Always include the current value if it's not in the list */}
+                  {formData.city && !availableCities.includes(formData.city) && (
+                    <option key={formData.city} value={formData.city} className={darkMode ? 'bg-slate-900' : 'bg-white'}>{formData.city}</option>
+                  )}
                   {availableCities.map(city => (
                     <option key={city} value={city} className={darkMode ? 'bg-slate-900' : 'bg-white'}>{city}</option>
                   ))}
@@ -176,6 +240,10 @@ export default function AddAddressPage() {
                   className={`w-full bg-transparent font-bold text-sm outline-none appearance-none cursor-pointer disabled:opacity-50 ${!formData.township && (darkMode ? 'text-white/40' : 'text-slate-400')}`}
                 >
                   <option value="" disabled className={darkMode ? 'bg-slate-900' : 'bg-white'}>{t('township')}</option>
+                  {/* Always include the current value if it's not in the list */}
+                  {formData.township && !availableTownships.includes(formData.township) && (
+                    <option key={formData.township} value={formData.township} className={darkMode ? 'bg-slate-900' : 'bg-white'}>{formData.township}</option>
+                  )}
                   {availableTownships.map(township => (
                     <option key={township} value={township} className={darkMode ? 'bg-slate-900' : 'bg-white'}>{township}</option>
                   ))}

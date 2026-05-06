@@ -926,11 +926,11 @@ function OrderDetailModal({
           .map(
             (item) => `
           <tr>
-            <td style="padding: 4px 0; font-size: 11px;">
+            <td style="padding: 4px 0; font-size: 13px;">
               ${item.name}<br>
-              <span style="font-size: 9px; color: #555;">${item.quantity} x ${formatPrice(item.price)}</span>
+              <span style="font-size: 11px;">${item.quantity} x ${formatPrice(item.price)}</span>
             </td>
-            <td style="padding: 4px 0; text-align: right; font-size: 11px; vertical-align: top;">${formatPrice(item.price * item.quantity)}</td>
+            <td style="padding: 4px 0; text-align: right; font-size: 14px; vertical-align: top;">${formatPrice(item.price * item.quantity)}</td>
           </tr>
         `,
           )
@@ -939,27 +939,42 @@ function OrderDetailModal({
         styles = `
           @page { size: 58mm auto; margin: 0; }
           body { 
-            background: #fff; margin: 0; padding: 0; 
-            font-family: 'Courier New', Courier, monospace;
-            -webkit-print-color-adjust: exact;
+            background: #ffffff !important; 
+            color: #000000 !important;
+            margin: 0 !important; 
+            padding: 0 !important; 
+            font-family: Arial, Helvetica, sans-serif !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          * {
+            color: #000000 !important;
+            border-color: #000000 !important;
+            font-weight: bold !important;
+            -webkit-text-stroke: 0.4px #000000 !important;
+            background-color: transparent !important;
+            opacity: 1 !important;
+            filter: none !important;
+            box-shadow: none !important;
           }
           .thermal-print-body { width: 54mm; margin: 0 auto; color: #000; padding: 2mm; box-sizing: border-box; }
           .thermal-header { text-align: center; margin-bottom: 12px; }
-          .thermal-header h1 { margin: 0; font-size: 18px; font-weight: bold; }
-          .thermal-divider { border-bottom: 1px dashed #000; margin: 8px 0; }
-          .thermal-table { width: 100%; border-collapse: collapse; }
-          .thermal-table th { text-align: left; font-size: 10px; border-bottom: 1px dashed #000; padding-bottom: 5px; }
-          .thermal-totals { margin-top: 8px; font-size: 11px; font-weight: bold; }
+          .thermal-header h1 { margin: 0; font-size: 24px; -webkit-text-stroke: 0.8px #000; text-shadow: none !important; font-weight: 900 !important; text-transform: uppercase; }
+          .thermal-header p { font-weight: bold !important; margin: 2px 0; }
+          .thermal-divider { border-bottom: 1.5px solid #000 !important; margin: 8px 0; }
+          .thermal-table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
+          .thermal-table th { text-align: left; font-size: 12px; border-bottom: 1.5px solid #000 !important; padding-bottom: 5px; text-transform: uppercase; }
+          .thermal-totals { margin-top: 8px; font-size: 13px; font-weight: bold !important; }
         `;
 
         content = `
           <div class="thermal-print-body">
             <div class="thermal-header">
               <h1>SAR TAW SET</h1>
-              <p style="font-size: 10px; margin: 4px 0;">Fresh Grocery Delivery</p>
-              <p style="font-size: 9px; margin: 2px 0;">${shopPhone}</p>
+              <p style="font-size: 12px; margin: 4px 0;">Fresh Grocery Delivery</p>
+              <p style="font-size: 12px; margin: 2px 0;">${shopPhone}</p>
             </div>
-            <div style="font-size: 10px; margin-bottom: 8px;">
+            <div style="font-size: 12px; margin-bottom: 8px; line-height: 1.4;">
               <p style="margin: 2px 0;">ID: #${order.id}</p>
               <p style="margin: 2px 0;">Date: ${new Date(order.createdAt).toLocaleString()}</p>
               <p style="margin: 2px 0;">Customer: ${order.customerName}</p>
@@ -973,11 +988,11 @@ function OrderDetailModal({
             <div class="thermal-divider"></div>
             <div class="thermal-totals">
               <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>SUBTOTAL</span><span>${formatPrice(itemsSubtotal)}</span></div>
-              ${order.deliveryFee > 0 ? `<div style="display:flex; justify-content:space-between; margin-bottom: 4px; font-weight:normal;"><span>DELIVERY</span><span>+${formatPrice(order.deliveryFee)}</span></div>` : ""}
-              ${order.pointDiscount > 0 ? `<div style="display:flex; justify-content:space-between; margin-bottom: 4px; font-weight:normal;"><span>POINTS</span><span>-${formatPrice(order.pointDiscount)}</span></div>` : ""}
-              <div style="display:flex; justify-content:space-between; font-size:16px; margin-top:8px; border-top:1px dashed #000; padding-top:8px;"><span>TOTAL</span><span>${formatPrice(order.total)}</span></div>
+              ${order.deliveryFee > 0 ? `<div style="display:flex; justify-content:space-between; margin-bottom: 4px; font-weight:900;"><span>DELIVERY</span><span>+${formatPrice(order.deliveryFee)}</span></div>` : ""}
+              ${order.pointDiscount > 0 ? `<div style="display:flex; justify-content:space-between; margin-bottom: 4px; font-weight:900;"><span>POINTS</span><span>-${formatPrice(order.pointDiscount)}</span></div>` : ""}
+              <div style="display:flex; justify-content:space-between; font-size:18px; margin-top:8px; border-top:2px solid #000 !important; padding-top:8px;"><span>TOTAL</span><span>${formatPrice(order.total)}</span></div>
             </div>
-            <div style="text-align:center; margin-top:15px; font-size:9px;">Thank you for shopping Sar Taw Set!</div>
+            <div style="text-align:center; margin-top:15px; font-size:11px;">Thank you for shopping Sar Taw Set!</div>
           </div>
         `;
       } else {

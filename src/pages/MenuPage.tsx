@@ -427,10 +427,10 @@ export default function MenuPage() {
                   <div className="p-2 flex flex-col flex-1 justify-between gap-1">
                     <div className="space-y-1">
                       <div className="flex flex-col">
-                        <h4 className="text-on-surface font-black text-xs leading-tight tracking-tight group-hover:text-primary transition-colors duration-300 truncate">
+                        <h4 className="text-on-surface font-black text-xs leading-tight tracking-tight group-hover:text-primary transition-colors duration-300 truncate max-w-[70%]">
                           {getMainName(item)}
                         </h4>
-                        <p className="text-on-surface-variant/60 text-[10px] font-medium leading-tight truncate mt-0.5">
+                        <p className="text-on-surface-variant/60 text-[10px] font-medium leading-tight truncate mt-0.5 max-w-[50%]">
                           {getSecondaryName(item)}
                         </p>
                       </div>

@@ -468,7 +468,9 @@ export default function OrderDetailPage() {
           <div className="mt-6 pt-4 border-t border-on-surface/5 space-y-2">
             <div className="flex justify-between items-center">
               <p className="text-[10px] font-bold text-on-surface-variant">{t('subtotal')}</p>
-              <p className="text-[10px] font-black text-on-surface">{formatPrice(order.total + (order.pointDiscount || 0))}</p>
+              <p className="text-[10px] font-black text-on-surface">
+                {formatPrice(order.items.reduce((acc, item) => acc + item.price * (item.quantity || 1), 0))}
+              </p>
             </div>
             {order.pointDiscount > 0 && (
               <div className="flex justify-between items-center">
@@ -478,7 +480,9 @@ export default function OrderDetailPage() {
             )}
             <div className="flex justify-between items-center">
               <p className="text-[10px] font-bold text-on-surface-variant">{t('deliveryFee')}</p>
-              <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">{t('free')}</p>
+              <p className={`text-[10px] font-black uppercase tracking-widest ${order.deliveryFee === 0 ? 'text-emerald-600' : 'text-on-surface'}`}>
+                {order.deliveryFee === 0 ? t('free') : formatPrice(order.deliveryFee)}
+              </p>
             </div>
             <div className="pt-2 flex justify-between items-center">
               <p className="text-sm font-black text-on-surface">{t('totalAmount')}</p>
