@@ -364,8 +364,8 @@ interface StoreContextType {
   addServiceArea: (area: Omit<ServiceArea, 'id'>) => Promise<void>;
   updateServiceArea: (id: string, updates: Partial<ServiceArea>) => Promise<void>;
   deleteServiceArea: (id: string) => Promise<void>;
-  settings: { productionUrl: string };
-  updateSettings: (newSettings: { productionUrl: string }) => Promise<void>;
+  settings: { productionUrl: string; telegramToken?: string; telegramChatId?: string };
+  updateSettings: (newSettings: { productionUrl?: string; telegramToken?: string; telegramChatId?: string }) => Promise<void>;
 }
 
 export interface Notification {
@@ -505,18 +505,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [broadcastNotifications, setBroadcastNotifications] = useState<BroadcastNotification[]>([]);
   const [serviceAreas, setServiceAreas] = useState<ServiceArea[]>(() => safeParse(localStorage.getItem('sp_serviceAreas'), []));
-  const [settings, setSettings] = useState<{ productionUrl: string }>({ productionUrl: 'https://sartawset.com' });
+  const [settings, setSettings] = useState<{ 
+    productionUrl: string; 
+    telegramToken?: string; 
+    telegramChatId?: string 
+  }>({ productionUrl: 'https://sartawset.com' });
   
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'settings', 'global'), (doc) => {
       if (doc.exists()) {
-        setSettings(doc.data() as { productionUrl: string });
+        setSettings(doc.data() as any);
       }
     });
     return () => unsub();
   }, []);
 
-  const updateSettings = async (newSettings: { productionUrl: string }) => {
+  const updateSettings = async (newSettings: { productionUrl?: string; telegramToken?: string; telegramChatId?: string }) => {
     if (!isAdmin) return;
     try {
       await setDoc(doc(db, 'settings', 'global'), {
@@ -1911,6 +1915,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [currency, setCurrency] = useState<'RM' | 'MMK'>(() => {
     return (localStorage.getItem('sp_currency') as 'RM' | 'MMK') || 'RM';
   });
+
+  const formatPrice = useCallback((price: number) => {
+    const safePrice = Number(price) || 0;
+    if (currency === 'RM') {
+      return `RM ${safePrice.toFixed(2)}`;
+    }
+    return `${safePrice.toLocaleString()} Ks`;
+  }, [currency]);
   const [darkMode, setDarkMode] = useState(() => {
     return localStorage.getItem('sp_dark_mode') === 'true';
   });
@@ -2235,6 +2247,41 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     })));
   };
 
+  const sendTelegramNotification = useCallback(async (order: Order) => {
+    if (!settings.telegramToken || !settings.telegramChatId) return;
+
+    const message = `
+🔔 *New Order Received!*
+------------------------
+🆔 Order ID: ${order.id}
+👤 Customer: ${order.customerName}
+📞 Phone: ${order.customerPhone}
+📍 Address: ${order.address || 'N/A'}
+💰 Total: ${formatPrice(order.total)}
+💳 Payment: ${order.paymentMethod}
+📦 Items:
+${order.items.map(item => `- ${item.name} x ${item.quantity}`).join('\n')}
+------------------------
+📅 Time: ${new Date().toLocaleString()}
+`;
+
+    try {
+      await fetch(`https://api.telegram.org/bot${settings.telegramToken}/sendMessage`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          chat_id: settings.telegramChatId,
+          text: message,
+          parse_mode: 'Markdown'
+        })
+      });
+    } catch (error) {
+      console.error('Telegram Notification Error:', error);
+    }
+  }, [settings.telegramToken, settings.telegramChatId, formatPrice]);
+
   const placeOrder = async (details: { 
     name: string; 
     phone: string; 
@@ -2364,6 +2411,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         createdAt: Date.now()
       } as Order;
       setOrders(prev => [newOrderForState, ...prev]);
+      
+      // 7. Telegram Notification
+      sendTelegramNotification(newOrderForState);
 
       const t = (key: string) => (translations[language] as any)[key] || key;
       addNotification({
@@ -3037,16 +3087,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     try {
       const batch = writeBatch(db);
+      const addressesRef = collection(db, 'users', uid, 'addresses');
       
       if (newAddress.isDefault) {
-        previousAddresses.forEach(a => {
-          if (a.isDefault) {
-            batch.update(doc(db, 'users', uid, 'addresses', a.id), { isDefault: false });
+        // Hard enforcement: Unset any existing default in Firestore
+        const q = query(addressesRef, where('isDefault', '==', true));
+        const defaultSnap = await getDocs(q);
+        defaultSnap.docs.forEach(d => {
+          if (d.id !== addressId) {
+            batch.update(d.ref, { isDefault: false });
           }
         });
       }
 
-      batch.set(doc(db, 'users', uid, 'addresses', addressId), newAddress);
+      batch.set(doc(addressesRef, addressId), newAddress);
       await batch.commit();
       
       toast.success(translations[language === 'mm' ? 'mm' : 'en'].addressSaved || 'Address saved successfully');
@@ -3069,7 +3123,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const updateAddress = async (id: string, address: Partial<Address>) => {
     if (!uid) return;
     if (getIsQuotaExceeded()) {
-      toast.error('Daily limit reached. Your changes will be saved locally but may not sync to the cloud until tomorrow.');
+      toast.error('Daily limit reached. Your changes will be saved locally but may not sync to the cloud tomorrow.');
       return;
     }
     
@@ -3085,16 +3139,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     try {
       const batch = writeBatch(db);
+      const addressesRef = collection(db, 'users', uid, 'addresses');
       
       if (address.isDefault) {
-        previousAddresses.forEach(a => {
-          if (a.isDefault && a.id !== id) {
-            batch.update(doc(db, 'users', uid, 'addresses', a.id), { isDefault: false });
+        // Hard enforcement: Unset any existing default in Firestore
+        const q = query(addressesRef, where('isDefault', '==', true));
+        const defaultSnap = await getDocs(q);
+        defaultSnap.docs.forEach(d => {
+          if (d.id !== id) {
+            batch.update(d.ref, { isDefault: false });
           }
         });
       }
       
-      batch.update(doc(db, 'users', uid, 'addresses', id), address);
+      batch.update(doc(addressesRef, id), address);
       await batch.commit();
       
       toast.success(translations[language === 'mm' ? 'mm' : 'en'].addressUpdated || 'Address updated successfully');
@@ -3117,7 +3175,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const removeAddress = async (id: string) => {
     if (!uid) return;
     if (getIsQuotaExceeded()) {
-      toast.error('Daily limit reached. Your changes will be saved locally but may not sync to the cloud until tomorrow.');
+      toast.error('Daily limit reached. Your changes will be saved locally but may not sync to the cloud tomorrow.');
       return;
     }
     
@@ -3126,8 +3184,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const deletedAddress = addresses.find(a => a.id === id);
     let updatedAddresses = addresses.filter(a => a.id !== id);
     
+    // If we deleted the default, set first remaining as default
     if (deletedAddress?.isDefault && updatedAddresses.length > 0) {
-      updatedAddresses[0].isDefault = true;
+      updatedAddresses = updatedAddresses.map((a, i) => i === 0 ? { ...a, isDefault: true } : a);
     }
     
     setAddresses(updatedAddresses);
@@ -3137,10 +3196,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     try {
       const batch = writeBatch(db);
-      batch.delete(doc(db, 'users', uid, 'addresses', id));
+      const addressesRef = collection(db, 'users', uid, 'addresses');
+      batch.delete(doc(addressesRef, id));
       
       if (deletedAddress?.isDefault && updatedAddresses.length > 0) {
-        batch.update(doc(db, 'users', uid, 'addresses', updatedAddresses[0].id), { isDefault: true });
+        batch.update(doc(addressesRef, updatedAddresses[0].id), { isDefault: true });
       }
       
       await batch.commit();
@@ -3168,14 +3228,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     try {
       const batch = writeBatch(db);
-      addresses.forEach(a => {
-        if (a.isDefault && a.id !== id) {
-          batch.update(doc(db, 'users', uid, 'addresses', a.id), { isDefault: false });
-        }
-        if (a.id === id && !a.isDefault) {
-          batch.update(doc(db, 'users', uid, 'addresses', a.id), { isDefault: true });
+      const addressesRef = collection(db, 'users', uid, 'addresses');
+      
+      // Fetch all documents in Firestore that ARE currently marked as default
+      const q = query(addressesRef, where('isDefault', '==', true));
+      const defaultSnap = await getDocs(q);
+      
+      // Unset all existing defaults
+      defaultSnap.docs.forEach(d => {
+        if (d.id !== id) {
+          batch.update(d.ref, { isDefault: false });
         }
       });
+      
+      // Explicitly set the new default
+      batch.update(doc(addressesRef, id), { isDefault: true });
+      
       await batch.commit();
     } catch (error) {
       setAddresses(previousAddresses);
@@ -3196,14 +3264,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!translations) return key;
     return translations[language]?.[key] || translations['en']?.[key] || key;
   }, [language]);
-
-  const formatPrice = useCallback((price: number) => {
-    const safePrice = Number(price) || 0;
-    if (currency === 'RM') {
-      return `RM ${safePrice.toFixed(2)}`;
-    }
-    return `${safePrice.toLocaleString()} Ks`;
-  }, [currency]);
 
   const getCategoryName = useCallback((categoryId: string) => {
     const cat = (categories || []).find(c => c.id === categoryId || c.key === categoryId);

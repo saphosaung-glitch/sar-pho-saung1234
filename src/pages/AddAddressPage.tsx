@@ -160,8 +160,8 @@ export default function AddAddressPage() {
           <div className="px-4 mt-4">
             <h2 className={`text-[10px] font-black mb-2 uppercase tracking-widest ml-1 ${darkMode ? 'text-white/40' : 'text-slate-400'}`}>Contact Info</h2>
             <div className={`rounded-2xl overflow-hidden border ${darkMode ? 'bg-slate-900/40 border-white/5' : 'bg-white border-on-surface/5 shadow-sm'}`}>
-              <div className={`px-4 py-2 border-b ${darkMode ? 'border-white/5' : 'border-on-surface/5'}`}>
-                <label className="text-[10px] font-black uppercase tracking-widest opacity-40 block mb-0.5">Recipient Name</label>
+              <div className={`px-5 py-3.5 border-b ${darkMode ? 'border-white/5' : 'border-on-surface/5'}`}>
+                <label className="text-[11px] font-black uppercase tracking-widest opacity-40 block mb-1">Recipient Name</label>
                 <input 
                   required type="text"
                   value={formData.name}
@@ -170,8 +170,8 @@ export default function AddAddressPage() {
                   className="w-full bg-transparent font-bold text-sm outline-none"
                 />
               </div>
-              <div className="px-4 py-2">
-                <label className="text-[10px] font-black uppercase tracking-widest opacity-40 block mb-0.5">Phone Number</label>
+              <div className="px-5 py-3.5">
+                <label className="text-[11px] font-black uppercase tracking-widest opacity-40 block mb-1">Phone Number</label>
                 <input 
                   required type="tel"
                   value={formData.phone}
@@ -187,8 +187,8 @@ export default function AddAddressPage() {
           <div className="px-4 mt-5">
             <h2 className={`text-[10px] font-black mb-2 uppercase tracking-widest ml-1 ${darkMode ? 'text-white/40' : 'text-slate-400'}`}>Address Details</h2>
             <div className={`rounded-2xl overflow-hidden border ${darkMode ? 'bg-slate-900/40 border-white/5' : 'bg-white border-on-surface/5 shadow-sm'}`}>
-              <div className={`px-4 py-2 border-b ${darkMode ? 'border-white/5' : 'border-on-surface/5'} relative`}>
-                <label className="text-[10px] font-black uppercase tracking-widest opacity-40 block mb-0.5">Region / State</label>
+              <div className={`px-5 py-3.5 border-b ${darkMode ? 'border-white/5' : 'border-on-surface/5'} relative`}>
+                <label className="text-[11px] font-black uppercase tracking-widest opacity-40 block mb-1">Region / State</label>
                 <select 
                   required
                   value={formData.region}
@@ -204,12 +204,12 @@ export default function AddAddressPage() {
                     <option key={region} value={region} className={darkMode ? 'bg-slate-900' : 'bg-white'}>{region}</option>
                   ))}
                 </select>
-                <div className="pointer-events-none absolute bottom-3 right-4 flex items-center">
+                <div className="pointer-events-none absolute bottom-4 right-5 flex items-center">
                   <svg className="w-4 h-4 fill-current opacity-30" viewBox="0 0 20 20"><path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" /></svg>
                 </div>
               </div>
-              <div className={`px-4 py-2 border-b ${darkMode ? 'border-white/5' : 'border-on-surface/5'} relative`}>
-                <label className="text-[10px] font-black uppercase tracking-widest opacity-40 block mb-0.5">City / District</label>
+              <div className={`px-5 py-3.5 border-b ${darkMode ? 'border-white/5' : 'border-on-surface/5'} relative`}>
+                <label className="text-[11px] font-black uppercase tracking-widest opacity-40 block mb-1">City / District</label>
                 <select 
                   required
                   disabled={!formData.region}
@@ -226,12 +226,12 @@ export default function AddAddressPage() {
                     <option key={city} value={city} className={darkMode ? 'bg-slate-900' : 'bg-white'}>{city}</option>
                   ))}
                 </select>
-                <div className="pointer-events-none absolute bottom-3 right-4 flex items-center">
+                <div className="pointer-events-none absolute bottom-4 right-5 flex items-center">
                   <svg className="w-4 h-4 fill-current opacity-30" viewBox="0 0 20 20"><path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" /></svg>
                 </div>
               </div>
-              <div className={`px-4 py-2 border-b ${darkMode ? 'border-white/5' : 'border-on-surface/5'} relative`}>
-                <label className="text-[10px] font-black uppercase tracking-widest opacity-40 block mb-0.5">Township</label>
+              <div className={`px-5 py-3.5 border-b ${darkMode ? 'border-white/5' : 'border-on-surface/5'} relative`}>
+                <label className="text-[11px] font-black uppercase tracking-widest opacity-40 block mb-1">Township</label>
                 <select 
                   required
                   disabled={!formData.city}
@@ -248,12 +248,12 @@ export default function AddAddressPage() {
                     <option key={township} value={township} className={darkMode ? 'bg-slate-900' : 'bg-white'}>{township}</option>
                   ))}
                 </select>
-                <div className="pointer-events-none absolute bottom-3 right-4 flex items-center">
+                <div className="pointer-events-none absolute bottom-4 right-5 flex items-center">
                   <svg className="w-4 h-4 fill-current opacity-30" viewBox="0 0 20 20"><path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" /></svg>
                 </div>
               </div>
-              <div className={`px-4 py-2 border-b ${darkMode ? 'border-white/5' : 'border-on-surface/5'}`}>
-                <label className="text-[10px] font-black uppercase tracking-widest opacity-40 block mb-0.5">Street / Road / Quarter</label>
+              <div className={`px-5 py-3.5 border-b ${darkMode ? 'border-white/5' : 'border-on-surface/5'}`}>
+                <label className="text-[11px] font-black uppercase tracking-widest opacity-40 block mb-1">Street / Road / Quarter</label>
                 <input 
                   required type="text"
                   value={formData.street}
@@ -262,8 +262,8 @@ export default function AddAddressPage() {
                   className="w-full bg-transparent font-bold text-sm outline-none"
                 />
               </div>
-              <div className={`px-4 py-2 border-b ${darkMode ? 'border-white/5' : 'border-on-surface/5'}`}>
-                <label className="text-[10px] font-black uppercase tracking-widest opacity-40 block mb-0.5">Building / Floor</label>
+              <div className={`px-5 py-3.5 border-b ${darkMode ? 'border-white/5' : 'border-on-surface/5'}`}>
+                <label className="text-[11px] font-black uppercase tracking-widest opacity-40 block mb-1">Building / Floor</label>
                 <input 
                   type="text"
                   value={formData.building}
@@ -272,8 +272,8 @@ export default function AddAddressPage() {
                   className="w-full bg-transparent font-bold text-sm outline-none"
                 />
               </div>
-              <div className="px-4 py-2">
-                <label className="text-[10px] font-black uppercase tracking-widest opacity-40 block mb-0.5">Note (e.g. House Number / Room)</label>
+              <div className="px-5 py-3.5">
+                <label className="text-[11px] font-black uppercase tracking-widest opacity-40 block mb-1">Note (e.g. House Number / Room)</label>
                 <input 
                   type="text"
                   value={formData.room}

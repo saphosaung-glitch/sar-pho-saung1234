@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { 
   DollarSign, Clock, Save, Phone, ClipboardList, CreditCard, 
-  ShieldCheck, AlertTriangle, User, ShieldAlert, Zap, Globe,
-  Database, ShoppingBag, RefreshCw, MessageSquare, Info, XCircle, ShoppingCart, Plus, ChevronDown, MapPin, QrCode, Download
+  ShieldCheck, AlertTriangle, User, ShieldAlert, Zap, Globe, Send,
+  Database, ShoppingBag, RefreshCw, MessageSquare, Info, XCircle, ShoppingCart, Plus, ChevronDown, MapPin, QrCode, Download, Bell
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStore, SupportContact } from '../../context/StoreContext';
@@ -111,6 +111,8 @@ export function SettingsTab({
   const [tempShopPhone, setTempShopPhone] = useState(shopPhone);
   const [tempShopEmail, setTempShopEmail] = useState(shopEmail);
   const [tempProductionUrl, setTempProductionUrl] = useState(settings.productionUrl);
+  const [tempTelegramToken, setTempTelegramToken] = useState(settings.telegramToken || '');
+  const [tempTelegramChatId, setTempTelegramChatId] = useState(settings.telegramChatId || '');
   const [tempBankDetails, setTempBankDetails] = useState({
     name: bankName,
     number: bankAccountNumber,
@@ -164,6 +166,7 @@ export function SettingsTab({
 
   const sections = [
     { id: 'marketing', label: 'Marketing', sub: 'QR Codes & Sharing', icon: <QrCode size={18} />, color: 'bg-indigo-600' },
+    { id: 'notifications', label: 'Notifications', sub: 'Telegram & Alerts', icon: <Bell size={18} />, color: 'bg-blue-600' },
     { id: 'localization', label: 'Localization', sub: 'Currency & Fees', icon: <Globe size={18} />, color: 'bg-primary' },
     { id: 'schedule', label: 'Schedule', sub: 'Delivery & Cut-off', icon: <Clock size={18} />, color: 'bg-blue-500' },
     { id: 'serviceAreas', label: 'Service Areas', sub: 'Delivery Locations', icon: <MapPin size={18} />, color: 'bg-indigo-500' },
@@ -305,12 +308,96 @@ export function SettingsTab({
           </div>
         </SettingRow>
 
-        {/* Localization */}
+        {/* Telegram Notifications */}
         <SettingRow 
           section={sections[1]} 
           isOpen={openSection === sections[1].id} 
           darkMode={darkMode} 
           onToggle={() => setOpenSection(openSection === sections[1].id ? null : sections[1].id)}
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className={`p-6 rounded-3xl border ${darkMode ? 'bg-white/5 border-white/10' : 'bg-blue-50 border-blue-100/50'}`}>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 rounded-2xl bg-blue-500 text-white flex items-center justify-center shadow-lg shadow-blue-500/20">
+                  <Send size={20} />
+                </div>
+                <div>
+                  <h5 className="text-xs font-black uppercase tracking-tight">Telegram Bot Config</h5>
+                  <p className="text-[10px] font-bold opacity-40 uppercase tracking-tighter">Automated Order Alerts</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black opacity-30 uppercase tracking-widest ml-1">Bot Token</label>
+                  <input 
+                    type="password"
+                    value={tempTelegramToken}
+                    onChange={(e) => setTempTelegramToken(e.target.value)}
+                    placeholder="123456789:ABCDefgh..."
+                    className={`w-full px-5 py-3 rounded-xl border text-xs font-mono outline-none focus:border-blue-500 transition-all ${
+                      darkMode ? 'bg-black/30 border-white/10' : 'bg-white border-on-surface/10'
+                    }`}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black opacity-30 uppercase tracking-widest ml-1">Chat ID / Channel ID</label>
+                  <input 
+                    type="text"
+                    value={tempTelegramChatId}
+                    onChange={(e) => setTempTelegramChatId(e.target.value)}
+                    placeholder="-100123456789"
+                    className={`w-full px-5 py-3 rounded-xl border text-xs font-mono outline-none focus:border-blue-500 transition-all ${
+                      darkMode ? 'bg-black/30 border-white/10' : 'bg-white border-on-surface/10'
+                    }`}
+                  />
+                </div>
+                <button 
+                  onClick={() => {
+                    updateSettings({ telegramToken: tempTelegramToken, telegramChatId: tempTelegramChatId });
+                    toast.success('Telegram configuration updated');
+                  }}
+                  className="w-full py-4 rounded-2xl bg-blue-600 text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-600/20 active:scale-[0.98] transition-all hover:brightness-110 flex items-center justify-center gap-3"
+                >
+                  <Save size={18} />
+                  Save Telegram Info
+                </button>
+              </div>
+            </div>
+
+            <div className={`p-6 rounded-3xl border ${darkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-100'}`}>
+              <h5 className="text-[10px] font-black uppercase tracking-widest opacity-60 mb-4 inline-flex items-center gap-2">
+                <Info size={12} />
+                Setup Instructions
+              </h5>
+              <div className="space-y-4 text-[11px] font-medium leading-relaxed opacity-70">
+                <div className="flex gap-3">
+                  <div className="w-5 h-5 rounded-full bg-blue-500/10 text-blue-600 flex items-center justify-center flex-shrink-0 font-bold text-[10px]">1</div>
+                  <p>Open Telegram and search for <span className="font-bold">@BotFather</span></p>
+                </div>
+                <div className="flex gap-3">
+                  <div className="w-5 h-5 rounded-full bg-blue-500/10 text-blue-600 flex items-center justify-center flex-shrink-0 font-bold text-[10px]">2</div>
+                  <p>Send <span className="font-bold underline">/newbot</span> and follow prompts to get your <span className="font-bold">API Token</span>.</p>
+                </div>
+                <div className="flex gap-3">
+                  <div className="w-5 h-5 rounded-full bg-blue-500/10 text-blue-600 flex items-center justify-center flex-shrink-0 font-bold text-[10px]">3</div>
+                  <p>Create a group, add your bot, and use <span className="font-bold">@userinfobot</span> or a similar bot to get your <span className="font-bold">Chat ID</span>.</p>
+                </div>
+                <div className="pt-4 mt-4 border-t border-dotted border-current opacity-20" />
+                <p className="italic">
+                   * Chat ID typically starts with a minus sign (e.g. -100...) for groups or channels.
+                </p>
+              </div>
+            </div>
+          </div>
+        </SettingRow>
+
+        {/* Localization */}
+        <SettingRow 
+          section={sections[2]} 
+          isOpen={openSection === sections[2].id} 
+          darkMode={darkMode} 
+          onToggle={() => setOpenSection(openSection === sections[2].id ? null : sections[2].id)}
         >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="space-y-2">
@@ -356,10 +443,10 @@ export function SettingsTab({
 
         {/* Schedule */}
         <SettingRow 
-          section={sections[2]} 
-          isOpen={openSection === sections[2].id} 
+          section={sections[3]} 
+          isOpen={openSection === sections[3].id} 
           darkMode={darkMode} 
-          onToggle={() => setOpenSection(openSection === sections[2].id ? null : sections[2].id)}
+          onToggle={() => setOpenSection(openSection === sections[3].id ? null : sections[3].id)}
         >
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="md:col-span-1 p-6 rounded-3xl bg-on-surface/5 flex flex-col items-center justify-center text-center space-y-4">
@@ -425,20 +512,20 @@ export function SettingsTab({
 
         {/* Service Areas */}
         <SettingRow 
-          section={sections[3]} 
-          isOpen={openSection === sections[3].id} 
+          section={sections[4]} 
+          isOpen={openSection === sections[4].id} 
           darkMode={darkMode} 
-          onToggle={() => setOpenSection(openSection === sections[3].id ? null : sections[3].id)}
+          onToggle={() => setOpenSection(openSection === sections[4].id ? null : sections[4].id)}
         >
           <ServiceAreasConfig darkMode={darkMode} />
         </SettingRow>
 
         {/* Branding */}
         <SettingRow 
-          section={sections[4]} 
-          isOpen={openSection === sections[4].id} 
+          section={sections[5]} 
+          isOpen={openSection === sections[5].id} 
           darkMode={darkMode} 
-          onToggle={() => setOpenSection(openSection === sections[4].id ? null : sections[4].id)}
+          onToggle={() => setOpenSection(openSection === sections[5].id ? null : sections[5].id)}
         >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
@@ -485,10 +572,10 @@ export function SettingsTab({
 
         {/* Support */}
         <SettingRow 
-          section={sections[5]} 
-          isOpen={openSection === sections[5].id} 
+          section={sections[6]} 
+          isOpen={openSection === sections[6].id} 
           darkMode={darkMode} 
-          onToggle={() => setOpenSection(openSection === sections[5].id ? null : sections[5].id)}
+          onToggle={() => setOpenSection(openSection === sections[6].id ? null : sections[6].id)}
         >
           <div className="space-y-8">
             <div className="flex items-center justify-between p-4 rounded-3xl bg-red-500/5 border border-red-500/10">
@@ -628,10 +715,10 @@ export function SettingsTab({
 
         {/* Payments */}
         <SettingRow 
-          section={sections[6]} 
-          isOpen={openSection === sections[6].id} 
+          section={sections[7]} 
+          isOpen={openSection === sections[7].id} 
           darkMode={darkMode} 
-          onToggle={() => setOpenSection(openSection === sections[6].id ? null : sections[6].id)}
+          onToggle={() => setOpenSection(openSection === sections[7].id ? null : sections[7].id)}
         >
           <div className="space-y-8">
             <div className="flex items-center justify-between p-6 rounded-[2rem] bg-blue-500/5 border border-blue-500/10">
@@ -711,10 +798,10 @@ export function SettingsTab({
 
         {/* System */}
         <SettingRow 
-          section={sections[7]} 
-          isOpen={openSection === sections[7].id} 
+          section={sections[8]} 
+          isOpen={openSection === sections[8].id} 
           darkMode={darkMode} 
-          onToggle={() => setOpenSection(openSection === sections[7].id ? null : sections[7].id)}
+          onToggle={() => setOpenSection(openSection === sections[8].id ? null : sections[8].id)}
         >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="space-y-4">

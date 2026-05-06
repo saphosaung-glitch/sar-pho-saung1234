@@ -10,14 +10,23 @@ export default function AddressManagementPage() {
   const fromCheckout = searchParams.get('from') === 'checkout';
   const { addresses, removeAddress, setDefaultAddress, selectedAddressId, setSelectedAddressId, t, darkMode } = useStore();
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [addressToDelete, setAddressToDelete] = useState<any | null>(null);
 
-  const handleDelete = (e: React.MouseEvent, id: string) => {
+  const confirmDelete = (e: React.MouseEvent, address: any) => {
     e.stopPropagation();
+    setAddressToDelete(address);
+  };
+
+  const handleDelete = async () => {
+    if (!addressToDelete) return;
+    const id = addressToDelete.id;
     setDeletingId(id);
-    setTimeout(() => {
-      removeAddress(id);
+    setAddressToDelete(null);
+    try {
+      await removeAddress(id);
+    } finally {
       setDeletingId(null);
-    }, 400);
+    }
   };
 
   const handleSelect = (id: string) => {
@@ -108,7 +117,7 @@ export default function AddressManagementPage() {
                   delay: index * 0.08 
                 }}
                 onClick={() => handleSelect(address.id)}
-                className={`relative group rounded-xl p-3.5 border transition-all duration-500 overflow-hidden cursor-pointer ${
+                className={`relative group rounded-3xl p-7 border transition-all duration-500 overflow-hidden cursor-pointer ${
                   selectedAddressId === address.id
                     ? 'border-primary bg-primary/5 shadow-md ring-1 ring-primary/30' 
                     : `border-on-surface/10 ${darkMode ? 'bg-slate-900/40 hover:bg-slate-900/60' : 'bg-white hover:bg-slate-50 shadow-sm'}`
@@ -122,36 +131,36 @@ export default function AddressManagementPage() {
                 {/* Decorative background element */}
                 <div className={`absolute top-0 right-0 w-32 h-32 rounded-full blur-[60px] -mr-16 -mt-16 pointer-events-none transition-all duration-700 ${selectedAddressId === address.id ? 'bg-primary/20 opacity-100 scale-110' : 'bg-primary/10 opacity-0 group-hover:opacity-100 scale-100'}`}></div>
                 
-                <div className="relative z-10 space-y-2.5">
+                <div className="relative z-10 space-y-5">
                   <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-2.5">
-                      <div className={`w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center transition-all duration-500 mt-0.5 ${
+                    <div className="flex items-start gap-4">
+                      <div className={`w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center transition-all duration-500 mt-0.5 ${
                         selectedAddressId === address.id 
                           ? 'bg-primary text-white shadow-primary/30 scale-105' 
                           : (darkMode ? 'bg-slate-800 text-white/40 group-hover:text-primary group-hover:bg-primary/10' : 'bg-surface-container-low text-on-surface-variant/40 group-hover:text-primary group-hover:bg-primary/5')
                       }`}>
-                        {address.label === 'Home' ? <Home size={14} /> : address.label === 'Office' ? <Building size={14} /> : <MapPin size={14} />}
+                        {address.label === 'Home' ? <Home size={20} /> : address.label === 'Office' ? <Building size={20} /> : <MapPin size={20} />}
                       </div>
                       <div className="min-w-0 pr-1">
-                        <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
-                          <h4 className={`font-bold text-xs tracking-tight truncate ${darkMode ? 'text-white' : 'text-on-surface'}`}>{address.name}</h4>
-                          <span className={`text-[8px] font-bold px-1 py-0.5 rounded flex-shrink-0 ${selectedAddressId === address.id ? 'bg-primary/20 text-primary' : (darkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500')}`}>
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <h4 className={`font-black text-sm tracking-tight truncate ${darkMode ? 'text-white' : 'text-on-surface'}`}>{address.name}</h4>
+                          <span className={`text-[11px] font-black px-2 py-0.5 rounded flex-shrink-0 ${selectedAddressId === address.id ? 'bg-primary/20 text-primary' : (darkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500')}`}>
                             {t(address.label.toLowerCase() || 'other')}
                           </span>
                           {address.isDefault && (
-                            <span className="bg-emerald-500/10 text-emerald-600 text-[8px] font-bold px-1 py-0.5 rounded flex items-center gap-0.5 flex-shrink-0">
-                              <Check size={8} strokeWidth={3} />
+                            <span className="bg-emerald-500/10 text-emerald-600 text-[11px] font-black px-2 py-0.5 rounded flex items-center gap-0.5 flex-shrink-0">
+                              <Check size={10} strokeWidth={4} />
                               {t('default')}
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-1 text-[10px]">
-                          <Phone size={9} className="text-emerald-500 flex-shrink-0" />
+                        <div className="flex items-center gap-2 text-[13px] font-bold">
+                          <Phone size={12} className="text-emerald-500 flex-shrink-0" />
                           <span className={`${darkMode ? 'text-white/50' : 'text-on-surface-variant/70'}`}>{address.phone}</span>
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
+                    <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
                       {!address.isDefault && (
                         <motion.button 
                           whileHover={{ scale: 1.1 }}
@@ -160,10 +169,10 @@ export default function AddressManagementPage() {
                             e.stopPropagation();
                             setDefaultAddress(address.id);
                           }}
-                          className={`p-1.5 rounded-lg transition-all duration-300 ${darkMode ? 'bg-white/5 text-white/40 hover:text-emerald-500 hover:bg-emerald-500/10' : 'bg-slate-50 text-on-surface-variant/40 hover:text-emerald-600 hover:bg-emerald-500/5'}`}
+                          className={`p-2.5 rounded-xl transition-all duration-300 ${darkMode ? 'bg-white/5 text-white/40 hover:text-emerald-500 hover:bg-emerald-500/10' : 'bg-slate-50 text-on-surface-variant/40 hover:text-emerald-600 hover:bg-emerald-500/5'}`}
                           title={t('setAsDefault')}
                         >
-                          <CheckCircle2 size={14} />
+                          <CheckCircle2 size={18} />
                         </motion.button>
                       )}
                       <motion.button 
@@ -173,29 +182,29 @@ export default function AddressManagementPage() {
                           e.stopPropagation();
                           navigate(`/add-address?edit=${address.id}`);
                         }}
-                        className={`p-1.5 rounded-lg transition-all duration-300 ${darkMode ? 'bg-white/5 text-white/40 hover:text-primary hover:bg-primary/10' : 'bg-slate-50 text-on-surface-variant/40 hover:text-primary hover:bg-primary/5'}`}
+                        className={`p-2.5 rounded-xl transition-all duration-300 ${darkMode ? 'bg-white/5 text-white/40 hover:text-primary hover:bg-primary/10' : 'bg-slate-50 text-on-surface-variant/40 hover:text-primary hover:bg-primary/5'}`}
                       >
-                        <Edit2 size={14} />
+                        <Edit2 size={18} />
                       </motion.button>
                       <motion.button 
                         whileHover={{ scale: 1.1, rotate: 5 }}
                         whileTap={{ scale: 0.9 }}
-                        onClick={(e) => handleDelete(e, address.id)}
+                        onClick={(e) => confirmDelete(e, address)}
                         disabled={deletingId === address.id}
-                        className={`p-1.5 rounded-lg transition-all duration-300 ${darkMode ? 'bg-white/5 text-white/40 hover:text-red-500 hover:bg-red-500/10' : 'bg-slate-50 text-on-surface-variant/40 hover:text-red-500 hover:bg-red-500/5'}`}
+                        className={`p-2.5 rounded-xl transition-all duration-300 ${darkMode ? 'bg-white/5 text-white/40 hover:text-red-500 hover:bg-red-500/10' : 'bg-slate-50 text-on-surface-variant/40 hover:text-red-500 hover:bg-red-500/5'}`}
                       >
-                        <Trash2 size={14} className={deletingId === address.id ? 'animate-pulse' : ''} />
+                        <Trash2 size={18} className={deletingId === address.id ? 'animate-pulse' : ''} />
                       </motion.button>
                     </div>
                   </div>
 
                   <div className={`h-px w-full transition-colors duration-500 ${darkMode ? 'bg-white/5' : 'bg-on-surface/5'}`}></div>
 
-                  <div className="flex items-start gap-2">
-                    <div className="w-5 h-5 bg-primary/10 rounded overflow-hidden flex items-center justify-center text-primary flex-shrink-0 mt-0.5">
-                      <Navigation size={10} />
+                  <div className="flex items-start gap-3">
+                    <div className="w-6 h-6 bg-primary/10 rounded-lg overflow-hidden flex items-center justify-center text-primary flex-shrink-0 mt-0.5">
+                      <Navigation size={12} />
                     </div>
-                    <p className={`text-[11px] leading-snug ${darkMode ? 'text-white/70' : 'text-on-surface-variant'}`}>
+                    <p className={`text-[13px] font-medium leading-relaxed ${darkMode ? 'text-white/70' : 'text-on-surface-variant'}`}>
                       {address.street}, {address.building && `${address.building}, `}{address.room && `${address.room}, `}
                       {address.township}, {address.city}, {address.region}
                     </p>
@@ -253,6 +262,57 @@ export default function AddressManagementPage() {
           <span className="uppercase tracking-[0.15em]">{t('addNewAddress')}</span>
         </motion.button>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {addressToDelete && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center px-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setAddressToDelete(null)}
+              className="absolute inset-0 bg-slate-950/60 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className={`relative w-full max-w-sm rounded-[2rem] p-8 overflow-hidden border shadow-2xl ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}
+            >
+              <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/10 rounded-full blur-3xl -mr-16 -mt-16" />
+              
+              <div className="relative z-10 text-center space-y-6">
+                <div className="w-16 h-16 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500 mx-auto">
+                  <Trash2 size={32} />
+                </div>
+                
+                <div className="space-y-2">
+                  <h3 className="text-xl font-black">{t('deleteAddressConfirm')}?</h3>
+                  <p className={`text-sm font-bold opacity-60`}>
+                    {t('deleteAddressWarning')}
+                  </p>
+                </div>
+
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => setAddressToDelete(null)}
+                    className={`flex-1 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${darkMode ? 'bg-white/5 hover:bg-white/10 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
+                  >
+                    {t('cancel')}
+                  </button>
+                  <button 
+                    onClick={handleDelete}
+                    className="flex-1 py-4 rounded-2xl bg-red-500 hover:bg-red-600 text-white font-black text-xs uppercase tracking-widest transition-all shadow-[0_10px_20px_rgba(239,68,68,0.2)]"
+                  >
+                    {t('delete')}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
